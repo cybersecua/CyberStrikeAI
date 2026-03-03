@@ -1444,7 +1444,8 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 		// 执行任务（使用包含角色提示词的finalMessage和角色工具列表）
 		h.logger.Info("执行批量任务", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("message", task.Message), zap.String("role", queue.Role), zap.String("conversationId", conversationID))
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		// 单个子任务超时时间：从30分钟调整为6小时，适配长时间渗透/扫描任务
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 		// 存储取消函数，以便在取消队列时能够取消当前任务
 		h.batchTaskManager.SetTaskCancel(queueID, cancel)
 		// 使用队列配置的角色工具列表（如果为空，表示使用所有工具）
