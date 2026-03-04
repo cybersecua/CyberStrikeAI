@@ -113,12 +113,26 @@ type DatabaseConfig struct {
 }
 
 type AgentConfig struct {
-	MaxIterations          int    `yaml:"max_iterations" json:"max_iterations"`
-	LargeResultThreshold   int    `yaml:"large_result_threshold" json:"large_result_threshold"`     // Large-result threshold (bytes), default 50 KB
-	ResultStorageDir       string `yaml:"result_storage_dir" json:"result_storage_dir"`             // Result storage directory, default tmp
-	ParallelToolExecution  bool   `yaml:"parallel_tool_execution" json:"parallel_tool_execution"`   // Execute multiple tool calls concurrently (default true)
-	MaxParallelTools       int    `yaml:"max_parallel_tools" json:"max_parallel_tools"`             // Maximum concurrent tool calls (0 = unlimited)
-	ToolRetryCount         int    `yaml:"tool_retry_count" json:"tool_retry_count"`                 // Number of retries on transient tool errors (default 0)
+	MaxIterations          int                   `yaml:"max_iterations" json:"max_iterations"`
+	LargeResultThreshold   int                   `yaml:"large_result_threshold" json:"large_result_threshold"`     // Large-result threshold (bytes), default 50 KB
+	ResultStorageDir       string                `yaml:"result_storage_dir" json:"result_storage_dir"`             // Result storage directory, default tmp
+	ParallelToolExecution  bool                  `yaml:"parallel_tool_execution" json:"parallel_tool_execution"`   // Execute multiple tool calls concurrently (default true)
+	MaxParallelTools       int                   `yaml:"max_parallel_tools" json:"max_parallel_tools"`             // Maximum concurrent tool calls (0 = unlimited)
+	ToolRetryCount         int                   `yaml:"tool_retry_count" json:"tool_retry_count"`                 // Number of retries on transient tool errors (default 0)
+	TimeAwareness          TimeAwarenessConfig   `yaml:"time_awareness" json:"time_awareness"`                     // Temporal context injection settings
+	Memory                 MemoryConfig          `yaml:"memory" json:"memory"`                                     // Persistent memory settings
+}
+
+// TimeAwarenessConfig controls whether and how the agent injects time context.
+type TimeAwarenessConfig struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled"`   // Inject current date/time into every system prompt (default true)
+	Timezone string `yaml:"timezone" json:"timezone"` // IANA timezone name, e.g. "America/New_York" (default "UTC")
+}
+
+// MemoryConfig controls persistent cross-conversation memory behaviour.
+type MemoryConfig struct {
+	Enabled    bool `yaml:"enabled" json:"enabled"`           // Enable the persistent memory store (default true)
+	MaxEntries int  `yaml:"max_entries" json:"max_entries"`   // Hard cap on stored memory entries, 0 = unlimited
 }
 
 type AuthConfig struct {
@@ -569,6 +583,14 @@ func Default() *Config {
 		},
 		Agent: AgentConfig{
 			MaxIterations: 30, // Default maximum iteration count
+			TimeAwareness: TimeAwarenessConfig{
+				Enabled:  true,
+				Timezone: "UTC",
+			},
+			Memory: MemoryConfig{
+				Enabled:    true,
+				MaxEntries: 200,
+			},
 		},
 		Security: SecurityConfig{
 			Tools:    []ToolConfig{}, // Tool configs should be loaded from config.yaml or the tools/ directory

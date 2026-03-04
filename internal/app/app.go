@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,18 +127,53 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		return nil, fmt.Errorf("failed to initialize result storage: %w", err)
 	}
 
+	// initialize TimeAwareness before creating the agent variable to avoid
+	// package name shadowing.
+	taEnabled := cfg.Agent.TimeAwareness.Enabled
+	// For backward compatibility: treat a fully zero-value config block as
+	// "not explicitly disabled" and default to enabled.
+	if !taEnabled && cfg.Agent.TimeAwareness.Timezone == "" {
+		taEnabled = true
+	}
+	timeAwareness := agent.NewTimeAwareness(cfg.Agent.TimeAwareness.Timezone, taEnabled)
+	log.Logger.Info("time awareness initialized",
+		zap.Bool("enabled", taEnabled),
+		zap.String("timezone", cfg.Agent.TimeAwareness.Timezone),
+	)
+
+	// initialize PersistentMemory before creating the agent variable
+	var persistentMem *agent.PersistentMemory
+	memEnabled := cfg.Agent.Memory.Enabled || cfg.Agent.Memory.MaxEntries == 0
+	if memEnabled {
+		pm, pmErr := agent.NewPersistentMemory(db.DB, log.Logger)
+		if pmErr != nil {
+			log.Logger.Warn("failed to initialize persistent memory, continuing without it", zap.Error(pmErr))
+		} else {
+			persistentMem = pm
+			log.Logger.Info("persistent memory initialized")
+		}
+	}
+
 	// create Agent
 	maxIterations := cfg.Agent.MaxIterations
 	if maxIterations <= 0 {
 		maxIterations = 30 // default value
 	}
-	agent := agent.NewAgent(&cfg.OpenAI, &cfg.Agent, mcpServer, externalMCPMgr, log.Logger, maxIterations)
+	agentInstance := agent.NewAgent(&cfg.OpenAI, &cfg.Agent, mcpServer, externalMCPMgr, log.Logger, maxIterations)
 
 	// set result storage on Agent
-	agent.SetResultStorage(resultStorage)
+	agentInstance.SetResultStorage(resultStorage)
 
 	// set result storage on Executor (for query tools)
 	executor.SetResultStorage(resultStorage)
+
+	// attach time awareness and memory to agent
+	agentInstance.SetTimeAwareness(timeAwareness)
+	registerTimeTools(mcpServer, timeAwareness, log.Logger)
+	if persistentMem != nil {
+		agentInstance.SetPersistentMemory(persistentMem)
+		registerMemoryTools(mcpServer, persistentMem, log.Logger)
+	}
 
 	// initialize knowledge base module (if enabled)
 	var knowledgeManager *knowledge.Manager
@@ -308,7 +344,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	skills.RegisterSkillsToolWithStorage(mcpServer, skillsManager, skillStatsStorage, log.Logger)
 
 	// create handlers
-	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
+	agentHandler := handler.NewAgentHandler(agentInstance, db, cfg, log.Logger)
 	agentHandler.SetSkillsManager(skillsManager) // set Skills manager
 	// if knowledge base is enabled, set knowledge base manager on AgentHandler for retrieval log recording
 	if knowledgeManager != nil {
@@ -320,7 +356,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	authHandler := handler.NewAuthHandler(authManager, cfg, configPath, log.Logger)
 	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
 	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
-	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
+	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agentInstance, attackChainHandler, externalMCPMgr, log.Logger)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
 	roleHandler.SetSkillsManager(skillsManager) // set Skills manager on RoleHandler
@@ -343,7 +379,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		router:             router,
 		mcpServer:          mcpServer,
 		externalMCPMgr:     externalMCPMgr,
-		agent:              agent,
+		agent:              agentInstance,
 		executor:           executor,
 		db:                 db,
 		knowledgeDB:        knowledgeDBConn,
@@ -1213,6 +1249,213 @@ func initializeKnowledge(
 	}()
 
 	return knowledgeHandler, nil
+}
+
+// registerTimeTools registers the get_current_time tool on the MCP server.
+func registerTimeTools(mcpServer *mcp.Server, ta *agent.TimeAwareness, logger *zap.Logger) {
+	tool := mcp.Tool{
+		Name:             builtin.ToolGetCurrentTime,
+		Description:      "Get the current date and time, including timezone, Unix timestamp, and session uptime. Use this tool whenever you need to know the exact current time or when building time-relative plans (e.g. scheduling scans, calculating elapsed time).",
+		ShortDescription: "Get current date, time, timezone, and session uptime",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}
+	handler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: ta.FormatCurrentTime()}},
+		}, nil
+	}
+	mcpServer.RegisterTool(tool, handler)
+	logger.Info("time tool registered successfully")
+}
+
+// registerMemoryTools registers the four persistent-memory tools on the MCP server.
+func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logger *zap.Logger) {
+	// ── store_memory ──────────────────────────────────────────────────────────
+	storeMemTool := mcp.Tool{
+		Name:             builtin.ToolStoreMemory,
+		Description:      "Persist an important fact to long-term memory so it is available across conversation compressions and future sessions. Use this for credentials, targets, key findings, and operational notes that must not be forgotten.",
+		ShortDescription: "Store a key fact to persistent long-term memory",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"key": map[string]interface{}{
+					"type":        "string",
+					"description": "A short, unique label for the fact (e.g. 'admin_password', 'target_ip')",
+				},
+				"value": map[string]interface{}{
+					"type":        "string",
+					"description": "The fact or value to remember",
+				},
+				"category": map[string]interface{}{
+					"type":        "string",
+					"description": "Memory category: credential, target, vulnerability, fact, note",
+					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+				},
+			},
+			"required": []string{"key", "value"},
+		},
+	}
+	mcpServer.RegisterTool(storeMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		key, _ := args["key"].(string)
+		value, _ := args["value"].(string)
+		cat := agent.MemoryCategory(args["category"].(string) + "")
+		if cat == "" {
+			cat = agent.MemoryCategoryFact
+		}
+		convID, _ := args["conversation_id"].(string)
+		entry, err := pm.Store(key, value, cat, convID)
+		if err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error storing memory: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory stored: [%s] %s = %s (id: %s)", entry.Category, entry.Key, entry.Value, entry.ID)}},
+		}, nil
+	})
+
+	// ── retrieve_memory ───────────────────────────────────────────────────────
+	retrieveMemTool := mcp.Tool{
+		Name:             builtin.ToolRetrieveMemory,
+		Description:      "Search persistent memory for facts matching a query. Returns matching entries ordered by recency. Use this to recall credentials, targets, or findings from previous sessions.",
+		ShortDescription: "Search persistent memory for matching facts",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"query": map[string]interface{}{
+					"type":        "string",
+					"description": "Search query matched against memory keys and values",
+				},
+				"category": map[string]interface{}{
+					"type":        "string",
+					"description": "Filter by category: credential, target, vulnerability, fact, note (optional)",
+					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+				},
+				"limit": map[string]interface{}{
+					"type":        "integer",
+					"description": "Maximum number of results to return (default 20)",
+				},
+			},
+			"required": []string{},
+		},
+	}
+	mcpServer.RegisterTool(retrieveMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		query, _ := args["query"].(string)
+		cat := agent.MemoryCategory("")
+		if cv, ok := args["category"].(string); ok {
+			cat = agent.MemoryCategory(cv)
+		}
+		limit := 20
+		if lv, ok := args["limit"].(float64); ok {
+			limit = int(lv)
+		}
+		entries, err := pm.Retrieve(query, cat, limit)
+		if err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error retrieving memory: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		if len(entries) == 0 {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "No matching memories found."}},
+			}, nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Found %d memory entries:\n", len(entries)))
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("  [%s] %s: %s  (id: %s, updated: %s)\n",
+				e.Category, e.Key, e.Value, e.ID, e.UpdatedAt.Format("2006-01-02 15:04")))
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
+		}, nil
+	})
+
+	// ── list_memories ─────────────────────────────────────────────────────────
+	listMemTool := mcp.Tool{
+		Name:             builtin.ToolListMemories,
+		Description:      "List all entries currently stored in persistent memory, optionally filtered by category. Useful for reviewing what has been remembered.",
+		ShortDescription: "List all persistent memory entries",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"category": map[string]interface{}{
+					"type":        "string",
+					"description": "Filter by category: credential, target, vulnerability, fact, note (optional, empty = all)",
+					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+				},
+			},
+			"required": []string{},
+		},
+	}
+	mcpServer.RegisterTool(listMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		cat := agent.MemoryCategory("")
+		if cv, ok := args["category"].(string); ok {
+			cat = agent.MemoryCategory(cv)
+		}
+		entries, err := pm.List(cat, 100)
+		if err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error listing memories: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		if len(entries) == 0 {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "No memories stored yet."}},
+			}, nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Persistent memory (%d entries):\n", len(entries)))
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("  [%s] %s: %s  (id: %s)\n", e.Category, e.Key, e.Value, e.ID))
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
+		}, nil
+	})
+
+	// ── delete_memory ─────────────────────────────────────────────────────────
+	deleteMemTool := mcp.Tool{
+		Name:             builtin.ToolDeleteMemory,
+		Description:      "Delete a specific memory entry by ID. Use this to remove stale, incorrect, or no-longer-relevant facts.",
+		ShortDescription: "Delete a persistent memory entry by ID",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "string",
+					"description": "The UUID of the memory entry to delete (obtain from list_memories or retrieve_memory)",
+				},
+			},
+			"required": []string{"id"},
+		},
+	}
+	mcpServer.RegisterTool(deleteMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		id, _ := args["id"].(string)
+		if id == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error: id parameter is required"}},
+				IsError: true,
+			}, nil
+		}
+		if err := pm.Delete(id); err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error deleting memory: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory entry %s deleted.", id)}},
+		}, nil
+	})
+
+	logger.Info("persistent memory tools registered successfully")
 }
 
 // corsMiddleware CORS middleware

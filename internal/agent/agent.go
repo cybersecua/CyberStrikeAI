@@ -25,6 +25,8 @@ type Agent struct {
 	config                *config.OpenAIConfig
 	agentConfig           *config.AgentConfig
 	memoryCompressor      *MemoryCompressor
+	persistentMemory      *PersistentMemory  // long-lived key-value memory that survives compression
+	timeAwareness         *TimeAwareness     // temporal context injector
 	mcpServer             *mcp.Server
 	externalMCPMgr        *mcp.ExternalMCPManager // external MCP manager
 	logger                *zap.Logger
@@ -157,6 +159,23 @@ func (a *Agent) SetResultStorage(storage ResultStorage) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.resultStorage = storage
+}
+
+// SetPersistentMemory attaches a PersistentMemory store to the agent.
+// When set, the memory context block is prepended to every system prompt,
+// giving the LLM access to key facts that survive conversation compression.
+func (a *Agent) SetPersistentMemory(pm *PersistentMemory) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.persistentMemory = pm
+}
+
+// SetTimeAwareness attaches a TimeAwareness instance to the agent.
+// When set, current date/time context is injected into every system prompt.
+func (a *Agent) SetTimeAwareness(ta *TimeAwareness) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.timeAwareness = ta
 }
 
 // ChatMessage represents a chat message
@@ -436,6 +455,17 @@ Important: When a tool call fails, follow these principles:
 
 When a tool returns an error, the error message will be included in the tool response. Read it carefully and make reasonable decisions.
 
+Memory management:
+- Use ` + builtin.ToolStoreMemory + ` to save important facts that must not be forgotten (credentials, targets, key findings, notes)
+- Categories: credential, target, vulnerability, fact, note
+- Use ` + builtin.ToolRetrieveMemory + ` to search stored memories; ` + builtin.ToolListMemories + ` to view all entries; ` + builtin.ToolDeleteMemory + ` to remove stale entries
+- Store memories proactively — memory survives conversation compression and server restarts
+- Example: after finding admin credentials, immediately call store_memory with category=credential
+
+Time awareness:
+- Use ` + builtin.ToolGetCurrentTime + ` whenever you need the exact current time (e.g. for timestamping reports, calculating scan windows)
+- The current date/time is already injected above in the <time_context> block
+
 Vulnerability recording requirements:
 - When you discover a valid vulnerability, you must use the ` + builtin.ToolRecordVulnerability + ` tool to record the vulnerability details
 ` + `- Vulnerability records should include: title, description, severity, type, target, proof (POC), impact, and remediation recommendations
@@ -485,6 +515,23 @@ Skills Library:
 		skillsHint.WriteString(builtin.ToolReadSkill)
 		skillsHint.WriteString("` tool to retrieve them")
 		systemPrompt += skillsHint.String()
+	}
+
+	// Inject time awareness context (current date/time, session age).
+	a.mu.RLock()
+	ta := a.timeAwareness
+	pm := a.persistentMemory
+	a.mu.RUnlock()
+	if ta != nil {
+		if block := ta.BuildContextBlock(); block != "" {
+			systemPrompt = block + "\n" + systemPrompt
+		}
+	}
+	// Inject persistent memory context (key facts from previous sessions).
+	if pm != nil {
+		if block := pm.BuildContextBlock(); block != "" {
+			systemPrompt = block + "\n" + systemPrompt
+		}
 	}
 
 	messages := []ChatMessage{

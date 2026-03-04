@@ -34,9 +34,14 @@ This roadmap outlines the planned development trajectory for CyberStrikeAI. Item
 - ✅ Attack-chain graph with severity scoring and step-by-step replay
 - ✅ Vulnerability management — CRUD, severity/status tracking, statistics
 - ✅ Batch task management — create queues, add tasks, sequential execution with full status tracking
-- ✅ Knowledge base with vector search and hybrid (vector + keyword) retrieval
+- ✅ Knowledge base with vector search and hybrid (vector + BM25 keyword) retrieval
+- ✅ **Corpus-level BM25 Okapi** — real inverse document frequency scoring built from all indexed chunks; replaces the previous per-document approximation
 - ✅ Auto-indexing of Markdown knowledge files with incremental updates
 - ✅ FOFA / ZoomEye search engine integration
+
+### Agent Intelligence
+- ✅ **Persistent memory** — cross-session key-value store (SQLite-backed) with categories (credential, target, vulnerability, fact, note); survives conversation compression; exposed as four agent tools (`store_memory`, `retrieve_memory`, `list_memories`, `delete_memory`)
+- ✅ **Time awareness** — current date/time, timezone, and session age automatically injected into every system prompt; configurable via `agent.time_awareness`; `get_current_time` tool for on-demand queries
 
 ### Integrations & UX
 - ✅ DingTalk and Lark (Feishu) chatbot via persistent long-lived connections
@@ -51,8 +56,10 @@ This roadmap outlines the planned development trajectory for CyberStrikeAI. Item
 ## Near-Term (Next 1–2 Releases)
 
 ### Agent & Orchestration
-- 📋 **Parallel tool execution** — allow the agent to fan out independent tool calls concurrently to reduce total time on multi-step engagements
-- 📋 **Agent memory improvements** — smarter context window management for very long sessions (>200 tool calls)
+- ✅ **Parallel tool execution** — agent fans out independent tool calls concurrently to reduce total time on multi-step engagements
+- ✅ **Agent memory improvements** — persistent cross-session memory store with category tagging; BM25 corpus index for smarter knowledge retrieval
+- 📋 **Memory UI panel** — web interface to view, search, edit, and delete persistent memory entries
+- 📋 **Memory expiry / TTL** — optional time-to-live on memory entries so stale facts are automatically purged
 - 📋 **Structured task templates** — YAML-defined recon/pentest playbooks that the agent can load and execute end-to-end
 - 📋 **Tool chaining macros** — define multi-step pipelines (e.g., subfinder → httpx → nuclei) as a single named operation
 
@@ -97,6 +104,7 @@ This roadmap outlines the planned development trajectory for CyberStrikeAI. Item
 - 📋 **Auto-knowledge ingestion** — automatically import CVE details, exploit-db entries, and security advisories into the knowledge base
 - 📋 **Knowledge base sharing** — export and import knowledge bases as portable bundles
 - 📋 **Semantic deduplication** — automatically merge near-duplicate knowledge items
+- 📋 **BM25 index persistence** — store the BM25 corpus index on disk so it does not need to be rebuilt on every startup
 
 ---
 
@@ -134,7 +142,7 @@ See [README.md](README.md) for development setup instructions.
 
 ---
 
-*Last updated: 2026-03-03. This roadmap is subject to change. Follow the repository to stay updated.*
+*Last updated: 2026-03-04. This roadmap is subject to change. Follow the repository to stay updated.*
 
 ---
 
