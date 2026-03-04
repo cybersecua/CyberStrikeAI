@@ -892,13 +892,20 @@ func setupRoutes(
 	router.Static("/static", "./web/static")
 	router.LoadHTMLGlob("web/templates/*")
 
-	// frontend page
+	// frontend page — use string replacement instead of html/template
+	// because index.html contains inline SVG and JS that break Go's strict html/template parser
 	router.GET("/", func(c *gin.Context) {
 		version := app.config.Version
 		if version == "" {
 			version = "v1.0.0"
 		}
-		c.HTML(http.StatusOK, "index.html", gin.H{"Version": version})
+		data, err := os.ReadFile("web/templates/index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "failed to load page")
+			return
+		}
+		html := strings.Replace(string(data), "{{.Version}}", version, 1)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 	})
 }
 
