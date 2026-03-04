@@ -11,8 +11,17 @@ const (
 	ToolSearchKnowledgeBase    = "search_knowledge_base"
 
 	// Skills tools
-	ToolListSkills    = "list_skills"
-	ToolReadSkill     = "read_skill"
+	ToolListSkills = "list_skills"
+	ToolReadSkill  = "read_skill"
+
+	// Time awareness tool
+	ToolGetCurrentTime = "get_current_time"
+
+	// Persistent memory tools
+	ToolStoreMemory    = "store_memory"
+	ToolRetrieveMemory = "retrieve_memory"
+	ToolListMemories   = "list_memories"
+	ToolDeleteMemory   = "delete_memory"
 )
 
 // IsBuiltinTool reports whether the given tool name is a built-in tool.
@@ -22,7 +31,12 @@ func IsBuiltinTool(toolName string) bool {
 		ToolListKnowledgeRiskTypes,
 		ToolSearchKnowledgeBase,
 		ToolListSkills,
-		ToolReadSkill:
+		ToolReadSkill,
+		ToolGetCurrentTime,
+		ToolStoreMemory,
+		ToolRetrieveMemory,
+		ToolListMemories,
+		ToolDeleteMemory:
 		return true
 	default:
 		return false
@@ -37,5 +51,10 @@ func GetAllBuiltinTools() []string {
 		ToolSearchKnowledgeBase,
 		ToolListSkills,
 		ToolReadSkill,
+		ToolGetCurrentTime,
+		ToolStoreMemory,
+		ToolRetrieveMemory,
+		ToolListMemories,
+		ToolDeleteMemory,
 	}
 }

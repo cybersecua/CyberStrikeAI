@@ -10,7 +10,7 @@
 # ============================================
 
 # Version number displayed in the frontend (optional; if omitted, the default version is shown)
-version: "v1.3.16"
+version: "v1.4.0"
 
 # Server configuration
 server:
@@ -63,6 +63,23 @@ agent:
   parallel_tool_execution: true  # Execute multiple tool calls concurrently (true by default; set false to revert to sequential)
   max_parallel_tools: 0          # Max concurrent tool goroutines per iteration (0 = unlimited)
   tool_retry_count: 0            # Number of retries on transient tool errors (0 = no retries)
+
+  # ── Time Awareness ────────────────────────────────────────────────────────
+  # Automatically prepends the current date/time to every system prompt so
+  # the agent always knows "what time it is".  Also exposes the
+  # get_current_time tool for on-demand time queries.
+  time_awareness:
+    enabled: true        # Inject time context into system prompts (recommended: true)
+    timezone: "UTC"      # IANA timezone name, e.g. "America/New_York", "Europe/London", "Asia/Tokyo"
+
+  # ── Persistent Memory ─────────────────────────────────────────────────────
+  # Long-lived key-value store that survives conversation compression and
+  # persists across server restarts.  Backed by the same SQLite database as
+  # conversations.  Exposes four agent tools: store_memory, retrieve_memory,
+  # list_memories, delete_memory.
+  memory:
+    enabled: true        # Enable the persistent memory store (recommended: true)
+    max_entries: 200     # Hard cap on stored memory entries (0 = unlimited)
 
 # Database configuration
 database:

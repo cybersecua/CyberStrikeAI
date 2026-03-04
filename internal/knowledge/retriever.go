@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"go.uber.org/zap"
 )
 
 // Retriever knowledge retriever
 type Retriever struct {
-	db       *sql.DB
-	embedder *Embedder
-	config   *RetrievalConfig
-	logger   *zap.Logger
+	db        *sql.DB
+	embedder  *Embedder
+	config    *RetrievalConfig
+	logger    *zap.Logger
+	bm25Index *BM25CorpusIndexer // corpus-level BM25 index rebuilt from all chunks
 }
 
 // RetrievalConfig retrieval configuration
@@ -29,12 +29,38 @@ type RetrievalConfig struct {
 
 // NewRetriever creates a new retriever
 func NewRetriever(db *sql.DB, embedder *Embedder, config *RetrievalConfig, logger *zap.Logger) *Retriever {
-	return &Retriever{
-		db:       db,
-		embedder: embedder,
-		config:   config,
-		logger:   logger,
+	r := &Retriever{
+		db:        db,
+		embedder:  embedder,
+		config:    config,
+		logger:    logger,
+		bm25Index: NewBM25CorpusIndexer(),
 	}
+	// Build corpus BM25 index from existing chunks asynchronously.
+	go r.RebuildBM25Index()
+	return r
+}
+
+// RebuildBM25Index fetches all chunk texts from the database and rebuilds the
+// corpus-level BM25 index.  Safe to call concurrently and at any time.
+func (r *Retriever) RebuildBM25Index() {
+	rows, err := r.db.Query(`SELECT id, chunk_text FROM knowledge_embeddings`)
+	if err != nil {
+		r.logger.Warn("BM25 rebuild: query failed", zap.Error(err))
+		return
+	}
+	defer rows.Close()
+
+	chunks := make(map[string]string)
+	for rows.Next() {
+		var id, text string
+		if err := rows.Scan(&id, &text); err != nil {
+			continue
+		}
+		chunks[id] = text
+	}
+	r.bm25Index.Rebuild(chunks)
+	r.logger.Info("BM25 corpus index rebuilt", zap.Int("chunks", len(chunks)))
 }
 
 // UpdateConfig updates the retrieval configuration
@@ -69,61 +95,16 @@ func cosineSimilarity(a, b []float32) float64 {
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// bm25Score calculates the BM25 score (improved version, closer to standard BM25)
-// Note: this is a single-document version of BM25 lacking global IDF, but more accurate than the previous simplified version
+// bm25Score computes the BM25 Okapi score for an arbitrary text against a query.
+// It delegates to the corpus-level BM25CorpusIndexer which holds real IDF weights
+// built from all indexed knowledge chunks.  When the corpus index is empty (e.g.
+// no knowledge base loaded) it automatically falls back to the single-document
+// approximation so the retriever still works correctly.
 func (r *Retriever) bm25Score(query, text string) float64 {
-	queryTerms := strings.Fields(strings.ToLower(query))
-	if len(queryTerms) == 0 {
-		return 0.0
-	}
-
-	textLower := strings.ToLower(text)
-	textTerms := strings.Fields(textLower)
-	if len(textTerms) == 0 {
-		return 0.0
-	}
-
-	// BM25 parameters
-	k1 := 1.5             // term frequency saturation parameter
-	b := 0.75             // length normalization parameter
-	avgDocLength := 100.0 // estimated average document length (for normalization)
-	docLength := float64(len(textTerms))
-
-	score := 0.0
-	for _, term := range queryTerms {
-		// calculate term frequency (TF)
-		termFreq := 0
-		for _, textTerm := range textTerms {
-			if textTerm == term {
-				termFreq++
-			}
-		}
-
-		if termFreq > 0 {
-			// core part of the BM25 formula
-			// TF part: termFreq / (termFreq + k1 * (1 - b + b * (docLength / avgDocLength)))
-			tf := float64(termFreq)
-			lengthNorm := 1 - b + b*(docLength/avgDocLength)
-			tfScore := tf / (tf + k1*lengthNorm)
-
-			// simplified IDF: uses term length as weight (shorter terms are usually more important)
-			// real BM25 requires global document statistics; this uses a simplified version
-			idfWeight := 1.0
-			if len(term) > 2 {
-				// longer terms get slightly lower weight (but in real BM25, rare terms have higher IDF)
-				idfWeight = 1.0 + math.Log(1.0+float64(len(term))/10.0)
-			}
-
-			score += tfScore * idfWeight
-		}
-	}
-
-	// normalize to 0-1 range
-	if len(queryTerms) > 0 {
-		score = score / float64(len(queryTerms))
-	}
-
-	return math.Min(score, 1.0)
+	score := r.bm25Index.ScoreText(query, text)
+	// Normalise to 0–1 for compatibility with the hybrid scoring logic below.
+	// BM25 scores have no upper bound so we apply a soft-max via tanh.
+	return math.Tanh(score)
 }
 
 // Search searches the knowledge base

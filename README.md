@@ -77,7 +77,9 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 📄 Large-result pagination, compression, and searchable archives
 - 🔗 Attack-chain graph, risk scoring, and step-by-step replay
 - 🔒 Password-protected web UI, audit logs, and SQLite persistence
-- 📚 Knowledge base with vector search and hybrid retrieval for security expertise
+- 📚 Knowledge base with vector search and **corpus-level BM25 hybrid retrieval** for security expertise
+- 🧠 **Persistent memory**: key-value store that survives conversation compression and server restarts — agents remember credentials, targets, and findings across sessions
+- ⏰ **Time awareness**: current date/time is automatically injected into every agent system prompt; configurable timezone support
 - 📁 Conversation grouping with pinning, rename, and batch management
 - 🛡️ Vulnerability management with CRUD operations, severity tracking, status workflow, and statistics
 - 📋 Batch task management: create task queues, add multiple tasks, and execute them sequentially
@@ -336,7 +338,8 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 
 ### Knowledge Base
 - **Vector search** – AI agent can automatically search the knowledge base for relevant security knowledge during conversations using the `search_knowledge_base` tool.
-- **Hybrid retrieval** – combines vector similarity search with keyword matching for better accuracy.
+- **Hybrid retrieval** – combines vector similarity search with **corpus-level BM25 Okapi** keyword scoring for better accuracy. The BM25 index is built from all knowledge chunks (with real inverse document frequency) and is automatically rebuilt when new items are indexed.
+- **Configurable hybrid weight** – `knowledge.retrieval.hybrid_weight` blends vector similarity and BM25 scores (1.0 = pure vector, 0.0 = pure keyword).
 - **Auto-indexing** – scans the `knowledge_base/` directory for Markdown files and automatically indexes them with embeddings.
 - **Web management** – create, update, delete knowledge items through the web UI, with category-based organization.
 - **Retrieval logs** – tracks all knowledge retrieval operations for audit and debugging.
@@ -372,6 +375,82 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 - The system supports incremental updates – modified files are re-indexed automatically.
 
 
+### Persistent Memory
+
+The persistent memory system allows agents to remember key facts across conversation compressions and server restarts. Memories are stored in SQLite alongside conversations and are automatically injected into every system prompt.
+
+**Memory categories:**
+
+| Category | Purpose |
+|----------|---------|
+| `credential` | Discovered passwords, tokens, API keys, and secrets |
+| `target` | IP addresses, domains, service ports, and scope items |
+| `vulnerability` | Exploit notes, CVE references, and payload details |
+| `fact` | General observations and intelligence about the environment |
+| `note` | Operational reminders and planning notes |
+
+**Built-in memory tools (available to the AI agent):**
+
+| Tool | Description |
+|------|-------------|
+| `store_memory` | Persist a key/value fact with a category |
+| `retrieve_memory` | Search memories by query text and optional category |
+| `list_memories` | List all stored memories, optionally filtered by category |
+| `delete_memory` | Remove a memory entry by ID |
+
+**Configuration (`config.yaml`):**
+```yaml
+agent:
+  memory:
+    enabled: true      # Enable persistent memory (default: true)
+    max_entries: 200   # Hard cap on entries (0 = unlimited)
+```
+
+The context block injected into each system prompt looks like:
+```
+[CREDENTIALS]
+  • admin_password: P@ssw0rd123
+[TARGETS]
+  • main_target: 192.168.1.100 (Apache 2.4, port 80/443)
+[VULNERABILITIES]
+  • sqli_endpoint: /login.php?id= is injectable (union-based)
+```
+
+---
+
+### Time Awareness
+
+The time awareness feature automatically prepends the current date, time, timezone, and session age to every agent system prompt. This helps the agent:
+- Correctly timestamp vulnerability reports and notes
+- Reason about time-limited engagements
+- Build time-relative plans (schedule scans, set reminders)
+
+**Built-in time tool:**
+
+| Tool | Description |
+|------|-------------|
+| `get_current_time` | Returns current date/time, timezone, Unix timestamp, and session uptime |
+
+**Configuration (`config.yaml`):**
+```yaml
+agent:
+  time_awareness:
+    enabled: true      # Inject time context into prompts (default: true)
+    timezone: "UTC"    # IANA timezone (e.g. "America/New_York", "Europe/London", "Asia/Tokyo")
+```
+
+The injected block looks like:
+```
+<time_context>
+  Current date and time : 2026-03-04 14:30:00 UTC
+  Day of week           : Wednesday
+  Unix timestamp        : 1741099800
+  Session age           : 2h 15m 30s
+</time_context>
+```
+
+---
+
 ### Automation Hooks
 - **REST APIs** – everything the UI uses (auth, conversations, tool runs, monitor, vulnerabilities, roles) is available over JSON.
 - **Role APIs** – manage security testing roles via `/api/roles` endpoints: `GET /api/roles` (list all roles), `GET /api/roles/:name` (get role), `POST /api/roles` (create role), `PUT /api/roles/:name` (update role), `DELETE /api/roles/:name` (delete role). Roles are stored as YAML files in the `roles/` directory and support hot-reload.
@@ -400,11 +479,28 @@ openai:
   api_key: "sk-xxx"
   base_url: "https://api.deepseek.com/v1"
   model: "deepseek-chat"
+  max_total_tokens: 120000  # Token limit shared by memory compression and attack-chain building
 database:
   path: "data/conversations.db"
   knowledge_db_path: "data/knowledge.db"  # Optional: separate DB for knowledge base
 security:
   tools_dir: "tools"
+  tool_description_mode: "full"  # "full" or "short" — controls how much tool info is sent to the LLM
+agent:
+  max_iterations: 120
+  large_result_threshold: 102400  # bytes; results larger than this are stored on disk
+  result_storage_dir: "tmp"
+  parallel_tool_execution: true
+  max_parallel_tools: 0           # 0 = unlimited concurrent tools
+  tool_retry_count: 0
+  # ── Time Awareness ──────────────────────────────────────────────────────────
+  time_awareness:
+    enabled: true      # Prepend current date/time to every system prompt (recommended)
+    timezone: "UTC"    # IANA timezone name, e.g. "America/New_York", "Europe/London"
+  # ── Persistent Memory ───────────────────────────────────────────────────────
+  memory:
+    enabled: true      # Enable cross-session persistent memory store
+    max_entries: 200   # Hard cap on memory entries (0 = unlimited)
 knowledge:
   enabled: false  # Enable knowledge base feature
   base_path: "knowledge_base"  # Path to knowledge base directory
@@ -416,7 +512,7 @@ knowledge:
   retrieval:
     top_k: 5  # Number of top results to return
     similarity_threshold: 0.7  # Minimum similarity score (0-1)
-    hybrid_weight: 0.7  # Weight for vector search (1.0 = pure vector, 0.0 = pure keyword)
+    hybrid_weight: 0.7  # Weight for vector search (1.0 = pure vector, 0.0 = pure BM25 keyword)
 roles_dir: "roles"  # Role configuration directory (relative to config file)
 skills_dir: "skills"  # Skills directory (relative to config file)
 ```
