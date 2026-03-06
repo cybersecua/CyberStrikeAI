@@ -23,10 +23,13 @@ func NewMemoryHandler(memory *agent.PersistentMemory, logger *zap.Logger) *Memor
 }
 
 // ListMemories handles GET /api/memories
-// Query params: category (optional), limit (default 100), search (optional text search)
+// Query params: category (optional), limit (default 100), search (optional text search),
+// entity (optional), include_dismissed (optional bool)
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	categoryStr := c.Query("category")
 	search := c.Query("search")
+	entity := c.Query("entity")
+	includeDismissedStr := c.Query("include_dismissed")
 	limitStr := c.DefaultQuery("limit", "100")
 
 	limit, err := strconv.Atoi(limitStr)
@@ -38,12 +41,23 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	}
 
 	cat := agent.MemoryCategory(strings.TrimSpace(categoryStr))
+	includeDismissed := includeDismissedStr == "true" || includeDismissedStr == "1"
 
 	var entries []*agent.MemoryEntry
-	if search != "" {
-		entries, err = h.memory.Retrieve(search, cat, limit)
+	if entity != "" {
+		entries, err = h.memory.ListByEntity(entity, limit)
+	} else if search != "" {
+		if includeDismissed {
+			entries, err = h.memory.RetrieveAll(search, cat, limit)
+		} else {
+			entries, err = h.memory.Retrieve(search, cat, limit)
+		}
 	} else {
-		entries, err = h.memory.List(cat, limit)
+		if includeDismissed {
+			entries, err = h.memory.ListAll(cat, limit)
+		} else {
+			entries, err = h.memory.List(cat, limit)
+		}
 	}
 	if err != nil {
 		h.logger.Error("failed to list memories", zap.Error(err))
@@ -62,7 +76,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 }
 
 // GetMemoryStats handles GET /api/memories/stats
-// Returns counts per category and total.
+// Returns counts per category, per status, and total.
 func (h *MemoryHandler) GetMemoryStats(c *gin.Context) {
 	categories := []agent.MemoryCategory{
 		agent.MemoryCategoryCredential,
@@ -70,12 +84,16 @@ func (h *MemoryHandler) GetMemoryStats(c *gin.Context) {
 		agent.MemoryCategoryVulnerability,
 		agent.MemoryCategoryFact,
 		agent.MemoryCategoryNote,
+		agent.MemoryCategoryToolRun,
+		agent.MemoryCategoryDiscovery,
+		agent.MemoryCategoryPlan,
 	}
 
 	stats := make(map[string]int)
 	total := 0
 	for _, cat := range categories {
-		entries, err := h.memory.List(cat, 10000)
+		// Use ListAll to count all entries including dismissed ones.
+		entries, err := h.memory.ListAll(cat, 10000)
 		if err != nil {
 			continue
 		}
@@ -84,21 +102,79 @@ func (h *MemoryHandler) GetMemoryStats(c *gin.Context) {
 		total += count
 	}
 
+	// Count by status.
+	statuses := []agent.MemoryStatus{
+		agent.MemoryStatusActive,
+		agent.MemoryStatusConfirmed,
+		agent.MemoryStatusFalsePositive,
+		agent.MemoryStatusDisproven,
+	}
+	statusStats := make(map[string]int)
+	for _, status := range statuses {
+		entries, err := h.memory.FindByStatus(status, "", 10000)
+		if err != nil {
+			continue
+		}
+		statusStats[string(status)] = len(entries)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"total":      total,
 		"categories": stats,
+		"by_status":  statusStats,
 		"enabled":    true,
 	})
 }
 
+// UpdateMemoryStatus handles PATCH /api/memories/:id/status
+// Body: { "status": "confirmed|false_positive|disproven|active" }
+func (h *MemoryHandler) UpdateMemoryStatus(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status := agent.MemoryStatus(strings.TrimSpace(req.Status))
+	switch status {
+	case agent.MemoryStatusActive, agent.MemoryStatusConfirmed, agent.MemoryStatusFalsePositive, agent.MemoryStatusDisproven:
+		// valid
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status: must be active, confirmed, false_positive, or disproven"})
+		return
+	}
+
+	if err := h.memory.SetStatus(id, status); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		h.logger.Error("failed to update memory status", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": id, "status": string(status)})
+}
+
 // CreateMemory handles POST /api/memories
-// Body: { "key": "...", "value": "...", "category": "...", "conversation_id": "..." }
+// Body: { "key": "...", "value": "...", "category": "...", "conversation_id": "...", "entity": "...", "confidence": "..." }
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	var req struct {
 		Key            string `json:"key" binding:"required"`
 		Value          string `json:"value" binding:"required"`
 		Category       string `json:"category"`
 		ConversationID string `json:"conversation_id"`
+		Entity         string `json:"entity"`
+		Confidence     string `json:"confidence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -110,7 +186,12 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 		cat = agent.MemoryCategoryFact
 	}
 
-	entry, err := h.memory.Store(req.Key, req.Value, cat, req.ConversationID)
+	confidence := agent.MemoryConfidence(strings.TrimSpace(req.Confidence))
+	if confidence == "" {
+		confidence = agent.MemoryConfidenceMedium
+	}
+
+	entry, err := h.memory.StoreFull(req.Key, req.Value, cat, req.ConversationID, req.Entity, confidence, agent.MemoryStatusActive)
 	if err != nil {
 		h.logger.Error("failed to create memory", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

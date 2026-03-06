@@ -395,6 +395,44 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 	}
 	toolPool := make(map[string]*toolPoolEntry)
 	var toolPoolMu sync.Mutex
+	// classifyToolResult inspects a tool result and returns the most appropriate
+	// memory category based on content heuristics.
+	classifyToolResult := func(toolName, result string) MemoryCategory {
+		lower := strings.ToLower(result)
+		lowerTool := strings.ToLower(toolName)
+
+		// Credential indicators.
+		if strings.Contains(lower, "password") || strings.Contains(lower, "passwd") ||
+			strings.Contains(lower, "secret") || strings.Contains(lower, "token") ||
+			strings.Contains(lower, "api_key") || strings.Contains(lower, "apikey") ||
+			strings.Contains(lower, "private_key") || strings.Contains(lower, "ssh_key") ||
+			strings.Contains(lower, "credentials") {
+			return MemoryCategoryCredential
+		}
+
+		// Target/service discovery indicators.
+		if strings.Contains(lowerTool, "nmap") || strings.Contains(lowerTool, "scan") ||
+			strings.Contains(lowerTool, "recon") || strings.Contains(lowerTool, "discover") ||
+			strings.Contains(lowerTool, "enumerate") || strings.Contains(lowerTool, "probe") ||
+			strings.Contains(lower, "open port") || strings.Contains(lower, "service detected") ||
+			strings.Contains(lower, "host is up") || strings.Contains(lower, "host up") {
+			return MemoryCategoryTarget
+		}
+
+		// Vulnerability indicators.
+		if strings.Contains(lower, "vulnerability") || strings.Contains(lower, "vulnerable") ||
+			strings.Contains(lower, "cve-") || strings.Contains(lower, "exploit") ||
+			strings.Contains(lower, "injection") || strings.Contains(lower, "xss") ||
+			strings.Contains(lower, "sqli") || strings.Contains(lower, "rce") ||
+			strings.Contains(lower, "lfi") || strings.Contains(lower, "rfi") ||
+			strings.Contains(lower, "overflow") || strings.Contains(lower, "bypass") {
+			return MemoryCategoryVulnerability
+		}
+
+		// Default tool runs to tool_run category.
+		return MemoryCategoryToolRun
+	}
+
 	storeToolPoolMemory := func(key, value string) {
 		if conversationID == "" || value == "" {
 			return
@@ -409,8 +447,33 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 		if len(trimmed) > 3000 {
 			trimmed = trimmed[:3000] + "...[truncated]"
 		}
-		_, _ = pm.Store(key, trimmed, MemoryCategoryNote, conversationID)
+		// Use tool_run category specifically for tool pool state snapshots.
+		_, _ = pm.Store(key, trimmed, MemoryCategoryToolRun, conversationID)
 	}
+
+	storeToolResultMemory := func(toolName, executionID, result string) {
+		if conversationID == "" || result == "" {
+			return
+		}
+		a.mu.RLock()
+		pm := a.persistentMemory
+		a.mu.RUnlock()
+		if pm == nil {
+			return
+		}
+		trimmed := result
+		if len(trimmed) > 2000 {
+			trimmed = trimmed[:2000] + "...[truncated]"
+		}
+		cat := classifyToolResult(toolName, trimmed)
+		key := fmt.Sprintf("tool_result:%s", executionID)
+		if executionID == "" {
+			key = fmt.Sprintf("tool_run:%s:%d", toolName, time.Now().UnixNano())
+		}
+		_, _ = pm.StoreFull(key, fmt.Sprintf("tool=%s result_preview=%s", toolName, trimmed),
+			cat, conversationID, "", MemoryConfidenceMedium, MemoryStatusActive)
+	}
+	_ = storeToolResultMemory // used below in result storage
 	updateToolPool := func(toolCallID, toolName, status, executionID, resultPreview, errorText string) {
 		if toolCallID == "" {
 			return
@@ -442,15 +505,22 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 		entry.UpdatedAt = time.Now().UTC()
 		toolPoolMu.Unlock()
 
-		if executionID != "" && (status == "completed" || status == "failed") {
-			value := fmt.Sprintf("tool=%s status=%s execution_id=%s", toolName, status, executionID)
+		if (status == "completed" || status == "failed") {
+			value := fmt.Sprintf("tool=%s status=%s", toolName, status)
+			if executionID != "" {
+				value += fmt.Sprintf(" execution_id=%s", executionID)
+			}
 			if resultPreview != "" {
 				value += "\npreview: " + resultPreview
 			}
 			if errorText != "" {
 				value += "\nerror: " + errorText
 			}
-			storeToolPoolMemory("tool_result:"+executionID, value)
+			memKey := "tool_result:" + toolName
+			if executionID != "" {
+				memKey = "tool_result:" + executionID
+			}
+			storeToolPoolMemory(memKey, value)
 		}
 	}
 	buildToolPoolContext := func() string {
@@ -582,11 +652,33 @@ Important: When a tool call fails, follow these principles:
 When a tool returns an error, the error message will be included in the tool response. Read it carefully and make reasonable decisions.
 
 Memory management:
-- Use ` + builtin.ToolStoreMemory + ` to save important facts that must not be forgotten (credentials, targets, key findings, notes)
-- Categories: credential, target, vulnerability, fact, note
-- Use ` + builtin.ToolRetrieveMemory + ` to search stored memories; ` + builtin.ToolListMemories + ` to view all entries; ` + builtin.ToolDeleteMemory + ` to remove stale entries
+- Use ` + builtin.ToolStoreMemory + ` to save important facts that must not be forgotten
+- Categories and when to use each:
+  * credential   — discovered passwords, tokens, API keys, SSH keys (store immediately on discovery)
+  * target       — IPs, hostnames, open ports, services, technologies found during scanning
+  * vulnerability — confirmed or suspected vulnerabilities (use record_vulnerability for formal tracking too)
+  * fact         — general observations, version numbers, technology stack details
+  * note         — operational notes, testing strategy, approach reminders
+  * tool_run     — record of a completed scan/tool execution to avoid running the same scan twice
+                   Key format: "nmap_scan_<ip>" or "dirb_<url>"; value = summary of what was found
+  * discovery    — new findings that need further investigation or classification
+  * plan         — testing plan with numbered steps; prefix completed steps with [DONE]
+- Always set the entity field when a memory relates to a specific target (e.g. entity="192.168.1.1")
+- Use ` + builtin.ToolRetrieveMemory + ` to search stored memories; pass entity= to see all info about one target
+- Use ` + builtin.ToolListMemories + ` to view all entries; pass category=tool_run to see what was already scanned
+- Use ` + builtin.ToolDeleteMemory + ` to remove stale entries
+- Use ` + builtin.ToolUpdateMemoryStatus + ` to mark findings as confirmed, false_positive, or disproven:
+  * confirmed     — finding validated with evidence
+  * false_positive — investigated and ruled out; prevents re-investigation
+  * disproven     — fact was found incorrect
 - Store memories proactively — memory survives conversation compression and server restarts
-- Example: after finding admin credentials, immediately call store_memory with category=credential
+- Before starting a scan you already ran, check tool_run memories first to avoid duplicate work
+- Example workflow:
+  1. Before scanning: list_memories category=tool_run to see completed scans
+  2. After nmap scan: store_memory key="nmap_<ip>" value="<findings>" category=tool_run entity="<ip>"
+  3. After finding a vuln: store_memory category=vulnerability + record_vulnerability for full details
+  4. If vuln is false positive: update_memory_status id=<id> status=false_positive
+  5. For planning: store_memory category=plan value="Step 1: recon [DONE]\nStep 2: web scan [DONE]\nStep 3: exploit"
 
 Time awareness:
 - Use ` + builtin.ToolGetCurrentTime + ` whenever you need the exact current time (e.g. for timestamping reports, calculating scan windows)

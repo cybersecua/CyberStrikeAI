@@ -18,10 +18,11 @@ const (
 	ToolGetCurrentTime = "get_current_time"
 
 	// Persistent memory tools
-	ToolStoreMemory    = "store_memory"
-	ToolRetrieveMemory = "retrieve_memory"
-	ToolListMemories   = "list_memories"
-	ToolDeleteMemory   = "delete_memory"
+	ToolStoreMemory        = "store_memory"
+	ToolRetrieveMemory     = "retrieve_memory"
+	ToolListMemories       = "list_memories"
+	ToolDeleteMemory       = "delete_memory"
+	ToolUpdateMemoryStatus = "update_memory_status"
 )
 
 // IsBuiltinTool reports whether the given tool name is a built-in tool.
@@ -36,7 +37,8 @@ func IsBuiltinTool(toolName string) bool {
 		ToolStoreMemory,
 		ToolRetrieveMemory,
 		ToolListMemories,
-		ToolDeleteMemory:
+		ToolDeleteMemory,
+		ToolUpdateMemoryStatus:
 		return true
 	default:
 		return false
@@ -56,5 +58,6 @@ func GetAllBuiltinTools() []string {
 		ToolRetrieveMemory,
 		ToolListMemories,
 		ToolDeleteMemory,
+		ToolUpdateMemoryStatus,
 	}
 }

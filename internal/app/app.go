@@ -931,6 +931,13 @@ func setupRoutes(
 				}
 				app.memoryHandler.DeleteMemory(c)
 			})
+			memoryRoutes.PATCH("/:id/status", func(c *gin.Context) {
+				if app.memoryHandler == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
+					return
+				}
+				app.memoryHandler.UpdateMemoryStatus(c)
+			})
 		}
 
 		// vulnerability management
@@ -1362,19 +1369,41 @@ func registerTimeTools(mcpServer *mcp.Server, ta *agent.TimeAwareness, logger *z
 	logger.Info("time tool registered successfully")
 }
 
-// registerMemoryTools registers the four persistent-memory tools on the MCP server.
+// allMemoryCategories is the complete list of memory category values used in tool schemas.
+var allMemoryCategories = []string{
+	"credential", "target", "vulnerability", "fact", "note",
+	"tool_run", "discovery", "plan",
+}
+
+// registerMemoryTools registers all persistent-memory tools on the MCP server.
 func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logger *zap.Logger) {
 	// ── store_memory ──────────────────────────────────────────────────────────
 	storeMemTool := mcp.Tool{
-		Name:             builtin.ToolStoreMemory,
-		Description:      "Persist an important fact to long-term memory so it is available across conversation compressions and future sessions. Use this for credentials, targets, key findings, and operational notes that must not be forgotten.",
+		Name: builtin.ToolStoreMemory,
+		Description: `Persist an important fact to long-term memory so it is available across conversation compressions and future sessions.
+
+Categories:
+  credential  - Discovered passwords, tokens, API keys, SSH keys
+  target      - IP addresses, hostnames, domains, open ports, services
+  vulnerability - Confirmed or suspected vulnerabilities (use record_vulnerability for formal tracking)
+  fact        - General observations, version numbers, technology stack details
+  note        - Operational notes, testing strategy, reminders
+  tool_run    - Record of a completed tool execution (prevents duplicate scans)
+  discovery   - New findings that need further investigation or classification
+  plan        - Testing plan with steps; prefix completed steps with [DONE]
+
+Optional fields:
+  entity      - The target this memory belongs to (e.g. "192.168.1.1", "api.example.com")
+  confidence  - high | medium | low (default: medium)
+
+Always set entity when the memory is specific to a particular target or host.`,
 		ShortDescription: "Store a key fact to persistent long-term memory",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"key": map[string]interface{}{
 					"type":        "string",
-					"description": "A short, unique label for the fact (e.g. 'admin_password', 'target_ip')",
+					"description": "A short, unique label for the fact (e.g. 'admin_password', 'target_ip', 'nmap_scan_192.168.1.1')",
 				},
 				"value": map[string]interface{}{
 					"type":        "string",
@@ -1382,8 +1411,17 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 				},
 				"category": map[string]interface{}{
 					"type":        "string",
-					"description": "Memory category: credential, target, vulnerability, fact, note",
-					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+					"description": "Memory category: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
+					"enum":        allMemoryCategories,
+				},
+				"entity": map[string]interface{}{
+					"type":        "string",
+					"description": "The target entity this memory belongs to (IP, hostname, URL). Enables entity-based grouping and lookup.",
+				},
+				"confidence": map[string]interface{}{
+					"type":        "string",
+					"description": "Confidence level: high, medium, low (default: medium)",
+					"enum":        []string{"high", "medium", "low"},
 				},
 			},
 			"required": []string{"key", "value"},
@@ -1392,27 +1430,45 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 	mcpServer.RegisterTool(storeMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
 		key, _ := args["key"].(string)
 		value, _ := args["value"].(string)
-		cat := agent.MemoryCategory(args["category"].(string) + "")
+		if key == "" || value == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error: key and value are required"}},
+				IsError: true,
+			}, nil
+		}
+		cat := agent.MemoryCategory("")
+		if cv, ok := args["category"].(string); ok {
+			cat = agent.MemoryCategory(cv)
+		}
 		if cat == "" {
 			cat = agent.MemoryCategoryFact
 		}
 		convID, _ := args["conversation_id"].(string)
-		entry, err := pm.Store(key, value, cat, convID)
+		entity, _ := args["entity"].(string)
+		confidence := agent.MemoryConfidenceMedium
+		if cv, ok := args["confidence"].(string); ok && cv != "" {
+			confidence = agent.MemoryConfidence(cv)
+		}
+		entry, err := pm.StoreFull(key, value, cat, convID, entity, confidence, agent.MemoryStatusActive)
 		if err != nil {
 			return &mcp.ToolResult{
 				Content: []mcp.Content{{Type: "text", Text: "Error storing memory: " + err.Error()}},
 				IsError: true,
 			}, nil
 		}
+		entityInfo := ""
+		if entry.Entity != "" {
+			entityInfo = fmt.Sprintf(" entity=%s", entry.Entity)
+		}
 		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory stored: [%s] %s = %s (id: %s)", entry.Category, entry.Key, entry.Value, entry.ID)}},
+			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory stored: [%s] %s = %s%s (id: %s)", entry.Category, entry.Key, entry.Value, entityInfo, entry.ID)}},
 		}, nil
 	})
 
 	// ── retrieve_memory ───────────────────────────────────────────────────────
 	retrieveMemTool := mcp.Tool{
 		Name:             builtin.ToolRetrieveMemory,
-		Description:      "Search persistent memory for facts matching a query. Returns matching entries ordered by recency. Use this to recall credentials, targets, or findings from previous sessions.",
+		Description:      "Search persistent memory for facts matching a query. Returns active entries ordered by recency (disproven/false-positive entries are hidden unless include_dismissed=true). Use this to recall credentials, targets, or findings from previous sessions.",
 		ShortDescription: "Search persistent memory for matching facts",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1423,8 +1479,16 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 				},
 				"category": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by category: credential, target, vulnerability, fact, note (optional)",
-					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+					"description": "Filter by category (optional). Options: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
+					"enum":        allMemoryCategories,
+				},
+				"entity": map[string]interface{}{
+					"type":        "string",
+					"description": "Filter to a specific entity (IP, hostname, URL) to see all memories about that target",
+				},
+				"include_dismissed": map[string]interface{}{
+					"type":        "boolean",
+					"description": "If true, also return false_positive and disproven entries (default: false)",
 				},
 				"limit": map[string]interface{}{
 					"type":        "integer",
@@ -1440,11 +1504,25 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 		if cv, ok := args["category"].(string); ok {
 			cat = agent.MemoryCategory(cv)
 		}
+		entity, _ := args["entity"].(string)
+		includeDismissed, _ := args["include_dismissed"].(bool)
 		limit := 20
 		if lv, ok := args["limit"].(float64); ok {
 			limit = int(lv)
 		}
-		entries, err := pm.Retrieve(query, cat, limit)
+
+		var entries []*agent.MemoryEntry
+		var err error
+
+		// If entity is specified, use entity-based lookup.
+		if entity != "" {
+			entries, err = pm.ListByEntity(entity, limit)
+		} else if includeDismissed {
+			entries, err = pm.RetrieveAll(query, cat, limit)
+		} else {
+			entries, err = pm.Retrieve(query, cat, limit)
+		}
+
 		if err != nil {
 			return &mcp.ToolResult{
 				Content: []mcp.Content{{Type: "text", Text: "Error retrieving memory: " + err.Error()}},
@@ -1459,8 +1537,16 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Found %d memory entries:\n", len(entries)))
 		for _, e := range entries {
-			sb.WriteString(fmt.Sprintf("  [%s] %s: %s  (id: %s, updated: %s)\n",
-				e.Category, e.Key, e.Value, e.ID, e.UpdatedAt.Format("2006-01-02 15:04")))
+			statusTag := ""
+			if e.Status != agent.MemoryStatusActive {
+				statusTag = fmt.Sprintf(" [%s]", string(e.Status))
+			}
+			entityTag := ""
+			if e.Entity != "" {
+				entityTag = fmt.Sprintf(" entity=%s", e.Entity)
+			}
+			sb.WriteString(fmt.Sprintf("  [%s]%s %s: %s%s  (id: %s, updated: %s)\n",
+				e.Category, statusTag, e.Key, e.Value, entityTag, e.ID, e.UpdatedAt.Format("2006-01-02 15:04")))
 		}
 		return &mcp.ToolResult{
 			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
@@ -1470,15 +1556,23 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 	// ── list_memories ─────────────────────────────────────────────────────────
 	listMemTool := mcp.Tool{
 		Name:             builtin.ToolListMemories,
-		Description:      "List all entries currently stored in persistent memory, optionally filtered by category. Useful for reviewing what has been remembered.",
+		Description:      "List all active entries in persistent memory, optionally filtered by category or entity. Disproven and false-positive entries are excluded by default.",
 		ShortDescription: "List all persistent memory entries",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"category": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by category: credential, target, vulnerability, fact, note (optional, empty = all)",
-					"enum":        []string{"credential", "target", "vulnerability", "fact", "note"},
+					"description": "Filter by category (optional, empty = all). Options: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
+					"enum":        allMemoryCategories,
+				},
+				"entity": map[string]interface{}{
+					"type":        "string",
+					"description": "Filter to a specific entity (IP, hostname, URL) to see all memories about that target",
+				},
+				"include_dismissed": map[string]interface{}{
+					"type":        "boolean",
+					"description": "If true, also show false_positive and disproven entries (default: false)",
 				},
 			},
 			"required": []string{},
@@ -1489,7 +1583,20 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 		if cv, ok := args["category"].(string); ok {
 			cat = agent.MemoryCategory(cv)
 		}
-		entries, err := pm.List(cat, 100)
+		entity, _ := args["entity"].(string)
+		includeDismissed, _ := args["include_dismissed"].(bool)
+
+		var entries []*agent.MemoryEntry
+		var err error
+
+		if entity != "" {
+			entries, err = pm.ListByEntity(entity, 100)
+		} else if includeDismissed {
+			entries, err = pm.ListAll(cat, 100)
+		} else {
+			entries, err = pm.List(cat, 100)
+		}
+
 		if err != nil {
 			return &mcp.ToolResult{
 				Content: []mcp.Content{{Type: "text", Text: "Error listing memories: " + err.Error()}},
@@ -1504,7 +1611,15 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Persistent memory (%d entries):\n", len(entries)))
 		for _, e := range entries {
-			sb.WriteString(fmt.Sprintf("  [%s] %s: %s  (id: %s)\n", e.Category, e.Key, e.Value, e.ID))
+			statusTag := ""
+			if e.Status != agent.MemoryStatusActive {
+				statusTag = fmt.Sprintf(" [%s]", string(e.Status))
+			}
+			entityTag := ""
+			if e.Entity != "" {
+				entityTag = fmt.Sprintf(" entity=%s", e.Entity)
+			}
+			sb.WriteString(fmt.Sprintf("  [%s]%s %s: %s%s  (id: %s)\n", e.Category, statusTag, e.Key, e.Value, entityTag, e.ID))
 		}
 		return &mcp.ToolResult{
 			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
@@ -1514,7 +1629,7 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 	// ── delete_memory ─────────────────────────────────────────────────────────
 	deleteMemTool := mcp.Tool{
 		Name:             builtin.ToolDeleteMemory,
-		Description:      "Delete a specific memory entry by ID. Use this to remove stale, incorrect, or no-longer-relevant facts.",
+		Description:      "Delete a specific memory entry by ID. Use this to remove stale, incorrect, or no-longer-relevant facts. Prefer update_memory_status for false positives and disproven findings.",
 		ShortDescription: "Delete a persistent memory entry by ID",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1543,6 +1658,72 @@ func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logg
 		}
 		return &mcp.ToolResult{
 			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory entry %s deleted.", id)}},
+		}, nil
+	})
+
+	// ── update_memory_status ──────────────────────────────────────────────────
+	updateStatusTool := mcp.Tool{
+		Name: builtin.ToolUpdateMemoryStatus,
+		Description: `Update the status of a memory entry to reflect its current validity.
+
+Statuses:
+  active        - Default; the finding is currently relevant and under investigation
+  confirmed     - The finding has been validated and reproduced with evidence
+  false_positive - The finding was investigated and ruled out (not a real issue)
+  disproven     - The fact was found to be incorrect after further investigation
+
+Use this instead of deleting when:
+  - A vulnerability turns out to be a false positive after manual verification
+  - A credential or fact was found to be wrong
+  - A finding is confirmed with solid proof
+  - You want to prevent re-investigation of ruled-out paths
+
+Dismissed entries (false_positive, disproven) are shown in a separate section
+in the memory context block so the model knows NOT to re-investigate them.`,
+		ShortDescription: "Update the validation status of a memory entry",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "string",
+					"description": "The UUID of the memory entry to update (obtain from list_memories or retrieve_memory)",
+				},
+				"status": map[string]interface{}{
+					"type":        "string",
+					"description": "New status: active, confirmed, false_positive, or disproven",
+					"enum":        []string{"active", "confirmed", "false_positive", "disproven"},
+				},
+			},
+			"required": []string{"id", "status"},
+		},
+	}
+	mcpServer.RegisterTool(updateStatusTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		id, _ := args["id"].(string)
+		statusStr, _ := args["status"].(string)
+		if id == "" || statusStr == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error: id and status are required"}},
+				IsError: true,
+			}, nil
+		}
+		status := agent.MemoryStatus(statusStr)
+		switch status {
+		case agent.MemoryStatusActive, agent.MemoryStatusConfirmed, agent.MemoryStatusFalsePositive, agent.MemoryStatusDisproven:
+			// valid
+		default:
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Error: invalid status '%s'. Must be: active, confirmed, false_positive, or disproven", statusStr)}},
+				IsError: true,
+			}, nil
+		}
+		if err := pm.SetStatus(id, status); err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "Error updating memory status: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory entry %s status updated to '%s'.", id, statusStr)}},
 		}, nil
 	})
 
