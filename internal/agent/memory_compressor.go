@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -260,10 +261,21 @@ func (mc *MemoryCompressor) splitMessages(messages []ChatMessage) (systemMsgs, r
 func (mc *MemoryCompressor) countTotalTokens(systemMsgs, regularMsgs []ChatMessage) int {
 	total := 0
 	for _, msg := range systemMsgs {
-		total += mc.countTokens(msg.Content)
+		total += mc.countMessageTokens(msg)
 	}
 	for _, msg := range regularMsgs {
-		total += mc.countTokens(msg.Content)
+		total += mc.countMessageTokens(msg)
+	}
+	return total
+}
+
+// countMessageTokens counts tokens for a single message, including ToolCalls JSON when present.
+func (mc *MemoryCompressor) countMessageTokens(msg ChatMessage) int {
+	total := mc.countTokens(msg.Content)
+	if len(msg.ToolCalls) > 0 {
+		if data, err := json.Marshal(msg.ToolCalls); err == nil {
+			total += mc.countTokens(string(data))
+		}
 	}
 	return total
 }
@@ -325,7 +337,15 @@ func (mc *MemoryCompressor) summarizeChunk(ctx context.Context, chunk []ChatMess
 	}
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
-		return chunk[0], nil
+		// Concatenate all messages in the chunk rather than discarding all but the first
+		var sb strings.Builder
+		for _, msg := range chunk {
+			sb.WriteString(fmt.Sprintf("%s: %s\n", msg.Role, mc.extractMessageText(msg)))
+		}
+		return ChatMessage{
+			Role:    "assistant",
+			Content: fmt.Sprintf("<context_summary message_count='%d'>[Summary unavailable]\n%s</context_summary>", len(chunk), sb.String()),
+		}, nil
 	}
 
 	return ChatMessage{

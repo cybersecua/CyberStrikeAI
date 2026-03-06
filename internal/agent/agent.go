@@ -617,7 +617,6 @@ Skills Library:
 - Skills content contains complete testing methods, tool usage, bypass techniques, best practices, and other professional skill documentation to help you execute tasks more professionally`
 
 	// If the role has configured skills, hint the AI in the system prompt (but do not hard-code the content)
-	// If the role has configured skills, hint the AI in the system prompt (but do not hard-code the content)
 	if len(roleSkills) > 0 {
 		var skillsHint strings.Builder
 		skillsHint.WriteString("\n\nRecommended Skills for this role:\n")
@@ -834,7 +833,7 @@ Skills Library:
 		persistToolPoolSnapshot()
 
 		// First get available tools for this round and count tools tokens, then compress, to reserve space for tools during compression
-		tools := a.getAvailableTools(roleTools)
+		tools := a.getAvailableTools(ctx, roleTools)
 		toolsTokens := a.countToolsTokens(tools)
 		messages = a.applyMemoryCompression(ctx, messages, toolsTokens)
 		if poolContext := buildToolPoolContext(); poolContext != "" {
@@ -1350,7 +1349,7 @@ Skills Library:
 // getAvailableTools retrieves the list of available tools
 // Dynamically get tool list from MCP server, using short descriptions to reduce token consumption
 // roleTools: list of tools configured for the role (toolKey format); if empty or nil, all tools are used (default role)
-func (a *Agent) getAvailableTools(roleTools []string) []Tool {
+func (a *Agent) getAvailableTools(ctx context.Context, roleTools []string) []Tool {
 	// Build role tool set (for fast lookup)
 	roleToolSet := make(map[string]bool)
 	if len(roleTools) > 0 {
@@ -1394,7 +1393,7 @@ func (a *Agent) getAvailableTools(roleTools []string) []Tool {
 	// Get external MCP tools
 	if a.externalMCPMgr != nil {
 		// Increase timeout to 30 seconds because connecting to remote server via proxy may take longer
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
 		externalTools, err := a.externalMCPMgr.GetAllTools(ctx)
@@ -1539,7 +1538,7 @@ func (a *Agent) convertToOpenAIType(configType string) string {
 	case "bool":
 		return "boolean"
 	case "int", "integer":
-		return "number"
+		return "integer"
 	case "float", "double":
 		return "number"
 	case "string", "array", "object":
@@ -1567,7 +1566,7 @@ func (a *Agent) isRetryableError(err error) bool {
 		"no such host",
 		"network is unreachable",
 		"broken pipe",
-		"EOF",
+		"eof",
 		"read tcp",
 		"write tcp",
 		"dial tcp",

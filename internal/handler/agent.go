@@ -128,8 +128,9 @@ type ChatRequest struct {
 }
 
 const (
-	maxAttachments     = 10
-	chatUploadsDirName = "chat_uploads" // root directory for conversation attachments (relative to current working directory)
+	maxAttachments        = 10
+	maxAttachmentSizeBytes = 50 * 1024 * 1024 // 50 MB per file
+	chatUploadsDirName    = "chat_uploads"     // root directory for conversation attachments (relative to current working directory)
 )
 
 // saveAttachmentsToDateAndConversationDir saves attachments to chat_uploads/YYYY-MM-DD/{conversationID}/, returns the saved path for each file (in the same order as attachments)
@@ -158,6 +159,9 @@ func saveAttachmentsToDateAndConversationDir(attachments []ChatAttachment, conve
 		raw, decErr := attachmentContentToBytes(a)
 		if decErr != nil {
 			return nil, fmt.Errorf("failed to decode attachment %s: %w", a.FileName, decErr)
+		}
+		if len(raw) > maxAttachmentSizeBytes {
+			return nil, fmt.Errorf("attachment %s exceeds maximum allowed size of %d MB", a.FileName, maxAttachmentSizeBytes/(1024*1024))
 		}
 		baseName := filepath.Base(a.FileName)
 		if baseName == "" || baseName == "." {
@@ -198,9 +202,17 @@ func shortRand(n int) string {
 
 func attachmentContentToBytes(a ChatAttachment) ([]byte, error) {
 	content := a.Content
-	if decoded, err := base64.StdEncoding.DecodeString(content); err == nil && len(decoded) > 0 {
+	// Use MimeType to determine encoding: binary/image types are base64-encoded
+	if a.MimeType != "" && (strings.HasPrefix(a.MimeType, "image/") ||
+		a.MimeType == "application/octet-stream" ||
+		a.MimeType == "application/pdf") {
+		decoded, err := base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return nil, fmt.Errorf("base64 decode failed for mime type %s: %w", a.MimeType, err)
+		}
 		return decoded, nil
 	}
+	// For text types (or unknown types without explicit binary mime), treat as plain text
 	return []byte(content), nil
 }
 
@@ -900,7 +912,8 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 
 	// Apply role user prompt and tool configuration
 	finalMessage := req.Message
-	var roleTools []string // role-configured tool list
+	var roleTools []string  // role-configured tool list
+	var roleSkills []string // role-configured skills list (used to prompt AI, but not hardcoded)
 	if req.Role != "" && req.Role != "Default" {
 		if h.config.Roles != nil {
 			if role, exists := h.config.Roles[req.Role]; exists && role.Enabled {
@@ -918,9 +931,10 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 					// Because mcps is MCP server names, not tool list
 					h.logger.Info("Role config uses old mcps field, will use all tools", zap.String("role", req.Role))
 				}
-				// Note: role-configured skills are no longer hardcoded; AI can call them on demand via list_skills and read_skill tools
+				// Capture role skills to hint AI in system prompt (not hardcoded content)
 				if len(role.Skills) > 0 {
-					h.logger.Info("Role has configured skills, AI can call them on demand via tools", zap.String("role", req.Role), zap.Int("skillCount", len(role.Skills)), zap.Strings("skills", role.Skills))
+					roleSkills = role.Skills
+					h.logger.Info("Role has configured skills, will hint AI in system prompt", zap.String("role", req.Role), zap.Int("skillCount", len(roleSkills)), zap.Strings("skills", roleSkills))
 				}
 			}
 		}
@@ -1019,17 +1033,6 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 
 	// Execute Agent Loop with independent context, ensuring task is not interrupted by client disconnect (using finalMessage with role prompt and role tool list)
 	sendEvent("progress", "Analyzing your request...", nil)
-	// Note: skills are not hardcoded, but the system prompt will hint to AI which skills this role recommends
-	var roleSkills []string // role-configured skills list (used to prompt AI, but not hardcoded)
-	if req.Role != "" && req.Role != "Default" {
-		if h.config.Roles != nil {
-			if role, exists := h.config.Roles[req.Role]; exists && role.Enabled {
-				if len(role.Skills) > 0 {
-					roleSkills = role.Skills
-				}
-			}
-		}
-	}
 	result, err := h.agent.AgentLoopWithProgress(taskCtx, finalMessage, agentHistoryMessages, conversationID, progressCallback, roleTools, roleSkills)
 	if err != nil {
 		h.logger.Error("Agent Loop execution failed", zap.Error(err))
