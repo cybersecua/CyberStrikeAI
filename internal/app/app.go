@@ -332,11 +332,8 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		}()
 	}
 
-	// get config file path
-	configPath := "config.yaml"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
-	}
+	// Resolve the effective config path from CLI args; required for settings/auth persistence.
+	configPath := resolveConfigPathFromArgs(os.Args, "config.yaml")
 
 	// initialize Skills manager
 	skillsDir := cfg.SkillsDir
@@ -512,6 +509,42 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	return app, nil
 
+}
+
+// resolveConfigPathFromArgs extracts the config file path from common flag patterns:
+// --config /path/to/file, --config=/path/to/file, -config /path/to/file, -config=/path/to/file.
+func resolveConfigPathFromArgs(args []string, defaultPath string) string {
+	if len(args) == 0 {
+		return defaultPath
+	}
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		switch arg {
+		case "--config", "-config", "-c":
+			if i+1 < len(args) {
+				next := strings.TrimSpace(args[i+1])
+				if next != "" && !strings.HasPrefix(next, "-") {
+					return next
+				}
+			}
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			v := strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
+			if v != "" {
+				return v
+			}
+		}
+		if strings.HasPrefix(arg, "-config=") {
+			v := strings.TrimSpace(strings.TrimPrefix(arg, "-config="))
+			if v != "" {
+				return v
+			}
+		}
+	}
+	return defaultPath
 }
 
 // Run starts the application
