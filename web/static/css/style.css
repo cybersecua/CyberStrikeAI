@@ -11917,10 +11917,9 @@ header {
     font-size: 0.9rem;
     color: var(--text-primary);
     flex: 1 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 60%;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
 }
 
 .memory-entry-cat {

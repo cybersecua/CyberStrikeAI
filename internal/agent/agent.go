@@ -436,44 +436,6 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 		}
 		return fmt.Sprintf("tool_event:%s:%s:%d", normalizedTool, normalizedStatus, eventAt.UnixNano())
 	}
-	// classifyToolResult inspects a tool result and returns the most appropriate
-	// memory category based on content heuristics.
-	classifyToolResult := func(toolName, result string) MemoryCategory {
-		lower := strings.ToLower(result)
-		lowerTool := strings.ToLower(toolName)
-
-		// Credential indicators.
-		if strings.Contains(lower, "password") || strings.Contains(lower, "passwd") ||
-			strings.Contains(lower, "secret") || strings.Contains(lower, "token") ||
-			strings.Contains(lower, "api_key") || strings.Contains(lower, "apikey") ||
-			strings.Contains(lower, "private_key") || strings.Contains(lower, "ssh_key") ||
-			strings.Contains(lower, "credentials") {
-			return MemoryCategoryCredential
-		}
-
-		// Target/service discovery indicators.
-		if strings.Contains(lowerTool, "nmap") || strings.Contains(lowerTool, "scan") ||
-			strings.Contains(lowerTool, "recon") || strings.Contains(lowerTool, "discover") ||
-			strings.Contains(lowerTool, "enumerate") || strings.Contains(lowerTool, "probe") ||
-			strings.Contains(lower, "open port") || strings.Contains(lower, "service detected") ||
-			strings.Contains(lower, "host is up") || strings.Contains(lower, "host up") {
-			return MemoryCategoryTarget
-		}
-
-		// Vulnerability indicators.
-		if strings.Contains(lower, "vulnerability") || strings.Contains(lower, "vulnerable") ||
-			strings.Contains(lower, "cve-") || strings.Contains(lower, "exploit") ||
-			strings.Contains(lower, "injection") || strings.Contains(lower, "xss") ||
-			strings.Contains(lower, "sqli") || strings.Contains(lower, "rce") ||
-			strings.Contains(lower, "lfi") || strings.Contains(lower, "rfi") ||
-			strings.Contains(lower, "overflow") || strings.Contains(lower, "bypass") {
-			return MemoryCategoryVulnerability
-		}
-
-		// Default tool runs to tool_run category.
-		return MemoryCategoryToolRun
-	}
-
 	storeToolPoolMemory := func(key, value string) {
 		if conversationID == "" || value == "" {
 			return
@@ -484,16 +446,40 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 		if pm == nil {
 			return
 		}
-		trimmed := value
-		if len(trimmed) > 3000 {
-			trimmed = trimmed[:3000] + "...[truncated]"
-		}
 		// Use tool_run category specifically for tool pool state snapshots.
-		_, _ = pm.Store(key, trimmed, MemoryCategoryToolRun, conversationID)
+		_, _ = pm.Store(key, value, MemoryCategoryToolRun, conversationID)
 	}
 
-	storeToolResultMemory := func(toolName, executionID, toolCallID, status, result string, eventAt time.Time) {
-		if conversationID == "" || result == "" {
+	buildToolIssueSummary := func(isError bool, errorText, result string) string {
+		errMsg := strings.TrimSpace(errorText)
+		if errMsg != "" {
+			return errMsg
+		}
+		if !isError {
+			return "no issue detected"
+		}
+		lines := strings.Split(result, "\n")
+		for _, line := range lines {
+			t := strings.TrimSpace(line)
+			if t == "" {
+				continue
+			}
+			lower := strings.ToLower(t)
+			if strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "exception") || strings.Contains(lower, "traceback") {
+				return t
+			}
+		}
+		for _, line := range lines {
+			t := strings.TrimSpace(line)
+			if t != "" {
+				return t
+			}
+		}
+		return "tool returned an error without diagnostic text"
+	}
+
+	storeToolResultMemory := func(toolName, executionID, toolCallID, status string, arguments map[string]interface{}, result, errorText string, eventAt time.Time, isError bool) {
+		if conversationID == "" {
 			return
 		}
 		a.mu.RLock()
@@ -502,16 +488,52 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 		if pm == nil {
 			return
 		}
-		trimmed := result
-		if len(trimmed) > 2000 {
-			trimmed = trimmed[:2000] + "...[truncated]"
+
+		if arguments == nil {
+			arguments = map[string]interface{}{}
 		}
-		cat := classifyToolResult(toolName, trimmed)
+		argBytes, err := json.MarshalIndent(arguments, "", "  ")
+		argJSON := "{}"
+		if err == nil {
+			argJSON = string(argBytes)
+		}
+		keys := make([]string, 0, len(arguments))
+		for k := range arguments {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		keysJoined := "(none)"
+		if len(keys) > 0 {
+			keysJoined = strings.Join(keys, ", ")
+		}
+		issueSummary := buildToolIssueSummary(isError, errorText, result)
+		outcome := "success"
+		if status == "failed" || isError {
+			outcome = "error"
+		} else if status == "deferred" {
+			outcome = "deferred"
+		}
+
+		value := fmt.Sprintf(
+			"tool=%s\nstatus=%s\noutcome=%s\nexecution_id=%s\ntool_call_id=%s\nargument_keys=%s\narguments_json=\n%s\nissue_summary=%s\nfull_output=\n%s",
+			toolName,
+			status,
+			outcome,
+			executionID,
+			toolCallID,
+			keysJoined,
+			argJSON,
+			issueSummary,
+			result,
+		)
+		if strings.TrimSpace(errorText) != "" {
+			value += "\nerror_text=\n" + errorText
+		}
+
 		key := buildToolEventMemoryKey(executionID, toolName, toolCallID, status, eventAt)
-		_, _ = pm.StoreFull(key, fmt.Sprintf("tool=%s status=%s result_preview=%s", toolName, status, trimmed),
-			cat, conversationID, "", MemoryConfidenceMedium, MemoryStatusActive)
+		_, _ = pm.StoreFull(key, value, MemoryCategoryToolRun, conversationID, toolName, MemoryConfidenceMedium, MemoryStatusActive)
 	}
-	updateToolPool := func(toolCallID, toolName, status, executionID, resultPreview, errorText string) {
+	updateToolPool := func(toolCallID, toolName, status, executionID, resultPreview, fullResult, errorText string, arguments map[string]interface{}, isError bool) {
 		if toolCallID == "" {
 			return
 		}
@@ -556,16 +578,8 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 			memKey := buildToolEventMemoryKey(executionID, toolName, toolCallID, status, entry.UpdatedAt)
 			storeToolPoolMemory(memKey, value)
 
-			// Persist tool result snapshot in category-aware memory for later retrieval.
-			resultForMemory := resultPreview
-			if status == "failed" && strings.TrimSpace(errorText) != "" {
-				if strings.TrimSpace(resultForMemory) != "" {
-					resultForMemory = errorText + "\n" + resultForMemory
-				} else {
-					resultForMemory = errorText
-				}
-			}
-			storeToolResultMemory(toolName, executionID, toolCallID, status, resultForMemory, entry.UpdatedAt)
+			// Persist full tool result details for auditability and future retrieval.
+			storeToolResultMemory(toolName, executionID, toolCallID, status, arguments, fullResult, errorText, entry.UpdatedAt, isError)
 		}
 	}
 	buildToolPoolContext := func() string {
@@ -879,7 +893,7 @@ Skills Library:
 				deferredInFlight--
 			}
 			if pr.execErr != nil {
-				updateToolPool(pr.toolCallID, pr.toolName, "failed", "", "", pr.execErr.Error())
+				updateToolPool(pr.toolCallID, pr.toolName, "failed", "", "", "", pr.execErr.Error(), pr.arguments, true)
 				sendProgress("tool_result", fmt.Sprintf("Tool %s execution failed", pr.toolName), map[string]interface{}{
 					"toolName":   pr.toolName,
 					"success":    false,
@@ -917,7 +931,7 @@ Skills Library:
 				status = "failed"
 				errText = resultPreview
 			}
-			updateToolPool(pr.toolCallID, pr.toolName, status, execResult.ExecutionID, resultPreview, errText)
+			updateToolPool(pr.toolCallID, pr.toolName, status, execResult.ExecutionID, resultPreview, execResult.Result, errText, pr.arguments, execResult.IsError)
 			sendProgress("tool_result", fmt.Sprintf("Tool %s execution completed", pr.toolName), map[string]interface{}{
 				"toolName":      pr.toolName,
 				"success":       !execResult.IsError,
@@ -1159,7 +1173,7 @@ Skills Library:
 			// display them immediately regardless of execution order.
 			for idx, toolCall := range choice.Message.ToolCalls {
 				toolArgsJSON, _ := json.Marshal(toolCall.Function.Arguments)
-				updateToolPool(toolCall.ID, toolCall.Function.Name, "running", "", "", "")
+				updateToolPool(toolCall.ID, toolCall.Function.Name, "running", "", "", "", "", toolCall.Function.Arguments, false)
 				sendProgress("tool_call", fmt.Sprintf("Calling tool: %s", toolCall.Function.Name), map[string]interface{}{
 					"toolName":     toolCall.Function.Name,
 					"arguments":    string(toolArgsJSON),
@@ -1194,7 +1208,7 @@ Skills Library:
 
 					if pr.deferred {
 						deferredInFlight++
-						updateToolPool(pr.toolCallID, pr.toolName, "deferred", "", "", "")
+						updateToolPool(pr.toolCallID, pr.toolName, "deferred", "", "", "", "", pr.arguments, false)
 						sendProgress("tool_deferred", fmt.Sprintf("Tool %s is still running in background", pr.toolName), map[string]interface{}{
 							"toolName":   pr.toolName,
 							"toolCallId": pr.toolCallID,
@@ -1207,7 +1221,7 @@ Skills Library:
 					}
 
 					if pr.execErr != nil {
-						updateToolPool(pr.toolCallID, pr.toolName, "failed", "", "", pr.execErr.Error())
+						updateToolPool(pr.toolCallID, pr.toolName, "failed", "", "", "", pr.execErr.Error(), pr.arguments, true)
 						sendProgress("tool_result", fmt.Sprintf("Tool %s execution failed", pr.toolName), map[string]interface{}{
 							"toolName":   pr.toolName,
 							"success":    false,
@@ -1233,7 +1247,7 @@ Skills Library:
 						status = "failed"
 						errText = resultPreview
 					}
-					updateToolPool(pr.toolCallID, pr.toolName, status, execResult.ExecutionID, resultPreview, errText)
+					updateToolPool(pr.toolCallID, pr.toolName, status, execResult.ExecutionID, resultPreview, execResult.Result, errText, pr.arguments, execResult.IsError)
 					sendProgress("tool_result", fmt.Sprintf("Tool %s execution completed", pr.toolName), map[string]interface{}{
 						"toolName":      pr.toolName,
 						"success":       !execResult.IsError,
@@ -1300,7 +1314,7 @@ Skills Library:
 					if err != nil {
 						// Build detailed error message to help AI understand the problem and make decisions
 						errorMsg := a.formatToolError(toolCall.Function.Name, toolCall.Function.Arguments, err)
-						updateToolPool(toolCall.ID, toolCall.Function.Name, "failed", "", "", err.Error())
+						updateToolPool(toolCall.ID, toolCall.Function.Name, "failed", "", "", "", err.Error(), toolCall.Function.Arguments, true)
 						messages = append(messages, ChatMessage{
 							Role:       "tool",
 							ToolCallID: toolCall.ID,
@@ -1346,7 +1360,7 @@ Skills Library:
 							status = "failed"
 							errText = resultPreview
 						}
-						updateToolPool(toolCall.ID, toolCall.Function.Name, status, execResult.ExecutionID, resultPreview, errText)
+						updateToolPool(toolCall.ID, toolCall.Function.Name, status, execResult.ExecutionID, resultPreview, execResult.Result, errText, toolCall.Function.Arguments, execResult.IsError)
 						sendProgress("tool_result", fmt.Sprintf("Tool %s execution completed", toolCall.Function.Name), map[string]interface{}{
 							"toolName":      toolCall.Function.Name,
 							"success":       !execResult.IsError,
