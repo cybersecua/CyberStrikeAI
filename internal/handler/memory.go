@@ -140,20 +140,19 @@ func (h *MemoryHandler) GetMemoryStats(c *gin.Context) {
 		total = len(allEntries)
 	}
 
-	// Count by status.
-	statuses := []agent.MemoryStatus{
+	// Count by status using a single grouped query.
+	statusCounts, err := h.memory.CountByStatus("")
+	statusStats := make(map[string]int)
+	for _, status := range []agent.MemoryStatus{
 		agent.MemoryStatusActive,
 		agent.MemoryStatusConfirmed,
 		agent.MemoryStatusFalsePositive,
 		agent.MemoryStatusDisproven,
+	} {
+		statusStats[string(status)] = statusCounts[status]
 	}
-	statusStats := make(map[string]int)
-	for _, status := range statuses {
-		entries, err := h.memory.FindByStatus(status, "", 10000)
-		if err != nil {
-			continue
-		}
-		statusStats[string(status)] = len(entries)
+	if err != nil {
+		h.logger.Warn("failed to count memory status stats", zap.Error(err))
 	}
 
 	c.JSON(http.StatusOK, gin.H{

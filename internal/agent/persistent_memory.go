@@ -488,6 +488,51 @@ func (pm *PersistentMemory) FindByStatus(status MemoryStatus, category MemoryCat
 	return pm.scanRows(rows)
 }
 
+// CountByStatus returns memory entry counts grouped by status.
+// If category is provided, counts are limited to that category.
+func (pm *PersistentMemory) CountByStatus(category MemoryCategory) (map[MemoryStatus]int, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if category != "" {
+		rows, err = pm.db.Query(
+			`SELECT status, COUNT(*) FROM agent_memories
+			 WHERE category = ?
+			 GROUP BY status`,
+			string(category),
+		)
+	} else {
+		rows, err = pm.db.Query(
+			`SELECT status, COUNT(*) FROM agent_memories
+			 GROUP BY status`,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("count by status: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[MemoryStatus]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan status count: %w", err)
+		}
+		counts[MemoryStatus(status)] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate status counts: %w", err)
+	}
+
+	return counts, nil
+}
+
 // UpdateByID updates the key, value, and category of an existing memory entry
 // identified by its UUID. Returns an error if the entry is not found.
 func (pm *PersistentMemory) UpdateByID(id, key, value string, category MemoryCategory) (*MemoryEntry, error) {
