@@ -17,11 +17,11 @@ import (
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/handler"
 	"cyberstrike-ai/internal/knowledge"
-	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/logger"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/openai"
+	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
 	"cyberstrike-ai/internal/skills"
 	"cyberstrike-ai/internal/storage"
@@ -49,7 +49,7 @@ type App struct {
 	memoryHandler      *handler.MemoryHandler    // memory handler (nil when persistent memory is disabled)
 	agentHandler       *handler.AgentHandler     // Agent handler (for updating knowledge base manager)
 	robotHandler       *handler.RobotHandler     // robot handler (DingTalk/Lark/WeCom/Telegram)
-	robotMu            sync.Mutex                 // protects DingTalk/Lark/Telegram long connection cancel
+	robotMu            sync.Mutex                // protects DingTalk/Lark/Telegram long connection cancel
 	dingCancel         context.CancelFunc        // DingTalk Stream cancel function, used to restart on config change
 	larkCancel         context.CancelFunc        // Lark long connection cancel function, used to restart on config change
 	telegramCancel     context.CancelFunc        // Telegram polling cancel function, used to restart on config change
@@ -1514,9 +1514,27 @@ Always set entity when the memory is specific to a particular target or host.`,
 		var entries []*agent.MemoryEntry
 		var err error
 
-		// If entity is specified, use entity-based lookup.
+		// If entity is specified, apply entity filter while respecting
+		// category/include_dismissed semantics (consistent with HTTP API).
 		if entity != "" {
-			entries, err = pm.ListByEntity(entity, limit)
+			entity = strings.TrimSpace(entity)
+			if includeDismissed {
+				entries, err = pm.ListAll(cat, 5000)
+			} else {
+				entries, err = pm.List(cat, 5000)
+			}
+			if err == nil {
+				filtered := make([]*agent.MemoryEntry, 0, len(entries))
+				for _, entry := range entries {
+					if strings.EqualFold(strings.TrimSpace(entry.Entity), entity) {
+						filtered = append(filtered, entry)
+						if len(filtered) >= limit {
+							break
+						}
+					}
+				}
+				entries = filtered
+			}
 		} else if includeDismissed {
 			entries, err = pm.RetrieveAll(query, cat, limit)
 		} else {
@@ -1590,7 +1608,24 @@ Always set entity when the memory is specific to a particular target or host.`,
 		var err error
 
 		if entity != "" {
-			entries, err = pm.ListByEntity(entity, 100)
+			entity = strings.TrimSpace(entity)
+			if includeDismissed {
+				entries, err = pm.ListAll(cat, 5000)
+			} else {
+				entries, err = pm.List(cat, 5000)
+			}
+			if err == nil {
+				filtered := make([]*agent.MemoryEntry, 0, len(entries))
+				for _, entry := range entries {
+					if strings.EqualFold(strings.TrimSpace(entry.Entity), entity) {
+						filtered = append(filtered, entry)
+						if len(filtered) >= 100 {
+							break
+						}
+					}
+				}
+				entries = filtered
+			}
 		} else if includeDismissed {
 			entries, err = pm.ListAll(cat, 100)
 		} else {

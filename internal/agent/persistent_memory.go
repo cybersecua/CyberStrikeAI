@@ -3,6 +3,7 @@ package agent
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -192,9 +193,16 @@ func (pm *PersistentMemory) StoreFull(key, value string, category MemoryCategory
 
 	now := time.Now().UTC()
 
-	// Check for existing entry with same key.
+	// Check for existing entry.
+	// When entity is provided, upsert by (key, entity) to avoid cross-entity overwrite.
+	// When entity is empty, keep backward-compatible behavior for non-entity keys.
 	var existingID string
-	err := pm.db.QueryRow("SELECT id FROM agent_memories WHERE key = ?", key).Scan(&existingID)
+	var err error
+	if strings.TrimSpace(entity) != "" {
+		err = pm.db.QueryRow("SELECT id FROM agent_memories WHERE key = ? AND entity = ? LIMIT 1", key, entity).Scan(&existingID)
+	} else {
+		err = pm.db.QueryRow("SELECT id FROM agent_memories WHERE key = ? AND (entity = '' OR entity IS NULL) LIMIT 1", key).Scan(&existingID)
+	}
 	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("query existing memory: %w", err)
 	}
@@ -726,6 +734,32 @@ func (pm *PersistentMemory) BuildContextBlock() string {
 		sb.WriteString("\n[COMPLETED TOOL RUNS — do not repeat these unless necessary]\n")
 		for _, item := range toolRunEntries {
 			sb.WriteString(fmt.Sprintf("  • %s: %s  (id:%s)\n", item.Key, item.Value, item.ID))
+		}
+	}
+
+	// ── Entity snapshots: quick per-target memory context ───────────────────
+	if len(byEntityActive) > 0 {
+		entities := make([]string, 0, len(byEntityActive))
+		for entity := range byEntityActive {
+			entities = append(entities, entity)
+		}
+		sort.Strings(entities)
+
+		sb.WriteString("\n[ENTITY SNAPSHOT]\n")
+		for _, entity := range entities {
+			entityItems := byEntityActive[entity]
+			sb.WriteString(fmt.Sprintf("  • %s:\n", entity))
+			limit := 3
+			if len(entityItems) < limit {
+				limit = len(entityItems)
+			}
+			for i := 0; i < limit; i++ {
+				item := entityItems[i]
+				sb.WriteString(fmt.Sprintf("      - [%s] %s: %s\n", item.Category, item.Key, item.Value))
+			}
+			if len(entityItems) > limit {
+				sb.WriteString(fmt.Sprintf("      - ... %d more entries\n", len(entityItems)-limit))
+			}
 		}
 	}
 

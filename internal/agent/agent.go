@@ -384,6 +384,25 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 			callback(eventType, message, data)
 		}
 	}
+	buildTaskFocusBlock := func(rawInput string) string {
+		task := strings.TrimSpace(rawInput)
+		if task == "" {
+			return ""
+		}
+		if len(task) > 500 {
+			task = task[:500] + "...[truncated]"
+		}
+		return "<task_focus>\n" +
+			"Primary objective for this run:\n" +
+			task + "\n\n" +
+			"Execution focus rules:\n" +
+			"- Stay on the objective above and avoid unrelated exploration.\n" +
+			"- Before launching a new broad scan, verify whether existing memory/tool_run already covers it.\n" +
+			"- Prefer progressing unresolved high-impact findings over starting new low-value checks.\n" +
+			"- Keep a concise internal plan and mark completed steps in memory category=plan.\n" +
+			"- Stop when objective conditions are satisfied, then deliver a final summary.\n" +
+			"</task_focus>\n"
+	}
 	type toolPoolEntry struct {
 		ToolCallID    string
 		ToolName      string
@@ -733,6 +752,10 @@ Skills Library:
 - It is recommended to use ` + builtin.ToolListSkills + ` to check available skills before performing related tasks, then call ` + builtin.ToolReadSkill + ` as needed to get relevant professional skills
 - For example: if you need to test SQL injection, you can first call ` + builtin.ToolListSkills + ` to check if there is an sql-injection related skill, then call ` + builtin.ToolReadSkill + ` to read that skill's content
 - Skills content contains complete testing methods, tool usage, bypass techniques, best practices, and other professional skill documentation to help you execute tasks more professionally`
+
+	if focusBlock := buildTaskFocusBlock(userInput); focusBlock != "" {
+		systemPrompt = focusBlock + "\n" + systemPrompt
+	}
 
 	// If the role has configured skills, hint the AI in the system prompt (but do not hard-code the content)
 	if len(roleSkills) > 0 {
