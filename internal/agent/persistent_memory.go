@@ -290,22 +290,28 @@ func (pm *PersistentMemory) Retrieve(query string, category MemoryCategory, limi
 	excludeStatuses := []interface{}{string(MemoryStatusDisproven), string(MemoryStatusFalsePositive)}
 
 	if category != "" {
+		args := []interface{}{string(category), likeQ, likeQ}
+		args = append(args, excludeStatuses...)
+		args = append(args, limit)
 		rows, err = pm.db.Query(
 			`SELECT id, key, value, category, status, entity, confidence, conversation_id, created_at, updated_at
 			 FROM agent_memories
 			 WHERE category = ? AND (LOWER(key) LIKE ? OR LOWER(value) LIKE ?)
 			   AND status NOT IN (?, ?)
 			 ORDER BY updated_at DESC LIMIT ?`,
-			append([]interface{}{string(category), likeQ, likeQ}, append(excludeStatuses, limit)...)...,
+			args...,
 		)
 	} else if query != "" {
+		args := []interface{}{likeQ, likeQ}
+		args = append(args, excludeStatuses...)
+		args = append(args, limit)
 		rows, err = pm.db.Query(
 			`SELECT id, key, value, category, status, entity, confidence, conversation_id, created_at, updated_at
 			 FROM agent_memories
 			 WHERE (LOWER(key) LIKE ? OR LOWER(value) LIKE ?)
 			   AND status NOT IN (?, ?)
 			 ORDER BY updated_at DESC LIMIT ?`,
-			append([]interface{}{likeQ, likeQ}, append(excludeStatuses, limit)...)...,
+			args...,
 		)
 	} else {
 		rows, err = pm.db.Query(
