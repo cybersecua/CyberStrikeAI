@@ -345,8 +345,29 @@ func (mc *MemoryCompressor) adjustRecentStartForToolCalls(msgs []ChatMessage, re
 		adjusted--
 	}
 
+	// Ensure at least one user message is included in recent messages to avoid Qwen model error
+	// Qwen models require a user message in the message array, otherwise they return:
+	// "No user query found in messages"
+	hasUserMessage := false
+	for i := adjusted; i < len(msgs); i++ {
+		if strings.EqualFold(msgs[i].Role, "user") {
+			hasUserMessage = true
+			break
+		}
+	}
+
+	// If no user message in recent messages, adjust backwards to include one
+	if !hasUserMessage {
+		for adjusted > 0 {
+			adjusted--
+			if strings.EqualFold(msgs[adjusted].Role, "user") {
+				break
+			}
+		}
+	}
+
 	if adjusted != recentStart {
-		mc.logger.Debug("adjusted recent window to keep tool call context",
+		mc.logger.Debug("adjusted recent window to keep tool call context and user message",
 			zap.Int("original_recent_start", recentStart),
 			zap.Int("adjusted_recent_start", adjusted),
 		)
