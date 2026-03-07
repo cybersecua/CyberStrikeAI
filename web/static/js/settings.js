@@ -350,7 +350,6 @@ async function loadConfig(loadTools = true) {
         // Fill bot config
         const robots = currentConfig.robots || {};
         const wecom = robots.wecom || {};
-        const dingtalk = robots.dingtalk || {};
         const lark = robots.lark || {};
         const telegram = robots.telegram || {};
         const wecomEnabled = document.getElementById('robot-wecom-enabled');
@@ -365,12 +364,6 @@ async function loadConfig(loadTools = true) {
         if (wecomSecret) wecomSecret.value = wecom.secret || '';
         const wecomAgentId = document.getElementById('robot-wecom-agent-id');
         if (wecomAgentId) wecomAgentId.value = wecom.agent_id || '0';
-        const dingtalkEnabled = document.getElementById('robot-dingtalk-enabled');
-        if (dingtalkEnabled) dingtalkEnabled.checked = dingtalk.enabled === true;
-        const dingtalkClientId = document.getElementById('robot-dingtalk-client-id');
-        if (dingtalkClientId) dingtalkClientId.value = dingtalk.client_id || '';
-        const dingtalkClientSecret = document.getElementById('robot-dingtalk-client-secret');
-        if (dingtalkClientSecret) dingtalkClientSecret.value = dingtalk.client_secret || '';
         const larkEnabled = document.getElementById('robot-lark-enabled');
         if (larkEnabled) larkEnabled.checked = lark.enabled === true;
         const larkAppId = document.getElementById('robot-lark-app-id');
@@ -959,11 +952,6 @@ async function applySettings() {
                     corp_id: document.getElementById('robot-wecom-corp-id')?.value.trim() || '',
                     secret: document.getElementById('robot-wecom-secret')?.value.trim() || '',
                     agent_id: parseInt(wecomAgentIdVal, 10) || 0
-                },
-                dingtalk: {
-                    enabled: document.getElementById('robot-dingtalk-enabled')?.checked === true,
-                    client_id: document.getElementById('robot-dingtalk-client-id')?.value.trim() || '',
-                    client_secret: document.getElementById('robot-dingtalk-client-secret')?.value.trim() || ''
                 },
                 lark: {
                     enabled: document.getElementById('robot-lark-enabled')?.checked === true,

@@ -529,7 +529,7 @@ func (h *AgentHandler) AgentLoop(c *gin.Context) {
 	})
 }
 
-// ProcessMessageForRobot is called by robots (WeCom/DingTalk/Lark): same execution path as /api/agent-loop/stream
+// ProcessMessageForRobot is called by robots (WeCom/Lark): same execution path as /api/agent-loop/stream
 // (includes progressCallback and process details), but without sending SSE, and returns the full reply at the end
 func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationID, message, role string) (response string, convID string, err error) {
 	if conversationID == "" {

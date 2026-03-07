@@ -44,7 +44,7 @@ type AppUpdater interface {
 	UpdateKnowledgeComponents(handler *KnowledgeHandler, manager interface{}, retriever interface{}, indexer interface{})
 }
 
-// RobotRestarter robot connection restarter (for restarting DingTalk/Lark long connections after config is applied)
+// RobotRestarter robot connection restarter (for restarting Lark long connections after config is applied)
 type RobotRestarter interface {
 	RestartRobotConnections()
 }
@@ -64,7 +64,7 @@ type ConfigHandler struct {
 	retrieverUpdater           RetrieverUpdater           // retriever updater (optional)
 	knowledgeInitializer       KnowledgeInitializer       // knowledge base initializer (optional)
 	appUpdater                 AppUpdater                 // App updater (optional)
-	robotRestarter             RobotRestarter             // robot connection restarter (optional), restarts DingTalk/Lark when ApplyConfig is called
+	robotRestarter             RobotRestarter             // robot connection restarter (optional), restarts Lark when ApplyConfig is called
 	logger                     *zap.Logger
 	mu                         sync.RWMutex
 	lastEmbeddingConfig        *config.EmbeddingConfig // last embedding model config (for detecting changes)
@@ -148,7 +148,7 @@ func (h *ConfigHandler) SetAppUpdater(updater AppUpdater) {
 	h.appUpdater = updater
 }
 
-// SetRobotRestarter sets the robot connection restarter (used to restart DingTalk/Lark long connections when ApplyConfig is called)
+// SetRobotRestarter sets the robot connection restarter (used to restart Lark long connections when ApplyConfig is called)
 func (h *ConfigHandler) SetRobotRestarter(restarter RobotRestarter) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -591,7 +591,6 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		h.config.Robots = *req.Robots
 		h.logger.Info("Updating robot config",
 			zap.Bool("wecom_enabled", h.config.Robots.Wecom.Enabled),
-			zap.Bool("dingtalk_enabled", h.config.Robots.Dingtalk.Enabled),
 			zap.Bool("lark_enabled", h.config.Robots.Lark.Enabled),
 		)
 	}
@@ -875,10 +874,10 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 		}
 	}
 
-	// Restart DingTalk/Lark long connections so that robot config changes from frontend take effect immediately (without restarting the service)
+	// Restart Lark long connections so that robot config changes from frontend take effect immediately (without restarting the service)
 	if h.robotRestarter != nil {
 		h.robotRestarter.RestartRobotConnections()
-		h.logger.Info("Triggered robot connection restart (DingTalk/Lark)")
+		h.logger.Info("Triggered robot connection restart (Lark)")
 	}
 
 	h.logger.Info("Configuration applied",
@@ -1142,11 +1141,6 @@ func updateRobotsConfig(doc *yaml.Node, cfg config.RobotsConfig) {
 	setStringInMap(wecomNode, "corp_id", cfg.Wecom.CorpID)
 	setStringInMap(wecomNode, "secret", cfg.Wecom.Secret)
 	setIntInMap(wecomNode, "agent_id", int(cfg.Wecom.AgentID))
-
-	dingtalkNode := ensureMap(robotsNode, "dingtalk")
-	setBoolInMap(dingtalkNode, "enabled", cfg.Dingtalk.Enabled)
-	setStringInMap(dingtalkNode, "client_id", cfg.Dingtalk.ClientID)
-	setStringInMap(dingtalkNode, "client_secret", cfg.Dingtalk.ClientSecret)
 
 	larkNode := ensureMap(robotsNode, "lark")
 	setBoolInMap(larkNode, "enabled", cfg.Lark.Enabled)

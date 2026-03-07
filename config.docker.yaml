@@ -76,10 +76,6 @@ robots:
     corp_id: ""
     secret: ""
     agent_id: 0
-  dingtalk:
-    enabled: false
-    client_id: ""
-    client_secret: ""
   lark:
     enabled: false
     app_id: ""

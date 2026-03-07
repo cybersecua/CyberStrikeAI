@@ -48,9 +48,8 @@ type App struct {
 	knowledgeHandler   *handler.KnowledgeHandler // knowledge base handler (for dynamic initialization)
 	memoryHandler      *handler.MemoryHandler    // memory handler (nil when persistent memory is disabled)
 	agentHandler       *handler.AgentHandler     // Agent handler (for updating knowledge base manager)
-	robotHandler       *handler.RobotHandler     // robot handler (DingTalk/Lark/WeCom/Telegram)
-	robotMu            sync.Mutex                // protects DingTalk/Lark/Telegram long connection cancel
-	dingCancel         context.CancelFunc        // DingTalk Stream cancel function, used to restart on config change
+	robotHandler       *handler.RobotHandler     // robot handler (Lark/WeCom/Telegram)
+	robotMu            sync.Mutex                // protects Lark/Telegram long connection cancel
 	larkCancel         context.CancelFunc        // Lark long connection cancel function, used to restart on config change
 	telegramCancel     context.CancelFunc        // Telegram polling cancel function, used to restart on config change
 	indexHTML          string                    // cached index.html content
@@ -413,7 +412,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	}
 	app.indexHTML = string(indexHTMLBytes)
 
-	// Lark/DingTalk long connections (no public network needed), start in background when enabled; will be restarted via RestartRobotConnections when frontend applies config
+	// Lark long connections (no public network needed), start in background when enabled; will be restarted via RestartRobotConnections when frontend applies config
 	app.startRobotConnections()
 
 	// set vulnerability tool registrar (built-in tool, must be set)
@@ -480,7 +479,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		configHandler.SetRetrieverUpdater(knowledgeRetriever)
 	}
 
-	// set robot connection restarter, so new DingTalk/Lark config takes effect without restarting the service
+	// set robot connection restarter, so new Lark config takes effect without restarting the service
 	configHandler.SetRobotRestarter(app)
 
 	// set up routes (using App instance for dynamic handler access)
@@ -573,12 +572,8 @@ func (a *App) Run() error {
 
 // Shutdown shuts down the application
 func (a *App) Shutdown() {
-	// stop DingTalk/Lark/Telegram long connections
+	// stop Lark/Telegram long connections
 	a.robotMu.Lock()
-	if a.dingCancel != nil {
-		a.dingCancel()
-		a.dingCancel = nil
-	}
 	if a.larkCancel != nil {
 		a.larkCancel()
 		a.larkCancel = nil
@@ -602,7 +597,7 @@ func (a *App) Shutdown() {
 	}
 }
 
-// startRobotConnections starts DingTalk/Lark/Telegram long connections based on current config (does not close existing connections, for initial startup only)
+// startRobotConnections starts Lark/Telegram long connections based on current config (does not close existing connections, for initial startup only)
 func (a *App) startRobotConnections() {
 	a.robotMu.Lock()
 	defer a.robotMu.Unlock()
@@ -612,11 +607,6 @@ func (a *App) startRobotConnections() {
 		a.larkCancel = cancel
 		go robot.StartLark(ctx, cfg.Robots.Lark, a.robotHandler, a.logger.Logger)
 	}
-	if cfg.Robots.Dingtalk.Enabled && cfg.Robots.Dingtalk.ClientID != "" && cfg.Robots.Dingtalk.ClientSecret != "" {
-		ctx, cancel := context.WithCancel(context.Background())
-		a.dingCancel = cancel
-		go robot.StartDing(ctx, cfg.Robots.Dingtalk, a.robotHandler, a.logger.Logger)
-	}
 	if cfg.Robots.Telegram.Enabled && cfg.Robots.Telegram.BotToken != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		a.telegramCancel = cancel
@@ -624,13 +614,9 @@ func (a *App) startRobotConnections() {
 	}
 }
 
-// RestartRobotConnections restarts DingTalk/Lark/Telegram long connections so frontend config changes take effect immediately (implements handler.RobotRestarter)
+// RestartRobotConnections restarts Lark/Telegram long connections so frontend config changes take effect immediately (implements handler.RobotRestarter)
 func (a *App) RestartRobotConnections() {
 	a.robotMu.Lock()
-	if a.dingCancel != nil {
-		a.dingCancel()
-		a.dingCancel = nil
-	}
 	if a.larkCancel != nil {
 		a.larkCancel()
 		a.larkCancel = nil
@@ -680,16 +666,15 @@ func setupRoutes(
 		authRoutes.GET("/validate", security.AuthMiddleware(authManager), authHandler.Validate)
 	}
 
-	// robot callbacks (no login required, called by WeCom/DingTalk/Lark servers)
+	// robot callbacks (no login required, called by WeCom/Lark servers)
 	api.GET("/robot/wecom", robotHandler.HandleWecomGET)
 	api.POST("/robot/wecom", robotHandler.HandleWecomPOST)
-	api.POST("/robot/dingtalk", robotHandler.HandleDingtalkPOST)
 	api.POST("/robot/lark", robotHandler.HandleLarkPOST)
 
 	protected := api.Group("")
 	protected.Use(security.AuthMiddleware(authManager))
 	{
-		// robot test (login required): POST /api/robot/test, body: {"platform":"dingtalk","user_id":"test","text":"help"}, used to verify robot logic
+		// robot test (login required): POST /api/robot/test, body: {"platform":"lark","user_id":"test","text":"help"}, used to verify robot logic
 		protected.POST("/robot/test", robotHandler.HandleRobotTest)
 
 		// Agent Loop

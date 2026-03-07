@@ -46,7 +46,7 @@ This roadmap outlines the planned development trajectory for CyberStrikeAI. Item
 - ✅ **Time awareness** — current date/time, timezone, and session age automatically injected into every system prompt; configurable via `agent.time_awareness`; `get_current_time` tool for on-demand queries
 
 ### Integrations & UX
-- ✅ DingTalk and Lark (Feishu) chatbot via persistent long-lived connections
+- ✅ Lark (Feishu) chatbot via persistent long-lived connections
 - ✅ Telegram bot via long-polling — multi-user, progress streaming, MCP tool control, role and conversation management; configurable via Web UI
 - ✅ Web console with terminal, task monitor, conversation groups, and role selector
 - ✅ Conversation grouping — pinning, renaming, batch management

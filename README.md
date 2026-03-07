@@ -85,7 +85,7 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 🎭 Role-based testing: 13 predefined security testing roles (Penetration Testing, CTF, Web App Scanning, etc.) with custom prompts and tool restrictions
 - 🎯 Skills system: 22 predefined security testing skills (SQL injection, XSS, API security, etc.) that can be attached to roles or called on-demand by AI agents
 - 🐳 **Docker lifecycle management**: deploy, update, start, stop, restart, and monitor the Docker stack directly from the System Settings UI or via REST API
-- 📱 **Chatbot**: Telegram, DingTalk and Lark long-lived connections so you can talk to CyberStrikeAI from mobile (see [Robot / Chatbot guide](docs/robot_en.md) for setup and commands)
+- 📱 **Chatbot**: Telegram and Lark long-lived connections so you can talk to CyberStrikeAI from mobile (see [Robot / Chatbot guide](docs/robot_en.md) for setup and commands)
 
 ## Tool Overview
 
@@ -619,7 +619,7 @@ enabled: true
 
 | Document | Description |
 |----------|-------------|
-| [Robot / Chatbot guide](docs/robot_en.md) | Full setup, commands, and troubleshooting for DingTalk & Lark integration. **Follow this to avoid common pitfalls.** |
+| [Robot / Chatbot guide](docs/robot_en.md) | Full setup, commands, and troubleshooting for Lark & Telegram integration. **Follow this to avoid common pitfalls.** |
 | [Docker Guide](docs/docker_en.md) | Docker deployment, lifecycle management, proxy/VPN configuration, and System Settings UI reference. |
 | [Memory Guide](docs/memory_en.md) | Persistent memory system: categories, agent tools, UI panel, and API reference. |
 | [Tool Configuration Guide](tools/README.md) | How to write, configure, and extend YAML tool recipes. |

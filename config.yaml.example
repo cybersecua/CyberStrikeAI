@@ -144,9 +144,9 @@ knowledge:
     hybrid_weight: 0.7              # Hybrid retrieval weight (0–1); weight of vector retrieval — 1.0 = pure vector retrieval, 0.0 = pure keyword retrieval
 
 # ============================================
-# Bot Configuration (WeCom, DingTalk, Lark/Feishu)
+# Bot Configuration (WeCom, Lark/Feishu)
 # ============================================
-# Used to chat with CyberStrikeAI via WeCom/DingTalk/Lark on mobile; no server deployment required.
+# Used to chat with CyberStrikeAI via WeCom/Lark on mobile; no server deployment required.
 # Can be configured under System Settings -> Bot Settings.
 robots:
   wecom: # WeCom (Enterprise WeChat)
@@ -156,10 +156,6 @@ robots:
     corp_id: ""
     secret: ""
     agent_id: 0
-  dingtalk: # DingTalk
-    enabled: false
-    client_id:
-    client_secret:
   lark: # Lark (Feishu)
     enabled: false
     app_id: ""

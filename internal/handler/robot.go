@@ -40,7 +40,7 @@ const (
 	robotCmdVersion     = "version"
 )
 
-// RobotHandler handles bot callbacks for WeCom, DingTalk, Lark, etc.
+// RobotHandler handles bot callbacks for WeCom, Lark, etc.
 type RobotHandler struct {
 	config         *config.Config
 	db             *database.DB
@@ -632,11 +632,11 @@ func (h *RobotHandler) HandleWecomPOST(c *gin.Context) {
 	})
 }
 
-// —————— Test endpoint (requires login; used to verify bot logic without a DingTalk/Lark client) ——————
+// —————— Test endpoint (requires login; used to verify bot logic without a Lark client) ——————
 
 // RobotTestRequest simulates a bot message request.
 type RobotTestRequest struct {
-	Platform string `json:"platform"` // e.g. "dingtalk", "lark", "wecom"
+	Platform string `json:"platform"` // e.g. "lark", "wecom"
 	UserID   string `json:"user_id"`
 	Text     string `json:"text"`
 }
@@ -658,18 +658,6 @@ func (h *RobotHandler) HandleRobotTest(c *gin.Context) {
 	}
 	reply := h.HandleMessage(platform, userID, req.Text)
 	c.JSON(http.StatusOK, gin.H{"reply": reply})
-}
-
-// —————— DingTalk ——————
-
-// HandleDingtalkPOST handles DingTalk event callbacks (Stream mode, etc.); currently a placeholder that returns 200.
-func (h *RobotHandler) HandleDingtalkPOST(c *gin.Context) {
-	if !h.config.Robots.Dingtalk.Enabled {
-		c.JSON(http.StatusOK, gin.H{})
-		return
-	}
-	// DingTalk Stream/event callback format must be parsed per the official docs and replied to asynchronously; returns 200 here for now.
-	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 
 // —————— Lark (Feishu) ——————

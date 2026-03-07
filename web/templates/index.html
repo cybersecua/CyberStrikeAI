@@ -770,7 +770,7 @@
                                     <textarea id="fofa-query" class="info-collect-query-input" rows="1" placeholder='Example: app="Apache" && country="US"'></textarea>
                                     <small class="form-hint">See FOFA documentation for query syntax. Supports &&, ||, (), etc.</small>
                                     <div class="info-collect-presets" aria-label="FOFA Query Examples">
-                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('app=&quot;Apache&quot; &amp;&amp; country=&quot;CN&quot;')" title="Fill example">Apache + China</button>
+                                        <button class="preset-chip" type="button" onclick='applyFofaQueryPreset("app=\"Apache\" && country=\"RU\"")' title="Fill example">Apache + RU</button>
                                         <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('title=&quot;login&quot; &amp;&amp; country=&quot;US&quot;')" title="Fill example">Login page + US</button>
                                         <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('domain=&quot;example.com&quot;')" title="Fill example">Specific domain</button>
                                         <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('ip=&quot;1.1.1.1&quot;')" title="Fill example">Specific IP</button>
@@ -1462,7 +1462,7 @@
                             <div id="settings-section-robots" class="settings-section-content">
                                 <div class="settings-section-header">
                                     <h3>Bot Settings</h3>
-                                    <p class="settings-description">Configure WeCom, DingTalk, Lark, and other bots to chat with CyberStrikeAI on mobile without opening a browser.</p>
+                                    <p class="settings-description">Configure WeCom, Lark, and other bots to chat with CyberStrikeAI on mobile without opening a browser.</p>
                                 </div>
 
                                 <!-- WeCom (Enterprise WeChat) -->
@@ -1495,29 +1495,6 @@
                                         <div class="form-group">
                                             <label for="robot-wecom-agent-id">AgentID</label>
                                             <input type="number" id="robot-wecom-agent-id" placeholder="Application AgentId" />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- DingTalk -->
-                                <div class="settings-subsection">
-                                    <h4>DingTalk</h4>
-                                    <div class="settings-form">
-                                        <div class="form-group">
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" id="robot-dingtalk-enabled" class="modern-checkbox" />
-                                                <span class="checkbox-custom"></span>
-                                                <span class="checkbox-text">Enable DingTalk bot</span>
-                                            </label>
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="robot-dingtalk-client-id">Client ID (AppKey)</label>
-                                            <input type="text" id="robot-dingtalk-client-id" placeholder="DingTalk application AppKey" autocomplete="off" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="robot-dingtalk-client-secret">Client Secret</label>
-                                            <input type="password" id="robot-dingtalk-client-secret" placeholder="DingTalk Application Secret" autocomplete="off" />
-                                            <small class="form-hint">Requires bot capability enabled and stream access configured</small>
                                         </div>
                                     </div>
                                 </div>

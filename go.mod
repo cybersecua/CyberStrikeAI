@@ -12,7 +12,6 @@ require (
 	github.com/larksuite/oapi-sdk-go/v3 v3.4.22
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/modelcontextprotocol/go-sdk v1.2.0
-	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/pkoukk/tiktoken-go v0.1.8
 	go.uber.org/zap v1.26.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -49,7 +48,3 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )
-
-// Fix DingTalk Stream SDK "panic: send on closed channel" issue after long connection drop (screen off/network interrupt)
-// See: https://github.com/open-dingtalk/dingtalk-stream-sdk-go/issues/28
-replace github.com/open-dingtalk/dingtalk-stream-sdk-go => github.com/uouuou/dingtalk-stream-sdk-go v0.0.0-20250626025113-079132acc406

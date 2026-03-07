@@ -25,16 +25,15 @@ type Config struct {
 	Auth        AuthConfig            `yaml:"auth"`
 	ExternalMCP ExternalMCPConfig     `yaml:"external_mcp,omitempty"`
 	Knowledge   KnowledgeConfig       `yaml:"knowledge,omitempty"`
-	Robots      RobotsConfig          `yaml:"robots,omitempty" json:"robots,omitempty"`         // Bot configuration for DingTalk, Lark/Feishu, etc.
+	Robots      RobotsConfig          `yaml:"robots,omitempty" json:"robots,omitempty"`         // Bot configuration for Lark/Feishu, etc.
 	RolesDir    string                `yaml:"roles_dir,omitempty" json:"roles_dir,omitempty"`   // Role configuration file directory (new approach)
 	Roles       map[string]RoleConfig `yaml:"roles,omitempty" json:"roles,omitempty"`           // Backward-compatible: supports defining roles in the main config file
 	SkillsDir   string                `yaml:"skills_dir,omitempty" json:"skills_dir,omitempty"` // Skills configuration file directory
 }
 
-// RobotsConfig holds bot configuration for DingTalk, Lark/Feishu, Telegram, etc.
+// RobotsConfig holds bot configuration for Lark/Feishu, Telegram, etc.
 type RobotsConfig struct {
 	Wecom    RobotWecomConfig    `yaml:"wecom,omitempty" json:"wecom,omitempty"`       // WeCom (Enterprise WeChat)
-	Dingtalk RobotDingtalkConfig `yaml:"dingtalk,omitempty" json:"dingtalk,omitempty"` // DingTalk
 	Lark     RobotLarkConfig     `yaml:"lark,omitempty" json:"lark,omitempty"`         // Lark (Feishu)
 	Telegram RobotTelegramConfig `yaml:"telegram,omitempty" json:"telegram,omitempty"` // Telegram
 }
@@ -47,13 +46,6 @@ type RobotWecomConfig struct {
 	CorpID        string `yaml:"corp_id" json:"corp_id"`               // Enterprise ID
 	Secret        string `yaml:"secret" json:"secret"`                  // Application Secret
 	AgentID       int64  `yaml:"agent_id" json:"agent_id"`              // Application AgentId
-}
-
-// RobotDingtalkConfig holds the DingTalk bot configuration.
-type RobotDingtalkConfig struct {
-	Enabled      bool   `yaml:"enabled" json:"enabled"`
-	ClientID     string `yaml:"client_id" json:"client_id"`         // Application Key (AppKey)
-	ClientSecret string `yaml:"client_secret" json:"client_secret"` // Application Secret
 }
 
 // RobotLarkConfig holds the Lark (Feishu) bot configuration.
