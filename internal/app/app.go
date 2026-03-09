@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/agent"
+	"cyberstrike-ai/internal/claude"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/filemanager"
@@ -399,6 +400,20 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	// create handlers
 	agentHandler := handler.NewAgentHandler(agentInstance, db, cfg, log.Logger)
 	agentHandler.SetSkillsManager(skillsManager) // set Skills manager
+	// Collect all registered MCP tool names so Claude CLI can auto-allow them
+	var mcpToolNames []string
+	for _, t := range mcpServer.GetAllTools() {
+		mcpToolNames = append(mcpToolNames, t.Name)
+	}
+	// Wire Claude CLI adapter so handler can route to Claude CLI when provider is "claude-cli"
+	claudeAdapter := claude.NewStreamAdapter(claude.CLIConfig{
+		Workdir:      cfg.ClaudeCLI.Workdir,
+		MaxTurns:     cfg.ClaudeCLI.MaxTurns,
+		AllowedTools: cfg.ClaudeCLI.AllowedTools,
+		MCPServerURL: cfg.MCPServerURL(),
+		MCPToolNames: mcpToolNames,
+	}, log.Logger)
+	agentHandler.SetClaudeAdapter(claudeAdapter)
 	// set file manager on AgentHandler for auto-registering chat uploads
 	if fileMgr != nil {
 		agentHandler.SetFileManager(fileMgr)
@@ -485,6 +500,22 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		return nil
 	}
 	configHandler.SetSkillsToolRegistrar(skillsRegistrar)
+
+	// set Claude CLI config updater (hot-reload workdir, max_turns, etc.)
+	configHandler.SetClaudeConfigUpdater(func(cliCfg *config.ClaudeCLIConfig) {
+		// Re-collect MCP tool names in case tools were re-registered during config reload
+		var updatedToolNames []string
+		for _, t := range mcpServer.GetAllTools() {
+			updatedToolNames = append(updatedToolNames, t.Name)
+		}
+		agentHandler.UpdateClaudeConfig(claude.CLIConfig{
+			Workdir:      cliCfg.Workdir,
+			MaxTurns:     cliCfg.MaxTurns,
+			AllowedTools: cliCfg.AllowedTools,
+			MCPServerURL: cfg.MCPServerURL(),
+			MCPToolNames: updatedToolNames,
+		})
+	})
 
 	// set memory tool registrar (so memory tools survive config re-apply)
 	if persistentMem != nil {
