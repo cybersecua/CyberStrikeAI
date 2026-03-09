@@ -109,9 +109,9 @@
         if (!label || typeof i18next === 'undefined') return;
         const lang = (i18next.language || DEFAULT_LANG).toLowerCase();
         if (lang.indexOf('zh') === 0) {
-            label.textContent = '中文';
+            label.textContent = i18next.t('lang.zhCN');
         } else {
-            label.textContent = 'English';
+            label.textContent = i18next.t('lang.enUS');
         }
     }
 

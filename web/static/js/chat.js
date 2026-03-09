@@ -755,7 +755,7 @@ function renderMentionSuggestions({ showLoading = false } = {}) {
         const disabledClass = toolEnabled ? '' : 'disabled';
         const badge = tool.isExternal ? '<span class="mention-item-badge">外部</span>' : '<span class="mention-item-badge internal">内置</span>';
         const nameHtml = escapeHtml(tool.name);
-        const description = tool.description && tool.description.length > 0 ? escapeHtml(tool.description) : '暂无描述';
+        const description = tool.description && tool.description.length > 0 ? escapeHtml(tool.description) : (typeof window.t === 'function' ? window.t('chat.noDescription') : '暂无描述');
         const descHtml = `<div class="mention-item-desc">${description}</div>`;
         // 根据工具在当前角色中的启用状态显示状态标签
         const statusLabel = toolEnabled ? '可用' : (tool.roleEnabled !== undefined ? '已禁用（当前角色）' : '已禁用');
@@ -1209,7 +1209,7 @@ function addMessage(role, content, mcpExecutionIds = null, progressId = null, cr
             mcpExecutionIds.forEach((execId, index) => {
                 const detailBtn = document.createElement('button');
                 detailBtn.className = 'mcp-detail-btn';
-                detailBtn.innerHTML = `<span>调用 #${index + 1}</span>`;
+                detailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.callNumber', { n: index + 1 }) : '调用 #' + (index + 1)) + '</span>';
                 detailBtn.onclick = () => showMCPDetail(execId);
                 buttonsContainer.appendChild(detailBtn);
                 // 异步获取工具名称并更新按钮文本
@@ -1265,7 +1265,7 @@ function copyMessageToClipboard(messageDiv, button) {
                     showCopySuccess(button);
                 }).catch(err => {
                     console.error('复制失败:', err);
-                    alert('复制失败，请手动选择内容复制');
+                    alert(typeof window.t === 'function' ? window.t('chat.copyFailedManual') : '复制失败，请手动选择内容复制');
                 });
             }
             return;
@@ -1276,11 +1276,11 @@ function copyMessageToClipboard(messageDiv, button) {
             showCopySuccess(button);
         }).catch(err => {
             console.error('复制失败:', err);
-            alert('复制失败，请手动选择内容复制');
+            alert(typeof window.t === 'function' ? window.t('chat.copyFailedManual') : '复制失败，请手动选择内容复制');
         });
     } catch (error) {
         console.error('复制消息时出错:', error);
-        alert('复制失败，请手动选择内容复制');
+        alert(typeof window.t === 'function' ? window.t('chat.copyFailedManual') : '复制失败，请手动选择内容复制');
     }
 }
 
@@ -1408,32 +1408,31 @@ function renderProcessDetails(messageId, processDetails) {
         // 根据事件类型渲染不同的内容
         let itemTitle = title;
         if (eventType === 'iteration') {
-            itemTitle = `第 ${data.iteration || 1} 轮迭代`;
+            itemTitle = (typeof window.t === 'function' ? window.t('chat.iterationRound', { n: data.iteration || 1 }) : '第 ' + (data.iteration || 1) + ' 轮迭代');
         } else if (eventType === 'thinking') {
-            itemTitle = '🤔 AI思考';
+            itemTitle = '🤔 ' + (typeof window.t === 'function' ? window.t('chat.aiThinking') : 'AI思考');
         } else if (eventType === 'tool_calls_detected') {
-            itemTitle = `🔧 检测到 ${data.count || 0} 个工具调用`;
+            itemTitle = '🔧 ' + (typeof window.t === 'function' ? window.t('chat.toolCallsDetected', { count: data.count || 0 }) : '检测到 ' + (data.count || 0) + ' 个工具调用');
         } else if (eventType === 'tool_call') {
-            const toolName = data.toolName || '未知工具';
+            const toolName = data.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
             const index = data.index || 0;
             const total = data.total || 0;
-            itemTitle = `🔧 调用工具: ${escapeHtml(toolName)} (${index}/${total})`;
+            itemTitle = '🔧 ' + (typeof window.t === 'function' ? window.t('chat.callTool', { name: escapeHtml(toolName), index: index, total: total }) : '调用工具: ' + escapeHtml(toolName) + ' (' + index + '/' + total + ')');
         } else if (eventType === 'tool_result') {
-            const toolName = data.toolName || '未知工具';
+            const toolName = data.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
             const success = data.success !== false;
             const statusIcon = success ? '✅' : '❌';
-            itemTitle = `${statusIcon} 工具 ${escapeHtml(toolName)} 执行${success ? '完成' : '失败'}`;
-            
-            // 如果是知识检索工具，添加特殊标记
+            const execText = success ? (typeof window.t === 'function' ? window.t('chat.toolExecComplete', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行完成') : (typeof window.t === 'function' ? window.t('chat.toolExecFailed', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行失败');
+            itemTitle = statusIcon + ' ' + execText;
             if (toolName === BuiltinTools.SEARCH_KNOWLEDGE_BASE && success) {
-                itemTitle = `📚 ${itemTitle} - 知识检索`;
+                itemTitle = '📚 ' + itemTitle + ' - ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrievalTag') : '知识检索');
             }
         } else if (eventType === 'knowledge_retrieval') {
-            itemTitle = '📚 知识检索';
+            itemTitle = '📚 ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrieval') : '知识检索');
         } else if (eventType === 'error') {
-            itemTitle = '❌ 错误';
+            itemTitle = '❌ ' + (typeof window.t === 'function' ? window.t('chat.error') : '错误');
         } else if (eventType === 'cancelled') {
-            itemTitle = '⛔ 任务已取消';
+            itemTitle = '⛔ ' + (typeof window.t === 'function' ? window.t('chat.taskCancelled') : '任务已取消');
         }
         
         addTimelineItem(timeline, eventType, {
@@ -1509,7 +1508,7 @@ async function updateButtonWithToolName(button, executionId, index) {
         const response = await apiFetch(`/api/monitor/execution/${executionId}`);
         if (response.ok) {
             const exec = await response.json();
-            const toolName = exec.toolName || '未知工具';
+            const toolName = exec.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
             // 格式化工具名称（如果是 name::toolName 格式，只显示 toolName 部分）
             const displayToolName = toolName.includes('::') ? toolName.split('::')[1] : toolName;
             button.querySelector('span').textContent = `${displayToolName} #${index}`;
@@ -1528,7 +1527,7 @@ async function showMCPDetail(executionId) {
         
         if (response.ok) {
             // 填充模态框内容
-            document.getElementById('detail-tool-name').textContent = exec.toolName || 'Unknown';
+            document.getElementById('detail-tool-name').textContent = exec.toolName || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : 'Unknown');
             document.getElementById('detail-execution-id').textContent = exec.id || 'N/A';
             const statusEl = document.getElementById('detail-status');
             const normalizedStatus = (exec.status || 'unknown').toLowerCase();
@@ -1598,22 +1597,22 @@ async function showMCPDetail(executionId) {
                             successText = content.text;
                         }
                         if (!successText) {
-                            successText = '执行成功，未返回可展示的文本内容。';
+                            successText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
                         }
                         successElement.textContent = successText;
                     }
                 }
             } else {
-                responseElement.textContent = '暂无响应数据';
+                responseElement.textContent = typeof window.t === 'function' ? window.t('chat.noResponseData') : '暂无响应数据';
             }
             
             // 显示模态框
             document.getElementById('mcp-detail-modal').style.display = 'block';
         } else {
-            alert('获取详情失败: ' + (exec.error || '未知错误'));
+            alert((typeof window.t === 'function' ? window.t('mcpDetailModal.getDetailFailed') : '获取详情失败') + ': ' + (exec.error || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : '未知错误')));
         }
     } catch (error) {
-        alert('获取详情失败: ' + error.message);
+        alert((typeof window.t === 'function' ? window.t('mcpDetailModal.getDetailFailed') : '获取详情失败') + ': ' + error.message);
     }
 }
 
@@ -2255,7 +2254,7 @@ async function showAttackChain(conversationId) {
     // 清空容器
     const container = document.getElementById('attack-chain-container');
     if (container) {
-        container.innerHTML = '<div class="loading-spinner">加载中...</div>';
+        container.innerHTML = '<div class="loading-spinner">' + (typeof window.t === 'function' ? window.t('chat.loading') : '加载中...') + '</div>';
     }
     
     // 隐藏详情面板
@@ -2355,7 +2354,7 @@ async function loadAttackChain(conversationId) {
         console.error('加载攻击链失败:', error);
         const container = document.getElementById('attack-chain-container');
         if (container) {
-            container.innerHTML = `<div class="error-message">加载失败: ${error.message}</div>`;
+            container.innerHTML = '<div class="error-message">' + (typeof window.t === 'function' ? window.t('chat.loadFailed', { message: error.message }) : '加载失败: ' + error.message) + '</div>';
         }
         // 错误时也重置加载状态
         setAttackChainLoading(conversationId, false);
@@ -2381,7 +2380,7 @@ function renderAttackChain(chainData) {
     container.innerHTML = '';
     
     if (!chainData.nodes || chainData.nodes.length === 0) {
-        container.innerHTML = '<div class="empty-message">暂无攻击链数据</div>';
+        container.innerHTML = '<div class="empty-message">' + (typeof window.t === 'function' ? window.t('chat.noAttackChainData') : '暂无攻击链数据') + '</div>';
         return;
     }
     
@@ -5544,9 +5543,9 @@ async function loadGroupConversations(groupId, searchQuery = '') {
         
         // 显示加载状态
         if (searchQuery) {
-            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">搜索中...</div>';
+            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' + (typeof window.t === 'function' ? window.t('chat.searching') : '搜索中...') + '</div>';
         } else {
-            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">加载中...</div>';
+            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' + (typeof window.t === 'function' ? window.t('chat.loading') : '加载中...') + '</div>';
         }
 
         // 构建URL，如果有搜索关键词则添加search参数
@@ -5558,7 +5557,7 @@ async function loadGroupConversations(groupId, searchQuery = '') {
         const response = await apiFetch(url);
         if (!response.ok) {
             console.error(`Failed to load conversations for group ${groupId}:`, response.statusText);
-            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">加载失败，请重试</div>';
+            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' + (typeof window.t === 'function' ? window.t('chat.loadFailedRetry') : '加载失败，请重试') + '</div>';
             return;
         }
         
@@ -5572,7 +5571,7 @@ async function loadGroupConversations(groupId, searchQuery = '') {
         // 验证返回的数据类型
         if (!Array.isArray(groupConvs)) {
             console.error(`Invalid response for group ${groupId}:`, groupConvs);
-            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">数据格式错误</div>';
+            list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' + (typeof window.t === 'function' ? window.t('chat.dataFormatError') : '数据格式错误') + '</div>';
             return;
         }
         

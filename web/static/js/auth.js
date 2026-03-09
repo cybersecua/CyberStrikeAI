@@ -250,13 +250,13 @@ async function bootstrapApp() {
 
 // 通用工具函数
 function getStatusText(status) {
-    const statusMap = {
-        'pending': '等待中',
-        'running': '执行中',
-        'completed': '已完成',
-        'failed': '失败'
-    };
-    return statusMap[status] || status;
+    if (typeof window.t !== 'function') {
+        const fallback = { pending: '等待中', running: '执行中', completed: '已完成', failed: '失败' };
+        return fallback[status] || status;
+    }
+    const keyMap = { pending: 'mcpDetailModal.statusPending', running: 'mcpDetailModal.statusRunning', completed: 'mcpDetailModal.statusCompleted', failed: 'mcpDetailModal.statusFailed' };
+    const key = keyMap[status];
+    return key ? window.t(key) : status;
 }
 
 function formatDuration(ms) {

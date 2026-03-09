@@ -4411,6 +4411,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 		},
 	}
 
+	enrichSpecWithI18nKeys(spec)
 	c.JSON(http.StatusOK, spec)
 }
 

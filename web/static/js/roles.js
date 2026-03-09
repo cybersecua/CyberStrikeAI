@@ -1433,6 +1433,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRoleSelectorDisplay();
 });
 
+// 语言切换后刷新角色选择器显示（默认/自定义角色名）
+document.addEventListener('languagechange', () => {
+    updateRoleSelectorDisplay();
+});
+
 // 获取当前选中的角色（供chat.js使用）
 function getCurrentRole() {
     return currentRole || '';
