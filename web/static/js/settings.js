@@ -1,4 +1,18 @@
 // Settings-related functionality
+
+// Toggle visibility of provider-specific fields based on selected provider
+window.toggleProviderFields = function() {
+    const provider = document.getElementById('llm-provider')?.value || 'openai';
+    const openaiWrapper = document.getElementById('openai-fields-wrapper');
+    const claudeWrapper = document.getElementById('claude-cli-fields-wrapper');
+    if (openaiWrapper) {
+        openaiWrapper.style.display = provider === 'claude-cli' ? 'none' : '';
+    }
+    if (claudeWrapper) {
+        claudeWrapper.style.display = provider === 'claude-cli' ? '' : 'none';
+    }
+};
+
 let currentConfig = null;
 let allTools = [];
 let dockerLogStreamTimer = null;
@@ -393,6 +407,22 @@ async function loadConfig(loadTools = true) {
         
         currentConfig = await response.json();
         
+        // Fill provider selector (top-level field)
+        const providerEl = document.getElementById('llm-provider');
+        if (providerEl) {
+            providerEl.value = currentConfig.provider || 'openai';
+            if (window.toggleProviderFields) window.toggleProviderFields();
+        }
+
+        // Fill Claude CLI config
+        const claudeCli = currentConfig.claude_cli || {};
+        const claudeWorkdirEl = document.getElementById('claude-cli-workdir');
+        if (claudeWorkdirEl) claudeWorkdirEl.value = claudeCli.workdir || '';
+        const claudeMaxTurnsEl = document.getElementById('claude-cli-max-turns');
+        if (claudeMaxTurnsEl) claudeMaxTurnsEl.value = claudeCli.max_turns || 0;
+        const claudeAllowedToolsEl = document.getElementById('claude-cli-allowed-tools');
+        if (claudeAllowedToolsEl) claudeAllowedToolsEl.value = (claudeCli.allowed_tools || []).join(', ');
+
         // Fill OpenAI config
         document.getElementById('openai-api-key').value = currentConfig.openai.api_key || '';
         document.getElementById('openai-base-url').value = currentConfig.openai.base_url || '';
@@ -1045,31 +1075,34 @@ async function applySettings() {
             input.classList.remove('error');
         });
         
-        // Validate required fields
+        // Validate required fields (only for OpenAI provider)
+        const selectedProvider = document.getElementById('llm-provider')?.value || 'openai';
         const apiKey = document.getElementById('openai-api-key').value.trim();
         const baseUrl = document.getElementById('openai-base-url').value.trim();
         const model = document.getElementById('openai-model').value.trim();
-        
+
         let hasError = false;
-        
-        if (!apiKey) {
-            document.getElementById('openai-api-key').classList.add('error');
-            hasError = true;
-        }
-        
-        if (!baseUrl) {
-            document.getElementById('openai-base-url').classList.add('error');
-            hasError = true;
-        }
-        
-        if (!model) {
-            document.getElementById('openai-model').classList.add('error');
-            hasError = true;
-        }
-        
-        if (hasError) {
-            alert('Please fill in all required fields (fields marked with *)');
-            return;
+
+        if (selectedProvider === 'openai') {
+            if (!apiKey) {
+                document.getElementById('openai-api-key').classList.add('error');
+                hasError = true;
+            }
+
+            if (!baseUrl) {
+                document.getElementById('openai-base-url').classList.add('error');
+                hasError = true;
+            }
+
+            if (!model) {
+                document.getElementById('openai-model').classList.add('error');
+                hasError = true;
+            }
+
+            if (hasError) {
+                alert('Please fill in all required fields (fields marked with *)');
+                return;
+            }
         }
         
         // Collect config
@@ -1100,7 +1133,17 @@ async function applySettings() {
         };
         
         const wecomAgentIdVal = document.getElementById('robot-wecom-agent-id')?.value.trim();
+        // Collect Claude CLI config
+        const claudeCliAllowedToolsRaw = document.getElementById('claude-cli-allowed-tools')?.value.trim() || '';
+        const claudeCliAllowedTools = claudeCliAllowedToolsRaw ? claudeCliAllowedToolsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
         const config = {
+            provider: selectedProvider,
+            claude_cli: {
+                workdir: document.getElementById('claude-cli-workdir')?.value.trim() || '',
+                max_turns: parseInt(document.getElementById('claude-cli-max-turns')?.value) || 0,
+                allowed_tools: claudeCliAllowedTools
+            },
             openai: {
                 api_key: apiKey,
                 base_url: baseUrl,

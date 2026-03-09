@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"cyberstrike-ai/internal/agent"
+	"cyberstrike-ai/internal/claude"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/filemanager"
@@ -75,6 +76,7 @@ type AgentHandler struct {
 	tasks            *AgentTaskManager
 	batchTaskManager *BatchTaskManager
 	config           *config.Config // config reference for accessing role information
+	claudeAdapter    *claude.StreamAdapter // Claude CLI adapter (nil when not configured)
 	knowledgeManager interface {    // knowledge base manager interface
 		LogRetrieval(conversationID, messageID, query, riskType string, retrievedItems []string) error
 	}
@@ -99,6 +101,18 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 		tasks:            NewAgentTaskManager(),
 		batchTaskManager: batchTaskManager,
 		config:           cfg,
+	}
+}
+
+// SetClaudeAdapter sets the Claude CLI adapter for routing messages through Claude CLI.
+func (h *AgentHandler) SetClaudeAdapter(adapter *claude.StreamAdapter) {
+	h.claudeAdapter = adapter
+}
+
+// UpdateClaudeConfig hot-reloads the Claude CLI configuration.
+func (h *AgentHandler) UpdateClaudeConfig(cfg claude.CLIConfig) {
+	if h.claudeAdapter != nil {
+		h.claudeAdapter.UpdateConfig(cfg)
 	}
 }
 
@@ -1239,6 +1253,54 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 	taskStatus := "completed"
 	defer h.tasks.FinishTask(conversationID, taskStatus)
 
+	// ── Provider routing: Claude CLI vs OpenAI ──────────────────────────────
+	if h.config.EffectiveProvider() == "claude-cli" && h.claudeAdapter != nil {
+		h.logger.Info("Routing to Claude CLI provider", zap.String("conversationId", conversationID))
+		sendEvent("progress", "Routing to Claude CLI...", map[string]interface{}{"provider": "claude-cli"})
+
+		// Build system prompt from role context (reuse the same role prompt logic)
+		systemPrompt := ""
+		if req.Role != "" && req.Role != "Default" {
+			if role, exists := h.config.Roles[req.Role]; exists && role.Enabled && role.UserPrompt != "" {
+				systemPrompt = role.UserPrompt
+			}
+		}
+
+		resultText, _, claudeErr := h.claudeAdapter.RunPrompt(taskCtx, finalMessage, systemPrompt, conversationID, sendEvent)
+		if claudeErr != nil {
+			taskStatus = "failed"
+			errorMsg := "Claude CLI execution failed: " + claudeErr.Error()
+			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
+			if assistantMessageID != "" {
+				h.db.Exec("UPDATE messages SET content = ? WHERE id = ?", errorMsg, assistantMessageID)
+				h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errorMsg, nil)
+			}
+			sendEvent("error", errorMsg, map[string]interface{}{"conversationId": conversationID, "messageId": assistantMessageID})
+			sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
+			return
+		}
+
+		// Save result to DB
+		if assistantMsg != nil {
+			if _, updateErr := h.db.Exec("UPDATE messages SET content = ? WHERE id = ?", resultText, assistantMessageID); updateErr != nil {
+				h.logger.Error("Failed to update assistant message (Claude CLI)", zap.Error(updateErr))
+			}
+		} else {
+			if _, addErr := h.db.AddMessage(conversationID, "assistant", resultText, nil); addErr != nil {
+				h.logger.Error("Failed to save assistant message (Claude CLI)", zap.Error(addErr))
+			}
+		}
+
+		sendEvent("response", resultText, map[string]interface{}{
+			"conversationId": conversationID,
+			"messageId":      assistantMessageID,
+			"provider":       "claude-cli",
+		})
+		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
+		return
+	}
+
+	// ── Default: OpenAI agent loop ──────────────────────────────────────────
 	// Execute Agent Loop with independent context, ensuring task is not interrupted by client disconnect (using finalMessage with role prompt and role tool list)
 	sendEvent("progress", "Analyzing your request...", nil)
 	result, err := h.agent.AgentLoopWithProgress(taskCtx, finalMessage, agentHistoryMessages, conversationID, progressCallback, roleTools, roleSkills)
