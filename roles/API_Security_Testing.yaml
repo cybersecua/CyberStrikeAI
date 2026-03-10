@@ -19,10 +19,4 @@ tools:
     - search_knowledge_base
     - list_skills
     - read_skill
-skills:
-    - api-security-testing
-    - business-logic-testing
-    - xss-testing
-    - ssrf-testing
-    - xpath-injection-testing
 enabled: true

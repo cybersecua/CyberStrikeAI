@@ -24,19 +24,4 @@ tools:
     - search_knowledge_base
     - list_skills
     - read_skill
-    - api-fuzzer
-    - api-schema-analyzer
-    - arjun
-    - autorecon
-    - cat
-    - exec
-    - jwt-analyzer
-    - nmap-advanced
-    - nuclei-bitrix
-    - paramspider
-    - x8
-    - zap
-    - zoomeye_search
-    - delete_memory
-    - retrieve_memory
 enabled: true

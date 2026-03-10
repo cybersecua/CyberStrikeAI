@@ -1,0 +1,10 @@
+stormapi.su
+manage.stormapi.su
+storm-queue.stormapi.su
+testmanage.stormapi.su
+teststormdesk.stormapi.su
+webgroza.stormapi.su
+stormdesk.stormapi.su
+testsound.stormapi.su
+harbor.stormapi.su
+share.stormapi.su

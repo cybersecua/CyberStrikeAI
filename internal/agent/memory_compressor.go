@@ -33,40 +33,49 @@ const (
 	// Max number of preserved key findings appended to chunk summary.
 	defaultMaxPreservedFindings = 12
 
-	summaryPromptTemplate = `You are an assistant responsible for performing context compression for a security agent. Your task is to compress scan data while keeping all critical penetration testing information intact.
+	summaryPromptTemplate = `You are an assistant responsible for performing context compression for a security agent. Your task is to compress scan data while keeping all critical penetration testing information intact AND preserving references to original tool outputs.
 
 Key information that MUST be preserved:
 - Discovered vulnerabilities and potential attack paths
-- Scan results and tool outputs (may be compressed but core findings must be retained)
+- Scan results and tool outputs (compress but retain core findings + execution_id references)
 - Obtained access credentials, tokens, or authentication details
 - System architecture insights and potential weaknesses
-- Current assessment progress
+- Current assessment progress and plan status
 - Failed attempts and dead ends (to avoid repeated work)
 - All decision records regarding testing strategy
-- Knowledge base citations and retrieved exploitation techniques (record which knowledge items were consulted and their key findings)
-- Tool selection rationale derived from retrieved knowledge (retain the "why" behind tool choices)
+- Tool names and exact commands/parameters used
+- Knowledge base citations and retrieved exploitation techniques
 
 Compression guidelines:
 - Retain precise technical details (URLs, paths, parameters, payloads, etc.)
 - Compress verbose tool outputs into overviews but retain key findings
+- CRITICAL: When a tool result mentions an execution_id (e.g. "exec-abc123"), ALWAYS preserve it in format [ref:execution_id] so the agent can call query_execution_result to read the full output later
 - Record version numbers and identified technologies/components
 - Retain original error messages that may indicate vulnerabilities
-- Consolidate duplicate or similar findings into a single conclusion with a common description
-- When summarising knowledge-base lookups, preserve the category name, knowledge item title, and key technique or payload referenced
+- Consolidate duplicate or similar findings with common description
+- Preserve tool names and key parameters for each action taken
+- When summarising knowledge-base lookups, preserve the category name, knowledge item title, and key technique referenced
 
-Remember: another security agent will rely on this summary to continue testing and must be able to take over seamlessly without losing any operational context, including knowledge that was previously retrieved from the knowledge base.
+Remember: another security agent will rely on this summary to continue testing. They must be able to:
+1. Understand what was done and found
+2. Retrieve any full tool output via execution_id references
+3. Take over seamlessly without repeating work
 
 Conversation segments to compress:
 %s
 
 Output format requirements (strict):
-1) [TASK_STATUS] — objective progress and current state in 2-4 bullets.
-2) [KEY_TECHNICAL_FINDINGS] — critical findings only (vulns, credentials, exploitable paths, decisive errors).
-3) [NEXT_BEST_ACTIONS] — concrete next actions (max 5 bullets), aligned to current objective.
+1) [TOOLS_EXECUTED] — list of tools run with key parameters and execution references, e.g.:
+   - nmap -sV -sC 10.0.0.1 → 3 open ports (22,80,443) [ref:exec-abc123]
+   - sqlmap -u http://... → no injection found [ref:exec-def456]
+2) [TASK_STATUS] — objective progress and current state in 2-4 bullets.
+3) [KEY_TECHNICAL_FINDINGS] — critical findings only (vulns, credentials, exploitable paths, decisive errors).
+4) [NEXT_BEST_ACTIONS] — concrete next actions (max 5 bullets), aligned to current objective.
 
 Rules:
 - Keep it compact and actionable; remove duplicate details.
 - Preserve exact indicators when available (host/IP/URL/port/CVE/payload/parameter/path).
+- ALWAYS preserve [ref:execution_id] markers — these are the agent's lifeline to retrieve full outputs.
 - Do not include narrative filler.
 - If no findings exist, explicitly state "No confirmed findings yet".`
 )
@@ -227,7 +236,7 @@ func (mc *MemoryCompressor) CompressHistory(ctx context.Context, messages []Chat
 	}
 
 	totalTokens := mc.countTotalTokens(systemMsgs, regularMsgs)
-	if totalTokens <= int(float64(effectiveMax)*0.9) {
+	if totalTokens <= int(float64(effectiveMax)*0.85) {
 		return messages, false, nil
 	}
 
@@ -272,6 +281,33 @@ func (mc *MemoryCompressor) CompressHistory(ctx context.Context, messages []Chat
 	finalMessages = append(finalMessages, systemMsgs...)
 	finalMessages = append(finalMessages, compressed...)
 	finalMessages = append(finalMessages, recentMsgs...)
+
+	// ── Post-compression safety check ────────────────────────────────────
+	// Token estimation can drift from server-side counting. Apply a 2%
+	// safety margin and, if still over, aggressively drop oldest
+	// compressed summaries until we fit.
+	safeMax := int(float64(effectiveMax) * 0.98)
+	finalTokens := mc.countTotalTokens(systemMsgs, append(compressed, recentMsgs...))
+	if finalTokens > safeMax && len(compressed) > 0 {
+		mc.logger.Warn("post-compression token count still exceeds safe limit, trimming oldest summaries",
+			zap.Int("finalTokens", finalTokens),
+			zap.Int("safeMax", safeMax),
+			zap.Int("compressedChunks", len(compressed)),
+		)
+		for finalTokens > safeMax && len(compressed) > 0 {
+			compressed = compressed[1:] // drop oldest summary
+			finalTokens = mc.countTotalTokens(systemMsgs, append(compressed, recentMsgs...))
+		}
+		// Rebuild final messages
+		finalMessages = make([]ChatMessage, 0, len(systemMsgs)+len(compressed)+len(recentMsgs))
+		finalMessages = append(finalMessages, systemMsgs...)
+		finalMessages = append(finalMessages, compressed...)
+		finalMessages = append(finalMessages, recentMsgs...)
+		mc.logger.Info("post-compression trimming complete",
+			zap.Int("finalTokens", finalTokens),
+			zap.Int("remainingChunks", len(compressed)),
+		)
+	}
 
 	return finalMessages, true, nil
 }

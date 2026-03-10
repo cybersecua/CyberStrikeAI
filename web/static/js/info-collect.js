@@ -1190,11 +1190,9 @@ function switchReconTab(engine) {
         tab.classList.toggle('active', tab.dataset.engine === engine);
     });
 
-    // Show/hide panels
+    // Show/hide panels (CSS handles display via .active class)
     document.querySelectorAll('.recon-panel').forEach(panel => {
-        const isActive = panel.id === 'recon-panel-' + engine;
-        panel.style.display = isActive ? '' : 'none';
-        panel.classList.toggle('active', isActive);
+        panel.classList.toggle('active', panel.id === 'recon-panel-' + engine);
     });
 }
 

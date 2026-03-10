@@ -77,7 +77,6 @@ hydra <target> <service> <username> <username_file> <password> <password_file> <
 ```
 
 ## Model Usage Guidance
-- Use this tool only within authorized scope.
 - Prefer the narrowest target/argument set before broad scans.
 - For long outputs, store results and summarize key findings.
 - Validate parameter formats before execution to reduce command errors.

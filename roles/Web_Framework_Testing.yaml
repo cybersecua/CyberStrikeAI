@@ -18,9 +18,4 @@ tools:
     - search_knowledge_base
     - list_skills
     - read_skill
-skills:
-    - business-logic-testing
-    - xxe-testing
-    - xss-testing
-    - vulnerability-assessment
 enabled: true

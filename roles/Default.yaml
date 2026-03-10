@@ -3,15 +3,10 @@ description: Default role — no additional user prompt; uses all enabled tools.
 user_prompt: ""
 icon: "\U0001F535"
 skills:
-    - xxe-testing
-    - xss-testing
-    - vulnerability-assessment
+    - android-reverse-engineering
     - api-security-testing
+    - bitrix24-webhook-exploitation
     - business-logic-testing
-    - network-penetration-testing
-    - security-automation
-    - sql-injection-testing
-    - xpath-injection-testing
     - cloud-security-audit
     - command-injection-testing
     - container-security-testing
@@ -22,7 +17,14 @@ skills:
     - incident-response
     - ldap-injection-testing
     - mobile-app-security-testing
+    - network-penetration-testing
     - secure-code-review
+    - security-automation
     - security-awareness-training
+    - sql-injection-testing
     - ssrf-testing
+    - vulnerability-assessment
+    - xpath-injection-testing
+    - xss-testing
+    - xxe-testing
 enabled: true

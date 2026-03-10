@@ -11323,42 +11323,57 @@ header {
 /* ==================== Recon Engine Tabs ==================== */
 .recon-tabs {
     display: flex;
-    gap: 4px;
-    margin-bottom: 16px;
+    gap: 2px;
+    margin-bottom: 20px;
     border-bottom: 2px solid var(--border-color);
-    padding-bottom: 0;
+    padding: 0;
 }
 
 .recon-tab {
-    padding: 8px 20px;
+    padding: 10px 24px;
     background: none;
     border: none;
     border-bottom: 3px solid transparent;
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
-    transition: color 0.2s, border-color 0.2s;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
     margin-bottom: -2px;
+    border-radius: 6px 6px 0 0;
+    white-space: nowrap;
 }
 
 .recon-tab:hover {
     color: var(--text-primary);
+    background: var(--bg-tertiary);
 }
 
 .recon-tab.active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+    background: none;
 }
 
 .recon-tab.disabled {
-    color: var(--text-secondary);
-    opacity: 0.4;
+    color: var(--text-muted);
+    opacity: 0.5;
     cursor: not-allowed;
+    pointer-events: none;
 }
 
 .recon-tab.disabled:hover {
-    color: var(--text-secondary);
+    color: var(--text-muted);
+    background: none;
+}
+
+.recon-panel {
+    display: none;
+}
+
+.recon-panel.active {
+    display: block;
 }
 
 /* Recon key validation status in settings */
