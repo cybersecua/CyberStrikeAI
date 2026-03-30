@@ -148,7 +148,7 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 **一条命令部署：**
 ```bash
 git clone https://github.com/Ed1s0nZ/CyberStrikeAI.git
-cd CyberStrikeAI-main
+cd CyberStrikeAI
 chmod +x run.sh && ./run.sh
 ```
 
