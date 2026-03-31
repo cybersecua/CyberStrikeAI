@@ -1,12 +1,172 @@
 const progressTaskState = new Map();
 let activeTaskInterval = null;
-const ACTIVE_TASK_REFRESH_INTERVAL = 10000; // Check every 10 seconds
+const ACTIVE_TASK_REFRESH_INTERVAL = 10000; // 10秒检查一次
 const TASK_FINAL_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'completed']);
-let monitorAutoRefreshInterval = null;
-const MONITOR_AUTO_REFRESH_INTERVAL = 3000;
 
-// Map from tool call ID to DOM element, used to update execution status
+// 当前界面语言对应的 BCP 47 标签（与时间格式化一致）
+function getCurrentTimeLocale() {
+    if (typeof window.__locale === 'string' && window.__locale.length) {
+        return window.__locale.startsWith('zh') ? 'zh-CN' : 'en-US';
+    }
+    if (typeof i18next !== 'undefined' && i18next.language) {
+        return (i18next.language || '').startsWith('zh') ? 'zh-CN' : 'en-US';
+    }
+    return 'zh-CN';
+}
+
+// toLocaleTimeString 选项：中文用 24 小时制，避免仍显示 AM/PM
+function getTimeFormatOptions() {
+    const loc = getCurrentTimeLocale();
+    const base = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    if (loc === 'zh-CN') {
+        base.hour12 = false;
+    }
+    return base;
+}
+
+// 将后端下发的进度文案转为当前语言的翻译（中英双向映射，切换语言后能跟上）
+function translateProgressMessage(message) {
+    if (!message || typeof message !== 'string') return message;
+    if (typeof window.t !== 'function') return message;
+    const trim = message.trim();
+    const map = {
+        // 中文
+        '正在调用AI模型...': 'progress.callingAI',
+        '最后一次迭代：正在生成总结和下一步计划...': 'progress.lastIterSummary',
+        '总结生成完成': 'progress.summaryDone',
+        '正在生成最终回复...': 'progress.generatingFinalReply',
+        '达到最大迭代次数，正在生成总结...': 'progress.maxIterSummary',
+        '正在分析您的请求...': 'progress.analyzingRequestShort',
+        '开始分析请求并制定测试策略': 'progress.analyzingRequestPlanning',
+        '正在启动 Eino DeepAgent...': 'progress.startingEinoDeepAgent',
+        // 英文（与 en-US.json 一致，避免后端/缓存已是英文时无法随语言切换）
+        'Calling AI model...': 'progress.callingAI',
+        'Last iteration: generating summary and next steps...': 'progress.lastIterSummary',
+        'Summary complete': 'progress.summaryDone',
+        'Generating final reply...': 'progress.generatingFinalReply',
+        'Max iterations reached, generating summary...': 'progress.maxIterSummary',
+        'Analyzing your request...': 'progress.analyzingRequestShort',
+        'Analyzing your request and planning test strategy...': 'progress.analyzingRequestPlanning',
+        'Starting Eino DeepAgent...': 'progress.startingEinoDeepAgent'
+    };
+    if (map[trim]) return window.t(map[trim]);
+    const einoAgentRe = /^\[Eino\]\s*(.+)$/;
+    const einoM = trim.match(einoAgentRe);
+    if (einoM) {
+        return window.t('progress.einoAgent', { name: einoM[1] });
+    }
+    const callingToolPrefixCn = '正在调用工具: ';
+    const callingToolPrefixEn = 'Calling tool: ';
+    if (trim.indexOf(callingToolPrefixCn) === 0) {
+        const name = trim.slice(callingToolPrefixCn.length);
+        return window.t('progress.callingTool', { name: name });
+    }
+    if (trim.indexOf(callingToolPrefixEn) === 0) {
+        const name = trim.slice(callingToolPrefixEn.length);
+        return window.t('progress.callingTool', { name: name });
+    }
+    return message;
+}
+if (typeof window !== 'undefined') {
+    window.translateProgressMessage = translateProgressMessage;
+}
+
+// 存储工具调用ID到DOM元素的映射，用于更新执行状态
 const toolCallStatusMap = new Map();
+
+// 模型流式输出缓存：progressId -> { assistantId, buffer }
+const responseStreamStateByProgressId = new Map();
+
+// AI 思考流式输出：progressId -> Map(streamId -> { itemId, buffer })
+const thinkingStreamStateByProgressId = new Map();
+
+// Eino 子代理回复流式：progressId -> Map(streamId -> { itemId, buffer })
+const einoAgentReplyStreamStateByProgressId = new Map();
+
+// 工具输出流式增量：progressId::toolCallId -> { itemId, buffer }
+const toolResultStreamStateByKey = new Map();
+function toolResultStreamKey(progressId, toolCallId) {
+    return String(progressId) + '::' + String(toolCallId);
+}
+
+/** Eino 多代理：时间线标题前加 [agentId]，标明哪一代理产生该工具调用/结果/回复 */
+function timelineAgentBracketPrefix(data) {
+    if (!data || data.einoAgent == null) return '';
+    const s = String(data.einoAgent).trim();
+    return s ? ('[' + s + '] ') : '';
+}
+
+/** 主/子代理视觉区分：左边框与浅底色（与工具黄/绿状态并存时由具体项类型覆盖次要边） */
+function applyEinoTimelineRole(item, data) {
+    if (!item || !data) return;
+    const role = data.einoRole;
+    if (role === 'orchestrator' || role === 'sub') {
+        item.dataset.einoRole = role;
+        item.classList.add('timeline-eino-role-' + role);
+    }
+    const scope = data.einoScope;
+    if (scope === 'main' || scope === 'sub') {
+        item.dataset.einoScope = scope;
+        item.classList.add('timeline-eino-scope-' + scope);
+    }
+}
+
+// markdown 渲染（用于最终合并渲染；流式增量阶段用纯转义避免部分语法不稳定）
+const assistantMarkdownSanitizeConfig = {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr'],
+    ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'class'],
+    ALLOW_DATA_ATTR: false,
+};
+
+function escapeHtmlLocal(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function formatAssistantMarkdownContent(text) {
+    const raw = text == null ? '' : String(text);
+    if (typeof marked !== 'undefined') {
+        try {
+            marked.setOptions({ breaks: true, gfm: true });
+            const parsed = marked.parse(raw);
+            if (typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(parsed, assistantMarkdownSanitizeConfig);
+            }
+            return parsed;
+        } catch (e) {
+            return escapeHtmlLocal(raw).replace(/\n/g, '<br>');
+        }
+    }
+    return escapeHtmlLocal(raw).replace(/\n/g, '<br>');
+}
+
+function updateAssistantBubbleContent(assistantMessageId, content, renderMarkdown) {
+    const assistantElement = document.getElementById(assistantMessageId);
+    if (!assistantElement) return;
+    const bubble = assistantElement.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 保留复制按钮：addMessage 会把按钮 append 在 message-bubble 里
+    const copyBtn = bubble.querySelector('.message-copy-btn');
+    if (copyBtn) copyBtn.remove();
+
+    const newContent = content == null ? '' : String(content);
+    const html = renderMarkdown
+        ? formatAssistantMarkdownContent(newContent)
+        : escapeHtmlLocal(newContent).replace(/\n/g, '<br>');
+
+    bubble.innerHTML = html;
+
+    // 更新原始内容（给复制功能用）
+    assistantElement.dataset.originalContent = newContent;
+
+    if (typeof wrapTablesInBubble === 'function') {
+        wrapTablesInBubble(bubble);
+    }
+    if (copyBtn) bubble.appendChild(copyBtn);
+}
 
 const conversationExecutionTracker = {
     activeConversations: new Set(),
@@ -29,6 +189,23 @@ const conversationExecutionTracker = {
 
 function isConversationTaskRunning(conversationId) {
     return conversationExecutionTracker.isRunning(conversationId);
+}
+
+/** 距底部该像素内视为「跟随底部」；流式输出时仅在此情况下自动滚到底部，避免用户上滑查看历史时被强制拉回 */
+const CHAT_SCROLL_PIN_THRESHOLD_PX = 120;
+
+/** wasPinned 须在 DOM 追加内容之前计算，否则 scrollHeight 变大后会误判 */
+function scrollChatMessagesToBottomIfPinned(wasPinned) {
+    const messagesDiv = document.getElementById('chat-messages');
+    if (!messagesDiv || !wasPinned) return;
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function isChatMessagesPinnedToBottom() {
+    const messagesDiv = document.getElementById('chat-messages');
+    if (!messagesDiv) return true;
+    const { scrollTop, scrollHeight, clientHeight } = messagesDiv;
+    return scrollHeight - clientHeight - scrollTop <= CHAT_SCROLL_PIN_THRESHOLD_PX;
 }
 
 function registerProgressTask(progressId, conversationId = null) {
@@ -59,11 +236,15 @@ function markProgressCancelling(progressId) {
     }
 }
 
-function finalizeProgressTask(progressId, finalLabel = 'Done') {
+function finalizeProgressTask(progressId, finalLabel) {
     const stopBtn = document.getElementById(`${progressId}-stop-btn`);
     if (stopBtn) {
         stopBtn.disabled = true;
-        stopBtn.textContent = finalLabel;
+        if (finalLabel !== undefined && finalLabel !== '') {
+            stopBtn.textContent = finalLabel;
+        } else {
+            stopBtn.textContent = typeof window.t === 'function' ? window.t('tasks.statusCompleted') : '已完成';
+        }
     }
     progressTaskState.delete(progressId);
 }
@@ -78,7 +259,7 @@ async function requestCancel(conversationId) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(result.error || 'CancelFailed');
+        throw new Error(result.error || (typeof window.t === 'function' ? window.t('tasks.cancelFailed') : '取消失败'));
     }
     return result;
 }
@@ -96,15 +277,21 @@ function addProgressMessage() {
     
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble progress-container';
+    const progressTitleText = typeof window.t === 'function' ? window.t('chat.progressInProgress') : '渗透测试进行中...';
+    const stopTaskText = typeof window.t === 'function' ? window.t('tasks.stopTask') : '停止任务';
+    const collapseDetailText = typeof window.t === 'function' ? window.t('tasks.collapseDetail') : '收起详情';
     bubble.innerHTML = `
         <div class="progress-header">
-            <span class="progress-title">🔍 Penetration testing in progress...</span>
+            <span class="progress-title">🔍 ${progressTitleText}</span>
             <div class="progress-actions">
-                <button class="progress-stop" id="${id}-stop-btn" onclick="cancelProgressTask('${id}')">Stop Task</button>
-                <button class="progress-toggle" onclick="toggleProgressDetails('${id}')">Collapse Details</button>
+                <button class="progress-stop" id="${id}-stop-btn" onclick="cancelProgressTask('${id}')">${stopTaskText}</button>
+                <button class="progress-toggle" onclick="toggleProgressDetails('${id}')">${collapseDetailText}</button>
             </div>
         </div>
         <div class="progress-timeline expanded" id="${id}-timeline"></div>
+        <div class="progress-footer">
+            <button type="button" class="progress-toggle progress-toggle-bottom" onclick="toggleProgressDetails('${id}')">${collapseDetailText}</button>
+        </div>
     `;
     
     contentWrapper.appendChild(bubble);
@@ -116,71 +303,79 @@ function addProgressMessage() {
     return id;
 }
 
-// Toggle progress details display
+// 切换进度详情显示
 function toggleProgressDetails(progressId) {
     const timeline = document.getElementById(progressId + '-timeline');
-    const toggleBtn = document.querySelector(`#${progressId} .progress-toggle`);
+    const toggleBtns = document.querySelectorAll(`#${progressId} .progress-toggle`);
     
-    if (!timeline || !toggleBtn) return;
+    if (!timeline || !toggleBtns.length) return;
     
+    const expandT = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+    const collapseT = typeof window.t === 'function' ? window.t('tasks.collapseDetail') : '收起详情';
     if (timeline.classList.contains('expanded')) {
         timeline.classList.remove('expanded');
-        toggleBtn.textContent = 'Expand Details';
+        toggleBtns.forEach((btn) => { btn.textContent = expandT; });
     } else {
         timeline.classList.add('expanded');
-        toggleBtn.textContent = 'Collapse Details';
+        toggleBtns.forEach((btn) => { btn.textContent = collapseT; });
     }
 }
 
-// Collapse all progress details
+// 编排器开始输出最终回复时隐藏整条进度消息（迭代阶段保持展开可见；此处整行收起而非仅折叠时间线）
+function hideProgressMessageForFinalReply(progressId) {
+    if (!progressId) return;
+    const el = document.getElementById(progressId);
+    if (el) {
+        el.style.display = 'none';
+    }
+}
+
+// 折叠所有进度详情
 function collapseAllProgressDetails(assistantMessageId, progressId) {
-    // Collapse details integrated into MCP area
+    // 折叠集成到MCP区域的详情
     if (assistantMessageId) {
         const detailsId = 'process-details-' + assistantMessageId;
         const detailsContainer = document.getElementById(detailsId);
         if (detailsContainer) {
             const timeline = detailsContainer.querySelector('.progress-timeline');
             if (timeline) {
-                // Ensure expanded class is removed (regardless)
+                // 确保移除expanded类（无论是否包含）
                 timeline.classList.remove('expanded');
-                const btn = document.querySelector(`#${assistantMessageId} .process-detail-btn`);
-                if (btn) {
-                    btn.innerHTML = '<span>Expand Details</span>';
-                }
+                document.querySelectorAll(`#${assistantMessageId} .process-detail-btn`).forEach((btn) => {
+                    btn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情') + '</span>';
+                });
             }
         }
     }
     
-    // Collapse standalone details components (created by convertProgressToDetails)
-    // Find all details components starting with "details-"
+    // 折叠独立的详情组件（通过convertProgressToDetails创建的）
+    // 查找所有以details-开头的详情组件
     const allDetails = document.querySelectorAll('[id^="details-"]');
     allDetails.forEach(detail => {
         const timeline = detail.querySelector('.progress-timeline');
-        const toggleBtn = detail.querySelector('.progress-toggle');
+        const toggleBtns = detail.querySelectorAll('.progress-toggle');
         if (timeline) {
             timeline.classList.remove('expanded');
-            if (toggleBtn) {
-                toggleBtn.textContent = 'Expand Details';
-            }
+            const expandT = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+            toggleBtns.forEach((btn) => { btn.textContent = expandT; });
         }
     });
     
-    // Collapse original progress message (if it still exists)
+    // 折叠原始的进度消息（如果还存在）
     if (progressId) {
         const progressTimeline = document.getElementById(progressId + '-timeline');
-        const progressToggleBtn = document.querySelector(`#${progressId} .progress-toggle`);
+        const progressToggleBtns = document.querySelectorAll(`#${progressId} .progress-toggle`);
         if (progressTimeline) {
             progressTimeline.classList.remove('expanded');
-            if (progressToggleBtn) {
-                progressToggleBtn.textContent = 'Expand Details';
-            }
+            const expandT = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+            progressToggleBtns.forEach((btn) => { btn.textContent = expandT; });
         }
     }
 }
 
-// Get current assistant message ID (used for done event)
+// 获取当前助手消息ID（用于done事件）
 function getAssistantId() {
-    // Get ID from the most recent assistant message
+    // 从最近的助手消息中获取ID
     const messages = document.querySelectorAll('.message.assistant');
     if (messages.length > 0) {
         return messages[messages.length - 1].id;
@@ -188,48 +383,84 @@ function getAssistantId() {
     return null;
 }
 
-// Integrate progress details into the tool call area
-function integrateProgressToMCPSection(progressId, assistantMessageId) {
+// 将进度详情集成到工具调用区域（流式阶段助手消息不挂 mcp 条，结束时在此创建，避免图二整行 MCP 芯片样式）
+function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecutionIds) {
     const progressElement = document.getElementById(progressId);
     if (!progressElement) return;
+
+    const mcpIds = Array.isArray(mcpExecutionIds) ? mcpExecutionIds : [];
     
-    // Get timeline content
+    // 获取时间线内容
     const timeline = document.getElementById(progressId + '-timeline');
     let timelineHTML = '';
     if (timeline) {
         timelineHTML = timeline.innerHTML;
     }
     
-    // Get assistant message element
+    // 获取助手消息元素
     const assistantElement = document.getElementById(assistantMessageId);
     if (!assistantElement) {
         removeMessage(progressId);
         return;
     }
-    
-    // Find MCP call area
-    const mcpSection = assistantElement.querySelector('.mcp-call-section');
-    if (!mcpSection) {
-        // If no MCP area, place details component below message
-        convertProgressToDetails(progressId, assistantMessageId);
+
+    const contentWrapper = assistantElement.querySelector('.message-content');
+    if (!contentWrapper) {
+        removeMessage(progressId);
         return;
     }
     
-    // Get timeline content
+    // 查找或创建 MCP 区域
+    let mcpSection = assistantElement.querySelector('.mcp-call-section');
+    if (!mcpSection) {
+        mcpSection = document.createElement('div');
+        mcpSection.className = 'mcp-call-section';
+        const mcpLabel = document.createElement('div');
+        mcpLabel.className = 'mcp-call-label';
+        mcpLabel.textContent = '📋 ' + (typeof window.t === 'function' ? window.t('chat.penetrationTestDetail') : '渗透测试详情');
+        mcpSection.appendChild(mcpLabel);
+        const buttonsContainerInit = document.createElement('div');
+        buttonsContainerInit.className = 'mcp-call-buttons';
+        mcpSection.appendChild(buttonsContainerInit);
+        contentWrapper.appendChild(mcpSection);
+    }
+    
+    // 获取时间线内容
     const hasContent = timelineHTML.trim().length > 0;
     
-    // Check if timeline has error items
+    // 检查时间线中是否有错误项
     const hasError = timeline && timeline.querySelector('.timeline-item-error');
     
-    // Ensure button container exists
+    // 确保按钮容器存在
     let buttonsContainer = mcpSection.querySelector('.mcp-call-buttons');
     if (!buttonsContainer) {
         buttonsContainer = document.createElement('div');
         buttonsContainer.className = 'mcp-call-buttons';
         mcpSection.appendChild(buttonsContainer);
     }
+
+    const hasExecBtns = buttonsContainer.querySelector('.mcp-detail-btn:not(.process-detail-btn)');
+    if (mcpIds.length > 0 && !hasExecBtns) {
+        mcpIds.forEach((execId, index) => {
+            const detailBtn = document.createElement('button');
+            detailBtn.className = 'mcp-detail-btn';
+            detailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.callNumber', { n: index + 1 }) : '调用 #' + (index + 1)) + '</span>';
+            detailBtn.onclick = () => showMCPDetail(execId);
+            buttonsContainer.appendChild(detailBtn);
+            if (typeof updateButtonWithToolName === 'function') {
+                updateButtonWithToolName(detailBtn, execId, index + 1);
+            }
+        });
+    }
+    if (!buttonsContainer.querySelector('.process-detail-btn')) {
+        const progressDetailBtn = document.createElement('button');
+        progressDetailBtn.className = 'mcp-detail-btn process-detail-btn';
+        progressDetailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情') + '</span>';
+        progressDetailBtn.onclick = () => toggleProcessDetails(null, assistantMessageId);
+        buttonsContainer.appendChild(progressDetailBtn);
+    }
     
-    // Create details container, place below MCP button area (unified structure)
+    // 创建详情容器，放在MCP按钮区域下方（统一结构）
     const detailsId = 'process-details-' + assistantMessageId;
     let detailsContainer = document.getElementById(detailsId);
     
@@ -237,7 +468,7 @@ function integrateProgressToMCPSection(progressId, assistantMessageId) {
         detailsContainer = document.createElement('div');
         detailsContainer.id = detailsId;
         detailsContainer.className = 'process-details-container';
-        // Ensure container is after the button container
+        // 确保容器在按钮容器之后
         if (buttonsContainer.nextSibling) {
             mcpSection.insertBefore(detailsContainer, buttonsContainer.nextSibling);
         } else {
@@ -245,71 +476,114 @@ function integrateProgressToMCPSection(progressId, assistantMessageId) {
         }
     }
     
-    // Set details content (if error, default collapsed; otherwise also default collapsed)
+    // 设置详情内容（如果有错误，默认折叠；否则默认折叠）
     detailsContainer.innerHTML = `
         <div class="process-details-content">
-            ${hasContent ? `<div class="progress-timeline" id="${detailsId}-timeline">${timelineHTML}</div>` : '<div class="progress-timeline-empty">No process details</div>'}
+            ${hasContent ? `<div class="progress-timeline" id="${detailsId}-timeline">${timelineHTML}</div>` : '<div class="progress-timeline-empty">' + (typeof window.t === 'function' ? window.t('chat.noProcessDetail') : '暂无过程详情（可能执行过快或未触发详细事件）') + '</div>'}
         </div>
     `;
     
-    // Ensure initial state is collapsed (default collapsed, especially when there is an error)
+    // 确保初始状态是折叠的（默认折叠，特别是错误时）
     if (hasContent) {
         const timeline = document.getElementById(detailsId + '-timeline');
         if (timeline) {
-            // If error, ensure collapsed; otherwise also default collapsed
+            // 如果有错误，确保折叠；否则也默认折叠
             timeline.classList.remove('expanded');
         }
         
-        // Update button text to "Expand Details" (because default is collapsed)
-        const processDetailBtn = buttonsContainer.querySelector('.process-detail-btn');
-        if (processDetailBtn) {
-            processDetailBtn.innerHTML = '<span>Expand Details</span>';
-        }
+        const expandLabel = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+        document.querySelectorAll(`#${assistantMessageId} .process-detail-btn`).forEach((btn) => {
+            btn.innerHTML = '<span>' + expandLabel + '</span>';
+        });
     }
     
-    // Remove the original progress message
+    // 移除原来的进度消息
     removeMessage(progressId);
 }
 
-// Toggle process details display
+// 切换过程详情显示
 function toggleProcessDetails(progressId, assistantMessageId) {
     const detailsId = 'process-details-' + assistantMessageId;
     const detailsContainer = document.getElementById(detailsId);
     if (!detailsContainer) return;
-    
-    const content = detailsContainer.querySelector('.process-details-content');
-    const timeline = detailsContainer.querySelector('.progress-timeline');
-    const btn = document.querySelector(`#${assistantMessageId} .process-detail-btn`);
-    
-    if (content && timeline) {
-        if (timeline.classList.contains('expanded')) {
-            timeline.classList.remove('expanded');
-            if (btn) btn.innerHTML = '<span>Expand Details</span>';
-        } else {
-            timeline.classList.add('expanded');
-            if (btn) btn.innerHTML = '<span>Collapse Details</span>';
-        }
-    } else if (timeline) {
-        // If only timeline, toggle directly
-        if (timeline.classList.contains('expanded')) {
-            timeline.classList.remove('expanded');
-            if (btn) btn.innerHTML = '<span>Expand Details</span>';
-        } else {
-            timeline.classList.add('expanded');
-            if (btn) btn.innerHTML = '<span>Collapse Details</span>';
+
+    // 懒加载：首次展开时才从后端拉取该条消息的过程详情
+    const maybeLazy = detailsContainer.dataset && detailsContainer.dataset.lazyNotLoaded === '1' && detailsContainer.dataset.loaded !== '1';
+    if (maybeLazy) {
+        const messageEl = document.getElementById(assistantMessageId);
+        const backendMessageId = messageEl && messageEl.dataset ? messageEl.dataset.backendMessageId : '';
+        if (backendMessageId && typeof apiFetch === 'function' && typeof renderProcessDetails === 'function') {
+            if (detailsContainer.dataset.loading === '1') {
+                // 正在加载中，避免重复请求
+            } else {
+                detailsContainer.dataset.loading = '1';
+                // 先展开容器，显示加载态
+                const timeline = detailsContainer.querySelector('.progress-timeline');
+                if (timeline) {
+                    timeline.innerHTML = '<div class="progress-timeline-empty">' + ((typeof window.t === 'function') ? window.t('common.loading') : '加载中…') + '</div>';
+                }
+                apiFetch(`/api/messages/${encodeURIComponent(String(backendMessageId))}/process-details`)
+                    .then(async (res) => {
+                        const j = await res.json().catch(() => ({}));
+                        if (!res.ok) throw new Error((j && j.error) ? j.error : res.status);
+                        const details = (j && Array.isArray(j.processDetails)) ? j.processDetails : [];
+                        // 重新渲染详情（renderProcessDetails 会清掉 lazy 标记并写入 loaded）
+                        renderProcessDetails(assistantMessageId, details);
+                    })
+                    .catch((e) => {
+                        console.error('加载过程详情失败:', e);
+                        const tl = detailsContainer.querySelector('.progress-timeline');
+                        if (tl) {
+                            tl.innerHTML = '<div class="progress-timeline-empty">' + ((typeof window.t === 'function') ? window.t('chat.noProcessDetail') : '暂无过程详情（加载失败）') + '</div>';
+                        }
+                        // 失败时保留 lazy 状态，允许用户重试
+                        detailsContainer.dataset.lazyNotLoaded = '1';
+                        detailsContainer.dataset.loaded = '0';
+                    })
+                    .finally(() => {
+                        detailsContainer.dataset.loading = '0';
+                    });
+            }
         }
     }
     
-    // Scroll to expanded details position, not to the bottom
+    const content = detailsContainer.querySelector('.process-details-content');
+    const timeline = detailsContainer.querySelector('.progress-timeline');
+    const detailBtns = document.querySelectorAll(`#${assistantMessageId} .process-detail-btn`);
+    
+    const expandT = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+    const collapseT = typeof window.t === 'function' ? window.t('tasks.collapseDetail') : '收起详情';
+    const setDetailBtnLabels = (label) => {
+        detailBtns.forEach((btn) => { btn.innerHTML = '<span>' + label + '</span>'; });
+    };
+    if (content && timeline) {
+        if (timeline.classList.contains('expanded')) {
+            timeline.classList.remove('expanded');
+            setDetailBtnLabels(expandT);
+        } else {
+            timeline.classList.add('expanded');
+            setDetailBtnLabels(collapseT);
+        }
+    } else if (timeline) {
+        if (timeline.classList.contains('expanded')) {
+            timeline.classList.remove('expanded');
+            setDetailBtnLabels(expandT);
+        } else {
+            timeline.classList.add('expanded');
+            setDetailBtnLabels(collapseT);
+        }
+    }
+    
+    // 滚动到展开的详情位置，而不是滚动到底部
     if (timeline && timeline.classList.contains('expanded')) {
         setTimeout(() => {
-            // Use scrollIntoView to scroll to details container
+            // 使用 scrollIntoView 滚动到详情容器位置
             detailsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }, 100);
     }
 }
 
-// Stop the task corresponding to the current progress
+// 停止当前进度对应的任务
 async function cancelProgressTask(progressId) {
     const state = progressTaskState.get(progressId);
     const stopBtn = document.getElementById(`${progressId}-stop-btn`);
@@ -321,7 +595,7 @@ async function cancelProgressTask(progressId) {
                 stopBtn.disabled = false;
             }, 1500);
         }
-        alert('Task info has not synced yet. Please try again later.');
+        alert(typeof window.t === 'function' ? window.t('tasks.taskInfoNotSynced') : '任务信息尚未同步，请稍后再试。');
         return;
     }
 
@@ -332,18 +606,18 @@ async function cancelProgressTask(progressId) {
     markProgressCancelling(progressId);
     if (stopBtn) {
         stopBtn.disabled = true;
-        stopBtn.textContent = 'Cancelling...';
+        stopBtn.textContent = typeof window.t === 'function' ? window.t('tasks.cancelling') : '取消中...';
     }
 
     try {
         await requestCancel(state.conversationId);
         loadActiveTasks();
     } catch (error) {
-        console.error('Failed to cancel task:', error);
-        alert('Failed to cancel task: ' + error.message);
+        console.error('取消任务失败:', error);
+        alert((typeof window.t === 'function' ? window.t('tasks.cancelTaskFailed') : '取消任务失败') + ': ' + error.message);
         if (stopBtn) {
             stopBtn.disabled = false;
-            stopBtn.textContent = 'Stop Task';
+            stopBtn.textContent = typeof window.t === 'function' ? window.t('tasks.stopTask') : '停止任务';
         }
         const currentState = progressTaskState.get(progressId);
         if (currentState) {
@@ -352,27 +626,27 @@ async function cancelProgressTask(progressId) {
     }
 }
 
-// Convert progress message to collapsible details component
+// 将进度消息转换为可折叠的详情组件
 function convertProgressToDetails(progressId, assistantMessageId) {
     const progressElement = document.getElementById(progressId);
     if (!progressElement) return;
     
-    // Get timeline content
+    // 获取时间线内容
     const timeline = document.getElementById(progressId + '-timeline');
-    // Create details component even if timeline does not exist (display empty status)
+    // 即使时间线不存在，也创建详情组件（显示空状态）
     let timelineHTML = '';
     if (timeline) {
         timelineHTML = timeline.innerHTML;
     }
     
-    // Get assistant message element
+    // 获取助手消息元素
     const assistantElement = document.getElementById(assistantMessageId);
     if (!assistantElement) {
         removeMessage(progressId);
         return;
     }
     
-    // Create details component
+    // 创建详情组件
     const detailsId = 'details-' + Date.now() + '-' + messageCounter++;
     const detailsDiv = document.createElement('div');
     detailsDiv.id = detailsId;
@@ -384,78 +658,107 @@ function convertProgressToDetails(progressId, assistantMessageId) {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble progress-container completed';
     
-    // Get timeline HTML content
+    // 获取时间线HTML内容
     const hasContent = timelineHTML.trim().length > 0;
     
-    // Check if timeline has error items
+    // 检查时间线中是否有错误项
     const hasError = timeline && timeline.querySelector('.timeline-item-error');
     
-    // If error, default collapsed; otherwise default expanded
+    // 如果有错误，默认折叠；否则默认展开
     const shouldExpand = !hasError;
     const expandedClass = shouldExpand ? 'expanded' : '';
-    const toggleText = shouldExpand ? 'Collapse Details' : 'Expand Details';
-    
-    // Always show details component, even if empty
+    const collapseDetailText = typeof window.t === 'function' ? window.t('tasks.collapseDetail') : '收起详情';
+    const expandDetailText = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
+    const toggleText = shouldExpand ? collapseDetailText : expandDetailText;
+    const penetrationDetailText = typeof window.t === 'function' ? window.t('chat.penetrationTestDetail') : '渗透测试详情';
+    const noProcessDetailText = typeof window.t === 'function' ? window.t('chat.noProcessDetail') : '暂无过程详情（可能执行过快或未触发详细事件）';
     bubble.innerHTML = `
         <div class="progress-header">
-            <span class="progress-title">📋 Penetration Test Details</span>
+            <span class="progress-title">📋 ${penetrationDetailText}</span>
             ${hasContent ? `<button class="progress-toggle" onclick="toggleProgressDetails('${detailsId}')">${toggleText}</button>` : ''}
         </div>
-        ${hasContent ? `<div class="progress-timeline ${expandedClass}" id="${detailsId}-timeline">${timelineHTML}</div>` : '<div class="progress-timeline-empty">No process details（possibly executed too fast or no detailed events triggered）</div>'}
+        ${hasContent ? `<div class="progress-timeline ${expandedClass}" id="${detailsId}-timeline">${timelineHTML}</div><div class="progress-footer"><button type="button" class="progress-toggle progress-toggle-bottom" onclick="toggleProgressDetails('${detailsId}')">${toggleText}</button></div>` : '<div class="progress-timeline-empty">' + noProcessDetailText + '</div>'}
     `;
     
     contentWrapper.appendChild(bubble);
     detailsDiv.appendChild(contentWrapper);
     
-    // Insert details component after assistant message
+    // 将详情组件插入到助手消息之后
     const messagesDiv = document.getElementById('chat-messages');
-    // assistantElement is the message div; insert before its next sibling
+    const insertWasPinned = isChatMessagesPinnedToBottom();
+    // assistantElement 是消息div，需要插入到它的下一个兄弟节点之前
     if (assistantElement.nextSibling) {
         messagesDiv.insertBefore(detailsDiv, assistantElement.nextSibling);
     } else {
-        // If no next sibling, append directly
+        // 如果没有下一个兄弟节点，直接追加
         messagesDiv.appendChild(detailsDiv);
     }
     
-    // Remove the original progress message
+    // 移除原来的进度消息
     removeMessage(progressId);
     
-    // Scroll to bottom
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    scrollChatMessagesToBottomIfPinned(insertWasPinned);
 }
 
-// Handle streaming events
+// 处理流式事件
 function handleStreamEvent(event, progressElement, progressId, 
                           getAssistantId, setAssistantId, getMcpIds, setMcpIds) {
+    const streamScrollWasPinned = isChatMessagesPinnedToBottom();
     const timeline = document.getElementById(progressId + '-timeline');
     if (!timeline) return;
+
+    // 终态事件（error/cancelled）优先复用现有助手消息，避免重复追加相同报错
+    const upsertTerminalAssistantMessage = (message, preferredMessageId = null) => {
+        const preferredIds = [];
+        if (preferredMessageId) preferredIds.push(preferredMessageId);
+        const existingAssistantId = typeof getAssistantId === 'function' ? getAssistantId() : null;
+        if (existingAssistantId && !preferredIds.includes(existingAssistantId)) {
+            preferredIds.push(existingAssistantId);
+        }
+
+        for (const id of preferredIds) {
+            const element = document.getElementById(id);
+            if (element) {
+                updateAssistantBubbleContent(id, message, true);
+                setAssistantId(id);
+                return { assistantId: id, assistantElement: element };
+            }
+        }
+
+        const assistantId = addMessage('assistant', message, null, progressId);
+        setAssistantId(assistantId);
+        return { assistantId: assistantId, assistantElement: document.getElementById(assistantId) };
+    };
     
     switch (event.type) {
+        case 'heartbeat':
+            // SSE 长连接保活，无需更新 UI
+            break;
         case 'conversation':
             if (event.data && event.data.conversationId) {
-                // Before updating, get the original conversation ID for the task
+                // 在更新之前，先获取任务对应的原始对话ID
                 const taskState = progressTaskState.get(progressId);
                 const originalConversationId = taskState?.conversationId;
                 
-                // Update task status
+                // 更新任务状态
                 updateProgressConversation(progressId, event.data.conversationId);
                 
-                // If the user has started a new conversation (currentConversationId is null),
-                // and this conversation event is from the old conversation, do not update currentConversationId
+                // 如果用户已经开始了新对话（currentConversationId 为 null），
+                // 且这个 conversation 事件来自旧对话，就不更新 currentConversationId
                 if (currentConversationId === null && originalConversationId !== null) {
-                    // User has started a new conversation; ignore conversation events from the old one
-                    // But still update task status so task info is displayed correctly
+                    // 用户已经开始了新对话，忽略旧对话的 conversation 事件
+                    // 但仍然更新任务状态，以便正确显示任务信息
                     break;
                 }
                 
-                // Update current conversation ID
+                // 更新当前对话ID
                 currentConversationId = event.data.conversationId;
                 updateActiveConversation();
                 addAttackChainButton(currentConversationId);
                 loadActiveTasks();
-                // Delay refreshing conversation list to ensure user message is saved and updated_at is updated
-                // This way the new conversation will correctly appear at the top of the recent conversations list
-                // Use loadConversationsWithGroups to ensure group mapping cache is correctly loaded; groups appear immediately
+                // 延迟刷新对话列表，确保用户消息已保存，updated_at已更新
+                // 这样新对话才能正确显示在最近对话列表的顶部
+                // 使用loadConversationsWithGroups确保分组映射缓存正确加载，无论是否有分组都能立即显示
                 setTimeout(() => {
                     if (typeof loadConversationsWithGroups === 'function') {
                         loadConversationsWithGroups();
@@ -465,380 +768,600 @@ function handleStreamEvent(event, progressElement, progressId,
                 }, 200);
             }
             break;
-        case 'iteration':
-            // Add iteration marker
+        case 'iteration': {
+            const d = event.data || {};
+            const n = d.iteration != null ? d.iteration : 1;
+            let iterTitle;
+            if (d.einoScope === 'main') {
+                iterTitle = typeof window.t === 'function'
+                    ? window.t('chat.einoOrchestratorRound', { n: n })
+                    : ('主代理 · 第 ' + n + ' 轮');
+            } else if (d.einoScope === 'sub') {
+                const ag = d.einoAgent != null ? String(d.einoAgent).trim() : '';
+                iterTitle = typeof window.t === 'function'
+                    ? window.t('chat.einoSubAgentStep', { n: n, agent: ag })
+                    : ('子代理 · ' + ag + ' · 第 ' + n + ' 步');
+            } else {
+                iterTitle = typeof window.t === 'function'
+                    ? window.t('chat.iterationRound', { n: n })
+                    : ('第 ' + n + ' 轮迭代');
+            }
             addTimelineItem(timeline, 'iteration', {
-                title: `Iteration ${event.data?.iteration || 1}`,
+                title: iterTitle,
                 message: event.message,
-                data: event.data
+                data: event.data,
+                iterationN: n
             });
             break;
+        }
             
+        case 'thinking_stream_start': {
+            const d = event.data || {};
+            const streamId = d.streamId || null;
+            if (!streamId) break;
+
+            let state = thinkingStreamStateByProgressId.get(progressId);
+            if (!state) {
+                state = new Map();
+                thinkingStreamStateByProgressId.set(progressId, state);
+            }
+            // 若已存在，重置 buffer
+            const thinkBase = typeof window.t === 'function' ? window.t('chat.aiThinking') : 'AI思考';
+            const title = timelineAgentBracketPrefix(d) + '🤔 ' + thinkBase;
+            const itemId = addTimelineItem(timeline, 'thinking', {
+                title: title,
+                message: ' ',
+                data: d
+            });
+            state.set(streamId, { itemId, buffer: '' });
+            break;
+        }
+
+        case 'thinking_stream_delta': {
+            const d = event.data || {};
+            const streamId = d.streamId || null;
+            if (!streamId) break;
+
+            const state = thinkingStreamStateByProgressId.get(progressId);
+            if (!state || !state.has(streamId)) break;
+            const s = state.get(streamId);
+
+            const delta = event.message || '';
+            s.buffer += delta;
+
+            const item = document.getElementById(s.itemId);
+            if (item) {
+                const contentEl = item.querySelector('.timeline-item-content');
+                if (contentEl) {
+                    if (typeof formatMarkdown === 'function') {
+                        contentEl.innerHTML = formatMarkdown(s.buffer);
+                    } else {
+                        contentEl.textContent = s.buffer;
+                    }
+                }
+            }
+            break;
+        }
+
         case 'thinking':
-            // Show AI thinking content
+            // 如果本 thinking 是由 thinking_stream_* 聚合出来的（带 streamId），避免重复创建 timeline item
+            if (event.data && event.data.streamId) {
+                const streamId = event.data.streamId;
+                const state = thinkingStreamStateByProgressId.get(progressId);
+                if (state && state.has(streamId)) {
+                    const s = state.get(streamId);
+                    s.buffer = event.message || '';
+                    const item = document.getElementById(s.itemId);
+                    if (item) {
+                        const contentEl = item.querySelector('.timeline-item-content');
+                        if (contentEl) {
+                            // contentEl.innerHTML 用于兼容 Markdown 展示
+                            if (typeof formatMarkdown === 'function') {
+                                contentEl.innerHTML = formatMarkdown(s.buffer);
+                            } else {
+                                contentEl.textContent = s.buffer;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+
             addTimelineItem(timeline, 'thinking', {
-                title: '🤔 AI Thinking',
+                title: timelineAgentBracketPrefix(event.data) + '🤔 ' + (typeof window.t === 'function' ? window.t('chat.aiThinking') : 'AI思考'),
                 message: event.message,
                 data: event.data
             });
             break;
             
         case 'tool_calls_detected':
-            // Tool call detection
             addTimelineItem(timeline, 'tool_calls_detected', {
-                title: `🔧 ${event.data?.count || 0} tool call(s) detected`,
+                title: timelineAgentBracketPrefix(event.data) + '🔧 ' + (typeof window.t === 'function' ? window.t('chat.toolCallsDetected', { count: event.data?.count || 0 }) : '检测到 ' + (event.data?.count || 0) + ' 个工具调用'),
+                message: event.message,
+                data: event.data
+            });
+            break;
+
+        case 'warning':
+            addTimelineItem(timeline, 'warning', {
+                title: '⚠️',
                 message: event.message,
                 data: event.data
             });
             break;
             
         case 'tool_call':
-            // Show tool call info
             const toolInfo = event.data || {};
-            const toolName = toolInfo.toolName || 'Unknown Tool';
+            const toolName = toolInfo.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
             const index = toolInfo.index || 0;
             const total = toolInfo.total || 0;
             const toolCallId = toolInfo.toolCallId || null;
-            
-            // Add tool call item and mark as running
+            const toolCallTitle = typeof window.t === 'function' ? window.t('chat.callTool', { name: escapeHtml(toolName), index: index, total: total }) : '调用工具: ' + escapeHtml(toolName) + ' (' + index + '/' + total + ')';
             const toolCallItemId = addTimelineItem(timeline, 'tool_call', {
-                title: `🔧 Calling tool: ${escapeHtml(toolName)} (${index}/${total})`,
+                title: timelineAgentBracketPrefix(toolInfo) + '🔧 ' + toolCallTitle,
                 message: event.message,
                 data: toolInfo,
                 expanded: false
             });
             
-            // If there is a toolCallId, store the mapping for subsequent status updates
+            // 如果有toolCallId，存储映射关系以便后续更新状态
             if (toolCallId && toolCallItemId) {
                 toolCallStatusMap.set(toolCallId, {
                     itemId: toolCallItemId,
                     timeline: timeline
                 });
                 
-                // Add running status indicator
+                // 添加执行中状态指示器
                 updateToolCallStatus(toolCallId, 'running');
             }
             break;
+
+        case 'tool_result_delta': {
+            const deltaInfo = event.data || {};
+            const toolCallId = deltaInfo.toolCallId || null;
+            if (!toolCallId) break;
+
+            const key = toolResultStreamKey(progressId, toolCallId);
+            let state = toolResultStreamStateByKey.get(key);
+            const toolNameDelta = deltaInfo.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
+            const deltaText = event.message || '';
+            if (!deltaText) break;
+
+            if (!state) {
+                // 首次增量：创建一个 tool_result 占位条目，后续不断更新 pre 内容
+                const runningLabel = typeof window.t === 'function' ? window.t('timeline.running') : '执行中...';
+                const title = timelineAgentBracketPrefix(deltaInfo) + '⏳ ' + (typeof window.t === 'function'
+                    ? window.t('timeline.running')
+                    : runningLabel) + ' ' + (typeof window.t === 'function' ? window.t('chat.callTool', { name: escapeHtmlLocal(toolNameDelta), index: deltaInfo.index || 0, total: deltaInfo.total || 0 }) : toolNameDelta);
+
+                const itemId = addTimelineItem(timeline, 'tool_result', {
+                    title: title,
+                    message: '',
+                    data: {
+                        toolName: toolNameDelta,
+                        success: true,
+                        isError: false,
+                        result: deltaText,
+                        toolCallId: toolCallId,
+                        index: deltaInfo.index,
+                        total: deltaInfo.total,
+                        iteration: deltaInfo.iteration,
+                        einoAgent: deltaInfo.einoAgent,
+                        source: deltaInfo.source
+                    },
+                    expanded: false
+                });
+
+                state = { itemId, buffer: '' };
+                toolResultStreamStateByKey.set(key, state);
+            }
+
+            state.buffer += deltaText;
+            const item = document.getElementById(state.itemId);
+            if (item) {
+                const pre = item.querySelector('pre.tool-result');
+                if (pre) {
+                    pre.textContent = state.buffer;
+                }
+            }
+            break;
+        }
             
         case 'tool_result':
-            // Show tool execution result
             const resultInfo = event.data || {};
-            const resultToolName = resultInfo.toolName || 'Unknown Tool';
+            const resultToolName = resultInfo.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
             const success = resultInfo.success !== false;
             const statusIcon = success ? '✅' : '❌';
             const resultToolCallId = resultInfo.toolCallId || null;
-            
-            // If there is an associated toolCallId, update the tool call item status
+            const resultExecText = success ? (typeof window.t === 'function' ? window.t('chat.toolExecComplete', { name: escapeHtml(resultToolName) }) : '工具 ' + escapeHtml(resultToolName) + ' 执行完成') : (typeof window.t === 'function' ? window.t('chat.toolExecFailed', { name: escapeHtml(resultToolName) }) : '工具 ' + escapeHtml(resultToolName) + ' 执行失败');
+
+            // 若此 tool 已经流式推送过增量，则复用占位条目并更新最终结果，避免重复添加一条
+            if (resultToolCallId) {
+                const key = toolResultStreamKey(progressId, resultToolCallId);
+                const state = toolResultStreamStateByKey.get(key);
+                if (state && state.itemId) {
+                    const item = document.getElementById(state.itemId);
+                    if (item) {
+                        const pre = item.querySelector('pre.tool-result');
+                        const resultVal = resultInfo.result || resultInfo.error || '';
+                        if (pre) pre.textContent = typeof resultVal === 'string' ? resultVal : JSON.stringify(resultVal);
+
+                        const section = item.querySelector('.tool-result-section');
+                        if (section) {
+                            section.className = 'tool-result-section ' + (success ? 'success' : 'error');
+                        }
+
+                        const titleEl = item.querySelector('.timeline-item-title');
+                        if (titleEl) {
+                            if (resultInfo.einoAgent != null && String(resultInfo.einoAgent).trim() !== '') {
+                                item.dataset.einoAgent = String(resultInfo.einoAgent).trim();
+                            }
+                            titleEl.textContent = timelineAgentBracketPrefix(resultInfo) + statusIcon + ' ' + resultExecText;
+                        }
+                    }
+                    toolResultStreamStateByKey.delete(key);
+
+                    // 同时更新 tool_call 的状态
+                    if (resultToolCallId && toolCallStatusMap.has(resultToolCallId)) {
+                        updateToolCallStatus(resultToolCallId, success ? 'completed' : 'failed');
+                        toolCallStatusMap.delete(resultToolCallId);
+                    }
+                    break;
+                }
+            }
+
             if (resultToolCallId && toolCallStatusMap.has(resultToolCallId)) {
                 updateToolCallStatus(resultToolCallId, success ? 'completed' : 'failed');
-                // Remove from mapping (already done)
                 toolCallStatusMap.delete(resultToolCallId);
             }
-            
-            const durationMs = resultInfo.durationMs || resultInfo.duration_ms || 0;
-            const durationText = durationMs > 0 ? ` (${(durationMs / 1000).toFixed(1)}s)` : '';
             addTimelineItem(timeline, 'tool_result', {
-                title: `${statusIcon} Tool ${escapeHtml(resultToolName)} ${success ? 'succeeded' : 'failed'}${durationText}`,
+                title: timelineAgentBracketPrefix(resultInfo) + statusIcon + ' ' + resultExecText,
                 message: event.message,
                 data: resultInfo,
-                expanded: !success  // Auto-expand failed tools so operator sees the error
+                expanded: false
             });
             break;
 
-        case 'tool_deferred':
-            // Tool exceeds parallel wait threshold and continues in background.
-            const deferredInfo = event.data || {};
-            const deferredToolName = deferredInfo.toolName || 'Unknown Tool';
-            const deferredToolCallId = deferredInfo.toolCallId || null;
-            if (deferredToolCallId && toolCallStatusMap.has(deferredToolCallId)) {
-                updateToolCallStatus(deferredToolCallId, 'running');
+        case 'eino_agent_reply_stream_start': {
+            const d = event.data || {};
+            const streamId = d.streamId || null;
+            if (!streamId) break;
+            let stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            if (!stateMap) {
+                stateMap = new Map();
+                einoAgentReplyStreamStateByProgressId.set(progressId, stateMap);
             }
-            addTimelineItem(timeline, 'progress', {
-                title: `⏳ Tool ${escapeHtml(deferredToolName)} is running in background`,
-                message: event.message,
-                data: deferredInfo
+            const streamingLabel = typeof window.t === 'function' ? window.t('timeline.running') : '执行中...';
+            const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '子代理回复';
+            const itemId = addTimelineItem(timeline, 'eino_agent_reply', {
+                title: timelineAgentBracketPrefix(d) + '💬 ' + replyTitleBase + ' · ' + streamingLabel,
+                message: ' ',
+                data: d,
+                expanded: false
             });
+            stateMap.set(streamId, { itemId, buffer: '' });
             break;
-            
-        case 'warning':
-            // Show warning to operator — these require attention
-            addTimelineItem(timeline, 'tool_result', {
-                title: `⚠️ Warning: ${event.message}`,
-                message: event.message,
-                data: event.data,
-                expanded: true
-            });
-            // Also update progress title briefly
-            const warnTitle = document.querySelector(`#${progressId} .progress-title`);
-            if (warnTitle) {
-                warnTitle.textContent = '⚠️ ' + event.message;
-                // Revert after 5s
-                setTimeout(() => {
-                    if (warnTitle.textContent.startsWith('⚠️')) {
-                        warnTitle.textContent = '🔍 Processing...';
-                    }
-                }, 5000);
-            }
-            break;
+        }
 
-        case 'health_check':
-            // Show pre-flight check results with per-component detail
-            {
-                const checks = event.data && event.data.checks ? event.data.checks : [];
-                const overallStatus = event.data && event.data.status ? event.data.status : 'unknown';
-                const statusIcon = overallStatus === 'ok' ? '✅' : overallStatus === 'warn' ? '⚠️' : '❌';
-                let detailHtml = '';
-                if (checks.length > 0) {
-                    detailHtml = '<div style="margin-top:6px;font-size:0.85em;line-height:1.6">';
-                    for (const c of checks) {
-                        const icon = c.status === 'ok' ? '✅' : c.status === 'warn' ? '⚠️' : '❌';
-                        const detail = c.detail ? ` — ${c.detail}` : '';
-                        detailHtml += `<div>${icon} <strong>${c.component}</strong>${detail}</div>`;
+        case 'eino_agent_reply_stream_delta': {
+            const d = event.data || {};
+            const streamId = d.streamId || null;
+            if (!streamId) break;
+            const delta = event.message || '';
+            if (!delta) break;
+            const stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            if (!stateMap || !stateMap.has(streamId)) break;
+            const s = stateMap.get(streamId);
+            s.buffer += delta;
+            const item = document.getElementById(s.itemId);
+            if (item) {
+                let contentEl = item.querySelector('.timeline-item-content');
+                if (!contentEl) {
+                    const header = item.querySelector('.timeline-item-header');
+                    if (header) {
+                        contentEl = document.createElement('div');
+                        contentEl.className = 'timeline-item-content';
+                        item.appendChild(contentEl);
                     }
-                    detailHtml += '</div>';
                 }
-                addTimelineItem(timeline, overallStatus === 'ok' ? 'progress' : 'warning', {
-                    title: `${statusIcon} Pre-flight: ${event.message}`,
-                    message: detailHtml || event.message,
-                    data: event.data,
-                    expanded: overallStatus !== 'ok'
-                });
+                if (contentEl) {
+                    if (typeof formatMarkdown === 'function') {
+                        contentEl.innerHTML = formatMarkdown(s.buffer);
+                    } else {
+                        contentEl.textContent = s.buffer;
+                    }
+                }
             }
             break;
+        }
 
-        case 'compression':
-            // Memory compression event — operator should know context was compressed
-            addTimelineItem(timeline, 'progress', {
-                title: `🗜️ Context compressed: ${event.message}`,
-                message: event.message,
-                data: event.data
+        case 'eino_agent_reply_stream_end': {
+            const d = event.data || {};
+            const streamId = d.streamId || null;
+            const stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            if (streamId && stateMap && stateMap.has(streamId)) {
+                const s = stateMap.get(streamId);
+                const full = (event.message != null && event.message !== '') ? String(event.message) : s.buffer;
+                s.buffer = full;
+                const item = document.getElementById(s.itemId);
+                if (item) {
+                    const titleEl = item.querySelector('.timeline-item-title');
+                    if (titleEl) {
+                        const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '子代理回复';
+                        titleEl.textContent = timelineAgentBracketPrefix(d) + '💬 ' + replyTitleBase;
+                    }
+                    let contentEl = item.querySelector('.timeline-item-content');
+                    if (!contentEl) {
+                        contentEl = document.createElement('div');
+                        contentEl.className = 'timeline-item-content';
+                        item.appendChild(contentEl);
+                    }
+                    if (typeof formatMarkdown === 'function') {
+                        contentEl.innerHTML = formatMarkdown(full);
+                    } else {
+                        contentEl.textContent = full;
+                    }
+                    if (d.einoAgent != null && String(d.einoAgent).trim() !== '') {
+                        item.dataset.einoAgent = String(d.einoAgent).trim();
+                    }
+                }
+                stateMap.delete(streamId);
+            }
+            break;
+        }
+
+        case 'eino_agent_reply': {
+            const replyData = event.data || {};
+            const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '子代理回复';
+            addTimelineItem(timeline, 'eino_agent_reply', {
+                title: timelineAgentBracketPrefix(replyData) + '💬 ' + replyTitleBase,
+                message: event.message || '',
+                data: replyData,
+                expanded: false
             });
             break;
-
+        }
+            
         case 'progress':
-            // Update progress status
             const progressTitle = document.querySelector(`#${progressId} .progress-title`);
             if (progressTitle) {
-                progressTitle.textContent = '🔍 ' + event.message;
+                // 保存原文，语言切换时可用 translateProgressMessage 重新套当前语言
+                const progressEl = document.getElementById(progressId);
+                if (progressEl) {
+                    progressEl.dataset.progressRawMessage = event.message || '';
+                }
+                const progressMsg = translateProgressMessage(event.message);
+                progressTitle.textContent = '🔍 ' + progressMsg;
             }
             break;
         
         case 'cancelled':
-            // ShowError
+            const taskCancelledText = typeof window.t === 'function' ? window.t('chat.taskCancelled') : '任务已取消';
             addTimelineItem(timeline, 'cancelled', {
-                title: '⛔ Task cancelled',
+                title: '⛔ ' + taskCancelledText,
                 message: event.message,
                 data: event.data
             });
-            
-            // Update progress title to cancelled status
             const cancelTitle = document.querySelector(`#${progressId} .progress-title`);
             if (cancelTitle) {
-                cancelTitle.textContent = '⛔ Task cancelled';
+                cancelTitle.textContent = '⛔ ' + taskCancelledText;
             }
-            
-            // Update progress container to completed status (add completed class)
             const cancelProgressContainer = document.querySelector(`#${progressId} .progress-container`);
             if (cancelProgressContainer) {
                 cancelProgressContainer.classList.add('completed');
             }
-            
-            // Finalize progress task (marked as cancelled)
             if (progressTaskState.has(progressId)) {
-                finalizeProgressTask(progressId, 'Cancelled');
+                finalizeProgressTask(progressId, typeof window.t === 'function' ? window.t('tasks.statusCancelled') : '已取消');
             }
             
-            // If the cancel event contains a messageId, there is an assistant message; show cancel content
-            if (event.data && event.data.messageId) {
-                // Check if the assistant message already exists
-                let assistantId = event.data.messageId;
-                let assistantElement = document.getElementById(assistantId);
-                
-                // If assistant message does not exist, create it
-                if (!assistantElement) {
-                    assistantId = addMessage('assistant', event.message, null, progressId);
-                    setAssistantId(assistantId);
-                    assistantElement = document.getElementById(assistantId);
-                } else {
-                    // If already exists, update content
-                    const bubble = assistantElement.querySelector('.message-bubble');
-                    if (bubble) {
-                        bubble.innerHTML = escapeHtml(event.message).replace(/\n/g, '<br>');
-                    }
-                }
-                
-                // Integrate progress details into the tool call area (if not already done)
+            // 复用已有助手消息（若有），避免终态事件重复插入消息
+            {
+                const preferredMessageId = event.data && event.data.messageId ? event.data.messageId : null;
+                const { assistantId, assistantElement } = upsertTerminalAssistantMessage(event.message, preferredMessageId);
                 if (assistantElement) {
                     const detailsId = 'process-details-' + assistantId;
                     if (!document.getElementById(detailsId)) {
-                        integrateProgressToMCPSection(progressId, assistantId);
+                        integrateProgressToMCPSection(progressId, assistantId, typeof getMcpIds === 'function' ? (getMcpIds() || []) : []);
                     }
-                    // Immediately collapse details (should be collapsed by default when cancelled)
                     setTimeout(() => {
                         collapseAllProgressDetails(assistantId, progressId);
                     }, 100);
                 }
-            } else {
-                // If no messageId, create assistant message and integrate details
-                const assistantId = addMessage('assistant', event.message, null, progressId);
-                setAssistantId(assistantId);
-                
-                // Integrate progress details into the tool call area
-                setTimeout(() => {
-                    integrateProgressToMCPSection(progressId, assistantId);
-                    // Ensure details are collapsed by default
-                    collapseAllProgressDetails(assistantId, progressId);
-                }, 100);
             }
             
-            // Immediately refresh task status
+            // 立即刷新任务状态
             loadActiveTasks();
             break;
             
-        case 'response':
-            // Before updating, get the original conversation ID for the task
+        case 'response_start': {
             const responseTaskState = progressTaskState.get(progressId);
             const responseOriginalConversationId = responseTaskState?.conversationId;
-            
-            // First add assistant reply
+
             const responseData = event.data || {};
             const mcpIds = responseData.mcpExecutionIds || [];
             setMcpIds(mcpIds);
-            
-            // Update conversation ID
+
             if (responseData.conversationId) {
-                // If the user has started a new conversation (currentConversationId is null),
-                // and this response event is from the old conversation, do not update currentConversationId or add message
+                // 如果用户已经开始了新对话（currentConversationId 为 null），且这个事件来自旧对话，则忽略
                 if (currentConversationId === null && responseOriginalConversationId !== null) {
-                    // User has started a new conversation; ignore response events from the old one
-                    // But still update task status so task info is displayed correctly
                     updateProgressConversation(progressId, responseData.conversationId);
                     break;
                 }
-                
                 currentConversationId = responseData.conversationId;
                 updateActiveConversation();
                 addAttackChainButton(currentConversationId);
                 updateProgressConversation(progressId, responseData.conversationId);
                 loadActiveTasks();
             }
-            
-            // Add assistant reply and pass progress ID to integrate details
-            const assistantId = addMessage('assistant', event.message, mcpIds, progressId);
-            setAssistantId(assistantId);
-            
-            // Integrate progress details into the tool call area
-            integrateProgressToMCPSection(progressId, assistantId);
-            
-            // Auto-collapse details after a delay (3 seconds)
+
+            // 多代理模式下，迭代过程中的输出只显示在时间线中，不创建助手消息气泡
+            // 创建时间线条目用于显示迭代过程中的输出
+            const agentPrefix = timelineAgentBracketPrefix(responseData);
+            const title = agentPrefix + '📝 ' + (typeof window.t === 'function' ? window.t('chat.planning') : '规划中');
+            const itemId = addTimelineItem(timeline, 'thinking', {
+                title: title,
+                message: ' ',
+                data: responseData
+            });
+            responseStreamStateByProgressId.set(progressId, { itemId: itemId, buffer: '' });
+            break;
+        }
+
+        case 'response_delta': {
+            const responseData = event.data || {};
+            const responseTaskState = progressTaskState.get(progressId);
+            const responseOriginalConversationId = responseTaskState?.conversationId;
+
+            if (responseData.conversationId) {
+                if (currentConversationId === null && responseOriginalConversationId !== null) {
+                    updateProgressConversation(progressId, responseData.conversationId);
+                    break;
+                }
+            }
+
+            // 多代理模式下，迭代过程中的输出只显示在时间线中
+            // 更新时间线条目内容
+            let state = responseStreamStateByProgressId.get(progressId);
+            if (!state) {
+                state = { itemId: null, buffer: '' };
+                responseStreamStateByProgressId.set(progressId, state);
+            }
+
+            const deltaContent = event.message || '';
+            state.buffer += deltaContent;
+
+            // 更新时间线条目内容
+            if (state.itemId) {
+                const item = document.getElementById(state.itemId);
+                if (item) {
+                    const contentEl = item.querySelector('.timeline-item-content');
+                    if (contentEl) {
+                        if (typeof formatMarkdown === 'function') {
+                            contentEl.innerHTML = formatMarkdown(state.buffer);
+                        } else {
+                            contentEl.textContent = state.buffer;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+
+        case 'response':
+            // 在更新之前，先获取任务对应的原始对话ID
+            const responseTaskState = progressTaskState.get(progressId);
+            const responseOriginalConversationId = responseTaskState?.conversationId;
+
+            // 先更新 mcp ids
+            const responseData = event.data || {};
+            const mcpIds = responseData.mcpExecutionIds || [];
+            setMcpIds(mcpIds);
+
+            // 更新对话ID
+            if (responseData.conversationId) {
+                if (currentConversationId === null && responseOriginalConversationId !== null) {
+                    updateProgressConversation(progressId, responseData.conversationId);
+                    break;
+                }
+
+                currentConversationId = responseData.conversationId;
+                updateActiveConversation();
+                addAttackChainButton(currentConversationId);
+                updateProgressConversation(progressId, responseData.conversationId);
+                loadActiveTasks();
+            }
+
+            // 如果之前已经在 response_start/response_delta 阶段创建过占位，则复用该消息更新最终内容
+            const streamState = responseStreamStateByProgressId.get(progressId);
+            const existingAssistantId = streamState?.assistantId || getAssistantId();
+            let assistantIdFinal = existingAssistantId;
+
+            if (!assistantIdFinal) {
+                assistantIdFinal = addMessage('assistant', event.message, mcpIds, progressId);
+                setAssistantId(assistantIdFinal);
+            } else {
+                setAssistantId(assistantIdFinal);
+                updateAssistantBubbleContent(assistantIdFinal, event.message, true);
+            }
+
+            // 最终回复时隐藏进度卡片（多代理模式下，迭代过程已完整展示）
+            hideProgressMessageForFinalReply(progressId);
+
+            // 将进度详情集成到工具调用区域（放在最终 response 之后，保证时间线已完整）
+            integrateProgressToMCPSection(progressId, assistantIdFinal, mcpIds);
+            responseStreamStateByProgressId.delete(progressId);
+
             setTimeout(() => {
-                collapseAllProgressDetails(assistantId, progressId);
+                collapseAllProgressDetails(assistantIdFinal, progressId);
             }, 3000);
-            
-            // Delay refreshing conversation list to ensure assistant message is saved and updated_at is updated
+
             setTimeout(() => {
                 loadConversations();
             }, 200);
             break;
             
         case 'error':
-            if (event.data && event.data.errorType === 'task_already_running') {
-                addTimelineItem(timeline, 'progress', {
-                    title: 'ℹ️ Task already running',
-                    message: event.message,
-                    data: event.data
-                });
-
-                const runningTitle = document.querySelector(`#${progressId} .progress-title`);
-                if (runningTitle) {
-                    runningTitle.textContent = '⏳ Existing task is still running';
-                }
-
-                if (progressTaskState.has(progressId)) {
-                    finalizeProgressTask(progressId, 'Already running');
-                }
-                loadActiveTasks();
-                break;
-            }
-
-            // ShowError
+            // 显示错误
             addTimelineItem(timeline, 'error', {
-                title: '❌ Error',
+                title: '❌ ' + (typeof window.t === 'function' ? window.t('chat.error') : '错误'),
                 message: event.message,
                 data: event.data
             });
             
-            // Update progress title to error status
+            // 更新进度标题为错误状态
             const errorTitle = document.querySelector(`#${progressId} .progress-title`);
             if (errorTitle) {
-                errorTitle.textContent = '❌ Execution failed';
+                errorTitle.textContent = '❌ ' + (typeof window.t === 'function' ? window.t('chat.executionFailed') : '执行失败');
             }
             
-            // Update progress container to completed status (add completed class)
+            // 更新进度容器为已完成状态（添加completed类）
             const progressContainer = document.querySelector(`#${progressId} .progress-container`);
             if (progressContainer) {
                 progressContainer.classList.add('completed');
             }
             
-            // Finalize progress task (marked as failed)
+            // 完成进度任务（标记为失败）
             if (progressTaskState.has(progressId)) {
-                finalizeProgressTask(progressId, 'Failed');
+                finalizeProgressTask(progressId, typeof window.t === 'function' ? window.t('tasks.statusFailed') : '执行失败');
             }
             
-            // If the error event contains a messageId, there is an assistant message; show error content
-            if (event.data && event.data.messageId) {
-                // Check if the assistant message already exists
-                let assistantId = event.data.messageId;
-                let assistantElement = document.getElementById(assistantId);
-                
-                // If assistant message does not exist, create it
-                if (!assistantElement) {
-                    assistantId = addMessage('assistant', event.message, null, progressId);
-                    setAssistantId(assistantId);
-                    assistantElement = document.getElementById(assistantId);
-                } else {
-                    // If already exists, update content
-                    const bubble = assistantElement.querySelector('.message-bubble');
-                    if (bubble) {
-                        bubble.innerHTML = escapeHtml(event.message).replace(/\n/g, '<br>');
-                    }
-                }
-                
-                // Integrate progress details into the tool call area (if not already done)
+            // 复用已有助手消息（若有），避免终态事件重复插入消息
+            {
+                const preferredMessageId = event.data && event.data.messageId ? event.data.messageId : null;
+                const { assistantId, assistantElement } = upsertTerminalAssistantMessage(event.message, preferredMessageId);
                 if (assistantElement) {
                     const detailsId = 'process-details-' + assistantId;
                     if (!document.getElementById(detailsId)) {
-                        integrateProgressToMCPSection(progressId, assistantId);
+                        integrateProgressToMCPSection(progressId, assistantId, typeof getMcpIds === 'function' ? (getMcpIds() || []) : []);
                     }
-                    // Immediately collapse details (should be collapsed by default on error)
                     setTimeout(() => {
                         collapseAllProgressDetails(assistantId, progressId);
                     }, 100);
                 }
-            } else {
-                // If no messageId (e.g. error while task is running), create assistant message and integrate details
-                const assistantId = addMessage('assistant', event.message, null, progressId);
-                setAssistantId(assistantId);
-                
-                // Integrate progress details into the tool call area
-                setTimeout(() => {
-                    integrateProgressToMCPSection(progressId, assistantId);
-                    // Ensure details are collapsed by default
-                    collapseAllProgressDetails(assistantId, progressId);
-                }, 100);
             }
             
-            // Immediately refresh task status（task status will update when execution fails）
+            // 立即刷新任务状态（执行失败时任务状态会更新）
             loadActiveTasks();
             break;
             
         case 'done':
-            // Done, update progress title (if progress message still exists)
+            // 清理流式输出状态
+            responseStreamStateByProgressId.delete(progressId);
+            thinkingStreamStateByProgressId.delete(progressId);
+            einoAgentReplyStreamStateByProgressId.delete(progressId);
+            // 清理工具流式输出占位
+            const prefix = String(progressId) + '::';
+            for (const key of Array.from(toolResultStreamStateByKey.keys())) {
+                if (String(key).startsWith(prefix)) {
+                    toolResultStreamStateByKey.delete(key);
+                }
+            }
+            // 完成，更新进度标题（如果进度消息还存在）
             const doneTitle = document.querySelector(`#${progressId} .progress-title`);
             if (doneTitle) {
-                doneTitle.textContent = '✅ Penetration test done';
+                doneTitle.textContent = '✅ ' + (typeof window.t === 'function' ? window.t('chat.penetrationTestComplete') : '渗透测试完成');
             }
-            // Update conversation ID
+            // 更新对话ID
             if (event.data && event.data.conversationId) {
                 currentConversationId = event.data.conversationId;
                 updateActiveConversation();
@@ -846,33 +1369,33 @@ function handleStreamEvent(event, progressElement, progressId,
                 updateProgressConversation(progressId, event.data.conversationId);
             }
             if (progressTaskState.has(progressId)) {
-                finalizeProgressTask(progressId, 'Done');
+                finalizeProgressTask(progressId, typeof window.t === 'function' ? window.t('tasks.statusCompleted') : '已完成');
             }
             
-            // Check if timeline has error items
+            // 检查时间线中是否有错误项
             const hasError = timeline && timeline.querySelector('.timeline-item-error');
             
-            // Immediately refresh task status（ensure task status is synchronized）
+            // 立即刷新任务状态（确保任务状态同步）
             loadActiveTasks();
             
-            // Delay re-refreshing task status (ensure backend status is updated)
+            // 延迟再次刷新任务状态（确保后端已完成状态更新）
             setTimeout(() => {
                 loadActiveTasks();
             }, 200);
             
-            // Auto-collapse all details when done (delay to ensure response event is processed)
+            // 完成时自动折叠所有详情（延迟一下确保response事件已处理）
             setTimeout(() => {
                 const assistantIdFromDone = getAssistantId();
                 if (assistantIdFromDone) {
                     collapseAllProgressDetails(assistantIdFromDone, progressId);
                 } else {
-                    // If assistant ID cannot be obtained, try to collapse all details
+                    // 如果无法获取助手ID，尝试折叠所有详情
                     collapseAllProgressDetails(null, progressId);
                 }
                 
-                // If there is an error, ensure details are collapsed (should be collapsed by default on error)
+                // 如果有错误，确保详情是折叠的（错误时应该默认折叠）
                 if (hasError) {
-                    // Ensure collapsed again (small delay to ensure DOM has updated)
+                    // 再次确保折叠（延迟一点确保DOM已更新）
                     setTimeout(() => {
                         collapseAllProgressDetails(assistantIdFromDone || null, progressId);
                     }, 200);
@@ -881,12 +1404,11 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
     }
     
-    // Auto-scroll to bottom
-    const messagesDiv = document.getElementById('chat-messages');
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    // 仅在事件处理前用户已在底部附近时跟随滚到底部（避免上滑看历史时被拉回）
+    scrollChatMessagesToBottomIfPinned(streamScrollWasPinned);
 }
 
-// Update tool call status
+// 更新工具调用状态
 function updateToolCallStatus(toolCallId, status) {
     const mapping = toolCallStatusMap.get(toolCallId);
     if (!mapping) return;
@@ -897,41 +1419,72 @@ function updateToolCallStatus(toolCallId, status) {
     const titleElement = item.querySelector('.timeline-item-title');
     if (!titleElement) return;
     
-    // Remove previous status class
+    // 移除之前的状态类
     item.classList.remove('tool-call-running', 'tool-call-completed', 'tool-call-failed');
     
-    // Update style and text based on status
+    const runningLabel = typeof window.t === 'function' ? window.t('timeline.running') : '执行中...';
+    const completedLabel = typeof window.t === 'function' ? window.t('timeline.completed') : '已完成';
+    const failedLabel = typeof window.t === 'function' ? window.t('timeline.execFailed') : '执行失败';
     let statusText = '';
     if (status === 'running') {
         item.classList.add('tool-call-running');
-        statusText = ' <span class="tool-status-badge tool-status-running">Running...</span>';
+        statusText = ' <span class="tool-status-badge tool-status-running">' + escapeHtml(runningLabel) + '</span>';
     } else if (status === 'completed') {
         item.classList.add('tool-call-completed');
-        statusText = ' <span class="tool-status-badge tool-status-completed">✅ Done</span>';
+        statusText = ' <span class="tool-status-badge tool-status-completed">✅ ' + escapeHtml(completedLabel) + '</span>';
     } else if (status === 'failed') {
         item.classList.add('tool-call-failed');
-        statusText = ' <span class="tool-status-badge tool-status-failed">❌ Failed</span>';
+        statusText = ' <span class="tool-status-badge tool-status-failed">❌ ' + escapeHtml(failedLabel) + '</span>';
     }
     
-    // Update title (retain existing text, append status)
+    // 更新标题（保留原有文本，追加状态）
     const originalText = titleElement.innerHTML;
-    // Remove any previously existing status marker
+    // 移除之前可能存在的状态标记
     const cleanText = originalText.replace(/\s*<span class="tool-status-badge[^>]*>.*?<\/span>/g, '');
     titleElement.innerHTML = cleanText + statusText;
 }
 
-// Add timeline item
+// 添加时间线项目
 function addTimelineItem(timeline, type, options) {
     const item = document.createElement('div');
-    // Generate unique ID
+    // 生成唯一ID
     const itemId = 'timeline-item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     item.id = itemId;
     item.className = `timeline-item timeline-item-${type}`;
-    
-    // Use the passed createdAtTime; if not provided, use current time (backward compatible)
+    // 记录类型与参数，便于 languagechange 时刷新标题文案
+    item.dataset.timelineType = type;
+    if (type === 'iteration') {
+        const n = options.iterationN != null ? options.iterationN : (options.data && options.data.iteration != null ? options.data.iteration : 1);
+        item.dataset.iterationN = String(n);
+        if (options.data && options.data.einoScope) {
+            item.dataset.einoScope = String(options.data.einoScope);
+        }
+    }
+    if (type === 'progress' && options.message) {
+        item.dataset.progressMessage = options.message;
+    }
+    if (type === 'tool_calls_detected' && options.data && options.data.count != null) {
+        item.dataset.toolCallsCount = String(options.data.count);
+    }
+    if (type === 'tool_call' && options.data) {
+        const d = options.data;
+        item.dataset.toolName = (d.toolName != null && d.toolName !== '') ? String(d.toolName) : '';
+        item.dataset.toolIndex = (d.index != null) ? String(d.index) : '0';
+        item.dataset.toolTotal = (d.total != null) ? String(d.total) : '0';
+    }
+    if (type === 'tool_result' && options.data) {
+        const d = options.data;
+        item.dataset.toolName = (d.toolName != null && d.toolName !== '') ? String(d.toolName) : '';
+        item.dataset.toolSuccess = d.success !== false ? '1' : '0';
+    }
+    if (options.data && options.data.einoAgent != null && String(options.data.einoAgent).trim() !== '') {
+        item.dataset.einoAgent = String(options.data.einoAgent).trim();
+    }
+
+    // 使用传入的createdAt时间，如果没有则使用当前时间（向后兼容）
     let eventTime;
     if (options.createdAt) {
-        // Handle string or Date object
+        // 处理字符串或Date对象
         if (typeof options.createdAt === 'string') {
             eventTime = new Date(options.createdAt);
         } else if (options.createdAt instanceof Date) {
@@ -939,15 +1492,21 @@ function addTimelineItem(timeline, type, options) {
         } else {
             eventTime = new Date(options.createdAt);
         }
-        // If parsing fails, use current time
+        // 如果解析失败，使用当前时间
         if (isNaN(eventTime.getTime())) {
             eventTime = new Date();
         }
     } else {
         eventTime = new Date();
     }
-    
-    const time = eventTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    // 保存事件时间 ISO，语言切换时可重算时间格式
+    try {
+        item.dataset.createdAtIso = eventTime.toISOString();
+    } catch (e) { /* ignore */ }
+
+    const timeLocale = getCurrentTimeLocale();
+    const timeOpts = getTimeFormatOptions();
+    const time = eventTime.toLocaleTimeString(timeLocale, timeOpts);
     
     let content = `
         <div class="timeline-item-header">
@@ -956,64 +1515,78 @@ function addTimelineItem(timeline, type, options) {
         </div>
     `;
     
-    // Add detail content based on type
+    // 根据类型添加详细内容
     if (type === 'thinking' && options.message) {
         content += `<div class="timeline-item-content">${formatMarkdown(options.message)}</div>`;
     } else if (type === 'tool_call' && options.data) {
         const data = options.data;
-        const args = data.argumentsObj || (data.arguments ? JSON.parse(data.arguments) : {});
+        let args = data.argumentsObj;
+        if (args == null && data.arguments != null && String(data.arguments).trim() !== '') {
+            try {
+                args = JSON.parse(String(data.arguments));
+            } catch (e) {
+                args = { _raw: String(data.arguments) };
+            }
+        }
+        if (args == null || typeof args !== 'object') {
+            args = {};
+        }
+        const paramsLabel = typeof window.t === 'function' ? window.t('timeline.params') : '参数:';
         content += `
             <div class="timeline-item-content">
                 <div class="tool-details">
                     <div class="tool-arg-section">
-                        <strong>Parameters:</strong>
+                        <strong data-i18n="timeline.params">${escapeHtml(paramsLabel)}</strong>
                         <pre class="tool-args">${escapeHtml(JSON.stringify(args, null, 2))}</pre>
                     </div>
                 </div>
             </div>
         `;
+    } else if (type === 'eino_agent_reply' && options.message) {
+        content += `<div class="timeline-item-content">${formatMarkdown(options.message)}</div>`;
     } else if (type === 'tool_result' && options.data) {
         const data = options.data;
         const isError = data.isError || !data.success;
-        const result = data.result || data.error || 'No result';
-        // Ensure result is a string
+        const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
+        const result = data.result || data.error || noResultText;
         const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+        const execResultLabel = typeof window.t === 'function' ? window.t('timeline.executionResult') : '执行结果:';
+        const execIdLabel = typeof window.t === 'function' ? window.t('timeline.executionId') : '执行ID:';
         content += `
             <div class="timeline-item-content">
                 <div class="tool-result-section ${isError ? 'error' : 'success'}">
-                    <strong>Execution Result:</strong>
+                    <strong data-i18n="timeline.executionResult">${escapeHtml(execResultLabel)}</strong>
                     <pre class="tool-result">${escapeHtml(resultStr)}</pre>
-                    ${data.executionId ? `<div class="tool-execution-id">Execution ID: <code>${escapeHtml(data.executionId)}</code></div>` : ''}
+                    ${data.executionId ? `<div class="tool-execution-id"><span data-i18n="timeline.executionId">${escapeHtml(execIdLabel)}</span> <code>${escapeHtml(data.executionId)}</code></div>` : ''}
                 </div>
             </div>
         `;
     } else if (type === 'cancelled') {
+        const taskCancelledLabel = typeof window.t === 'function' ? window.t('chat.taskCancelled') : '任务已取消';
         content += `
             <div class="timeline-item-content">
-                ${escapeHtml(options.message || 'Task cancelled')}
+                ${escapeHtml(options.message || taskCancelledLabel)}
             </div>
         `;
-    } else if ((type === 'progress' || type === 'warning') && options.message) {
-        // Generic progress/warning with message body (e.g. health_check detail)
-        // If message contains HTML tags, render raw; otherwise escape
-        const isHtml = /<[a-z][\s\S]*>/i.test(options.message);
-        content += `<div class="timeline-item-content">${isHtml ? options.message : escapeHtml(options.message)}</div>`;
     }
     
     item.innerHTML = content;
+    if (options.data) {
+        applyEinoTimelineRole(item, options.data);
+    }
     timeline.appendChild(item);
     
-    // Auto-expand details
+    // 自动展开详情
     const expanded = timeline.classList.contains('expanded');
     if (!expanded && (type === 'tool_call' || type === 'tool_result')) {
-        // For tool calls and results, show summary by default
+        // 对于工具调用和结果，默认显示摘要
     }
     
-    // Return item ID for subsequent updates
+    // 返回item ID以便后续更新
     return itemId;
 }
 
-// Load active task list
+// 加载活跃任务列表
 async function loadActiveTasks(showErrors = false) {
     const bar = document.getElementById('active-tasks-bar');
     try {
@@ -1021,15 +1594,16 @@ async function loadActiveTasks(showErrors = false) {
         const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to get active tasks');
+            throw new Error(result.error || (typeof window.t === 'function' ? window.t('tasks.loadActiveTasksFailed') : '获取活跃任务失败'));
         }
 
         renderActiveTasks(result.tasks || []);
     } catch (error) {
-        console.error('Failed to get active tasks:', error);
+        console.error('获取活跃任务失败:', error);
         if (showErrors && bar) {
             bar.style.display = 'block';
-            bar.innerHTML = `<div class="active-task-error">Failed to get task status: ${escapeHtml(error.message)}</div>`;
+            const cannotGetStatus = typeof window.t === 'function' ? window.t('tasks.cannotGetTaskStatus') : '无法获取任务状态：';
+            bar.innerHTML = `<div class="active-task-error">${escapeHtml(cannotGetStatus)}${escapeHtml(error.message)}</div>`;
         }
     }
 }
@@ -1058,41 +1632,45 @@ function renderActiveTasks(tasks) {
         item.className = 'active-task-item';
 
         const startedTime = task.startedAt ? new Date(task.startedAt) : null;
+        const taskTimeLocale = getCurrentTimeLocale();
+        const timeOpts = getTimeFormatOptions();
         const timeText = startedTime && !isNaN(startedTime.getTime())
-            ? startedTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            ? startedTime.toLocaleTimeString(taskTimeLocale, timeOpts)
             : '';
 
-        // Show different text based on task status
+        const _t = function (k) { return typeof window.t === 'function' ? window.t(k) : k; };
         const statusMap = {
-            'running': 'Running',
-            'cancelling': 'Cancelling',
-            'failed': 'Failed',
-            'timeout': 'Timed out',
-            'cancelled': 'Cancelled',
-            'completed': 'Completed'
+            'running': _t('tasks.statusRunning'),
+            'cancelling': _t('tasks.statusCancelling'),
+            'failed': _t('tasks.statusFailed'),
+            'timeout': _t('tasks.statusTimeout'),
+            'cancelled': _t('tasks.statusCancelled'),
+            'completed': _t('tasks.statusCompleted')
         };
-        const statusText = statusMap[task.status] || 'Running';
+        const statusText = statusMap[task.status] || _t('tasks.statusRunning');
         const isFinalStatus = ['failed', 'timeout', 'cancelled', 'completed'].includes(task.status);
+        const unnamedTaskText = _t('tasks.unnamedTask');
+        const stopTaskBtnText = _t('tasks.stopTask');
 
         item.innerHTML = `
             <div class="active-task-info">
                 <span class="active-task-status">${statusText}</span>
-                <span class="active-task-message">${escapeHtml(task.message || 'Unnamed task')}</span>
+                <span class="active-task-message">${escapeHtml(task.message || unnamedTaskText)}</span>
             </div>
             <div class="active-task-actions">
                 ${timeText ? `<span class="active-task-time">${timeText}</span>` : ''}
-                ${!isFinalStatus ? '<button class="active-task-cancel">Stop Task</button>' : ''}
+                ${!isFinalStatus ? '<button class="active-task-cancel">' + stopTaskBtnText + '</button>' : ''}
             </div>
         `;
 
-        // Only show stop button for non-final status tasks
+        // 只有非最终状态的任务才显示停止按钮
         if (!isFinalStatus) {
             const cancelBtn = item.querySelector('.active-task-cancel');
             if (cancelBtn) {
                 cancelBtn.onclick = () => cancelActiveTask(task.conversationId, cancelBtn);
                 if (task.status === 'cancelling') {
                     cancelBtn.disabled = true;
-                    cancelBtn.textContent = 'Cancelling...';
+                    cancelBtn.textContent = typeof window.t === 'function' ? window.t('tasks.cancelling') : '取消中...';
                 }
             }
         }
@@ -1105,20 +1683,20 @@ async function cancelActiveTask(conversationId, button) {
     if (!conversationId) return;
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = 'Cancelling...';
+    button.textContent = typeof window.t === 'function' ? window.t('tasks.cancelling') : '取消中...';
 
     try {
         await requestCancel(conversationId);
         loadActiveTasks();
     } catch (error) {
-        console.error('Failed to cancel task:', error);
-        alert('Failed to cancel task: ' + error.message);
+        console.error('取消任务失败:', error);
+        alert((typeof window.t === 'function' ? window.t('tasks.cancelTaskFailed') : '取消任务失败') + ': ' + error.message);
         button.disabled = false;
         button.textContent = originalText;
     }
 }
 
-// Monitor panel status
+// 监控面板状态
 const monitorState = {
     executions: [],
     stats: {},
@@ -1126,7 +1704,7 @@ const monitorState = {
     pagination: {
         page: 1,
         pageSize: (() => {
-            // Read saved per-page count from localStorage, default is 20
+            // 从 localStorage 读取保存的每页显示数量，默认为 20
             const saved = localStorage.getItem('monitorPageSize');
             return saved ? parseInt(saved, 10) : 20;
         })(),
@@ -1136,33 +1714,15 @@ const monitorState = {
 };
 
 function openMonitorPanel() {
-    // Switch to MCP monitor page
+    // 切换到MCP监控页面
     if (typeof switchPage === 'function') {
         switchPage('mcp-monitor');
     }
-    // Initialize per-page count selector
+    // 初始化每页显示数量选择器
     initializeMonitorPageSize();
 }
 
-function startMonitorAutoRefresh() {
-    stopMonitorAutoRefresh();
-    monitorAutoRefreshInterval = setInterval(() => {
-        if (typeof currentPage === 'function' && currentPage() !== 'mcp-monitor') {
-            stopMonitorAutoRefresh();
-            return;
-        }
-        refreshMonitorPanel();
-    }, MONITOR_AUTO_REFRESH_INTERVAL);
-}
-
-function stopMonitorAutoRefresh() {
-    if (monitorAutoRefreshInterval) {
-        clearInterval(monitorAutoRefreshInterval);
-        monitorAutoRefreshInterval = null;
-    }
-}
-
-// Initialize per-page count selector
+// 初始化每页显示数量选择器
 function initializeMonitorPageSize() {
     const pageSizeSelect = document.getElementById('monitor-page-size');
     if (pageSizeSelect) {
@@ -1170,7 +1730,7 @@ function initializeMonitorPageSize() {
     }
 }
 
-// Change per-page count
+// 改变每页显示数量
 function changeMonitorPageSize() {
     const pageSizeSelect = document.getElementById('monitor-page-size');
     if (!pageSizeSelect) {
@@ -1182,20 +1742,20 @@ function changeMonitorPageSize() {
         return;
     }
     
-    // Save to localStorage
+    // 保存到 localStorage
     localStorage.setItem('monitorPageSize', newPageSize.toString());
     
-    // UpdateStatus
+    // 更新状态
     monitorState.pagination.pageSize = newPageSize;
-    monitorState.pagination.page = 1; // Reset to page 1
+    monitorState.pagination.page = 1; // 重置到第一页
     
-    // Refresh data
+    // 刷新数据
     refreshMonitorPanel(1);
 }
 
 function closeMonitorPanel() {
-    // Close is no longer needed since this is now a page, not a modal
-    // If needed, can switch back to conversations page
+    // 不再需要关闭功能，因为现在是页面而不是模态框
+    // 如果需要，可以切换回对话页面
     if (typeof switchPage === 'function') {
         switchPage('chat');
     }
@@ -1206,17 +1766,17 @@ async function refreshMonitorPanel(page = null) {
     const execContainer = document.getElementById('monitor-executions');
 
     try {
-        // If page number is specified, use it; otherwise use current page number
+        // 如果指定了页码，使用指定页码，否则使用当前页码
         const currentPage = page !== null ? page : monitorState.pagination.page;
         const pageSize = monitorState.pagination.pageSize;
         
-        // Get current filter conditions
+        // 获取当前的筛选条件
         const statusFilter = document.getElementById('monitor-status-filter');
         const toolFilter = document.getElementById('monitor-tool-filter');
         const currentStatusFilter = statusFilter ? statusFilter.value : 'all';
         const currentToolFilter = toolFilter ? (toolFilter.value.trim() || 'all') : 'all';
         
-        // Build request URL
+        // 构建请求 URL
         let url = `/api/monitor?page=${currentPage}&page_size=${pageSize}`;
         if (currentStatusFilter && currentStatusFilter !== 'all') {
             url += `&status=${encodeURIComponent(currentStatusFilter)}`;
@@ -1228,14 +1788,14 @@ async function refreshMonitorPanel(page = null) {
         const response = await apiFetch(url, { method: 'GET' });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to get monitor data');
+            throw new Error(result.error || '获取监控数据失败');
         }
 
         monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
         monitorState.stats = result.stats || {};
         monitorState.lastFetchedAt = new Date();
         
-        // Update pagination info
+        // 更新分页信息
         if (result.total !== undefined) {
             monitorState.pagination = {
                 page: result.page || currentPage,
@@ -1249,28 +1809,28 @@ async function refreshMonitorPanel(page = null) {
         renderMonitorExecutions(monitorState.executions, currentStatusFilter);
         renderMonitorPagination();
         
-        // Initialize per-page count selector
+        // 初始化每页显示数量选择器
         initializeMonitorPageSize();
     } catch (error) {
-        console.error('Failed to refresh monitor panel:', error);
+        console.error('刷新监控面板失败:', error);
         if (statsContainer) {
-            statsContainer.innerHTML = `<div class="monitor-error">Failed to load statistics: ${escapeHtml(error.message)}</div>`;
+            statsContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadStatsError') : '无法加载统计信息')}：${escapeHtml(error.message)}</div>`;
         }
         if (execContainer) {
-            execContainer.innerHTML = `<div class="monitor-error">Failed to load execution records: ${escapeHtml(error.message)}</div>`;
+            execContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadExecutionsError') : '无法加载执行记录')}：${escapeHtml(error.message)}</div>`;
         }
     }
 }
 
-// Handle tool search input (debounced)
+// 处理工具搜索输入（防抖）
 let toolFilterDebounceTimer = null;
 function handleToolFilterInput() {
-    // Clear existing timer
+    // 清除之前的定时器
     if (toolFilterDebounceTimer) {
         clearTimeout(toolFilterDebounceTimer);
     }
     
-    // Set new timer, execute filter after 500ms
+    // 设置新的定时器，500ms后执行筛选
     toolFilterDebounceTimer = setTimeout(() => {
         applyMonitorFilters();
     }, 500);
@@ -1281,7 +1841,7 @@ async function applyMonitorFilters() {
     const toolFilter = document.getElementById('monitor-tool-filter');
     const status = statusFilter ? statusFilter.value : 'all';
     const tool = toolFilter ? (toolFilter.value.trim() || 'all') : 'all';
-    // When filter conditions change, re-fetch data from backend
+    // 当筛选条件改变时，从后端重新获取数据
     await refreshMonitorPanelWithFilter(status, tool);
 }
 
@@ -1290,10 +1850,10 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
     const execContainer = document.getElementById('monitor-executions');
 
     try {
-        const currentPage = 1; // Reset to page 1 when filtering
+        const currentPage = 1; // 筛选时重置到第一页
         const pageSize = monitorState.pagination.pageSize;
         
-        // Build request URL
+        // 构建请求 URL
         let url = `/api/monitor?page=${currentPage}&page_size=${pageSize}`;
         if (statusFilter && statusFilter !== 'all') {
             url += `&status=${encodeURIComponent(statusFilter)}`;
@@ -1305,14 +1865,14 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
         const response = await apiFetch(url, { method: 'GET' });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to get monitor data');
+            throw new Error(result.error || '获取监控数据失败');
         }
 
         monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
         monitorState.stats = result.stats || {};
         monitorState.lastFetchedAt = new Date();
         
-        // Update pagination info
+        // 更新分页信息
         if (result.total !== undefined) {
             monitorState.pagination = {
                 page: result.page || currentPage,
@@ -1326,15 +1886,15 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
         renderMonitorExecutions(monitorState.executions, statusFilter);
         renderMonitorPagination();
         
-        // Initialize per-page count selector
+        // 初始化每页显示数量选择器
         initializeMonitorPageSize();
     } catch (error) {
-        console.error('Failed to refresh monitor panel:', error);
+        console.error('刷新监控面板失败:', error);
         if (statsContainer) {
-            statsContainer.innerHTML = `<div class="monitor-error">Failed to load statistics: ${escapeHtml(error.message)}</div>`;
+            statsContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadStatsError') : '无法加载统计信息')}：${escapeHtml(error.message)}</div>`;
         }
         if (execContainer) {
-            execContainer.innerHTML = `<div class="monitor-error">Failed to load execution records: ${escapeHtml(error.message)}</div>`;
+            execContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadExecutionsError') : '无法加载执行记录')}：${escapeHtml(error.message)}</div>`;
         }
     }
 }
@@ -1348,11 +1908,12 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
 
     const entries = Object.values(statsMap);
     if (entries.length === 0) {
-        container.innerHTML = '<div class="monitor-empty">No statistics data</div>';
+        const noStats = typeof window.t === 'function' ? window.t('mcpMonitor.noStatsData') : '暂无统计数据';
+        container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noStats) + '</div>';
         return;
     }
 
-    // Calculate overall summary
+    // 计算总体汇总
     const totals = entries.reduce(
         (acc, item) => {
             acc.total += item.totalCalls || 0;
@@ -1368,42 +1929,52 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     );
 
     const successRate = totals.total > 0 ? ((totals.success / totals.total) * 100).toFixed(1) : '0.0';
-    const lastUpdatedText = lastFetchedAt ? lastFetchedAt.toLocaleString('zh-CN') : 'N/A';
-    const lastCallText = totals.lastCallTime ? totals.lastCallTime.toLocaleString('en-US') : 'No calls';
+    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : undefined;
+    const lastUpdatedText = lastFetchedAt ? (lastFetchedAt.toLocaleString ? lastFetchedAt.toLocaleString(locale || 'en-US') : String(lastFetchedAt)) : 'N/A';
+    const noCallsYet = typeof window.t === 'function' ? window.t('mcpMonitor.noCallsYet') : '暂无调用';
+    const lastCallText = totals.lastCallTime ? (totals.lastCallTime.toLocaleString ? totals.lastCallTime.toLocaleString(locale || 'en-US') : String(totals.lastCallTime)) : noCallsYet;
+    const totalCallsLabel = typeof window.t === 'function' ? window.t('mcpMonitor.totalCalls') : '总调用次数';
+    const successFailedLabel = typeof window.t === 'function' ? window.t('mcpMonitor.successFailed', { success: totals.success, failed: totals.failed }) : `成功 ${totals.success} / 失败 ${totals.failed}`;
+    const successRateLabel = typeof window.t === 'function' ? window.t('mcpMonitor.successRate') : '成功率';
+    const statsFromAll = typeof window.t === 'function' ? window.t('mcpMonitor.statsFromAllTools') : '统计自全部工具调用';
+    const lastCallLabel = typeof window.t === 'function' ? window.t('mcpMonitor.lastCall') : '最近一次调用';
+    const lastRefreshLabel = typeof window.t === 'function' ? window.t('mcpMonitor.lastRefreshTime') : '最后刷新时间';
 
     let html = `
         <div class="monitor-stat-card">
-            <h4>Total Calls</h4>
+            <h4>${escapeHtml(totalCallsLabel)}</h4>
             <div class="monitor-stat-value">${totals.total}</div>
-            <div class="monitor-stat-meta">Success ${totals.success} / Failed ${totals.failed}</div>
+            <div class="monitor-stat-meta">${escapeHtml(successFailedLabel)}</div>
         </div>
         <div class="monitor-stat-card">
-            <h4>Success Rate</h4>
+            <h4>${escapeHtml(successRateLabel)}</h4>
             <div class="monitor-stat-value">${successRate}%</div>
-            <div class="monitor-stat-meta">Across all tool calls</div>
+            <div class="monitor-stat-meta">${escapeHtml(statsFromAll)}</div>
         </div>
         <div class="monitor-stat-card">
-            <h4>Last Call</h4>
-            <div class="monitor-stat-value" style="font-size:1rem;">${lastCallText}</div>
-            <div class="monitor-stat-meta">Last refreshed: ${lastUpdatedText}</div>
+            <h4>${escapeHtml(lastCallLabel)}</h4>
+            <div class="monitor-stat-value" style="font-size:1rem;">${escapeHtml(lastCallText)}</div>
+            <div class="monitor-stat-meta">${escapeHtml(lastRefreshLabel)}：${escapeHtml(lastUpdatedText)}</div>
         </div>
     `;
 
-    // Show statistics for at most the top 4 tools (filter out tools with totalCalls = 0)
+    // 显示最多前4个工具的统计（过滤掉 totalCalls 为 0 的工具）
     const topTools = entries
         .filter(tool => (tool.totalCalls || 0) > 0)
         .slice()
         .sort((a, b) => (b.totalCalls || 0) - (a.totalCalls || 0))
         .slice(0, 4);
 
+    const unknownToolLabel = typeof window.t === 'function' ? window.t('mcpMonitor.unknownTool') : '未知工具';
     topTools.forEach(tool => {
         const toolSuccessRate = tool.totalCalls > 0 ? ((tool.successCalls || 0) / tool.totalCalls * 100).toFixed(1) : '0.0';
+        const toolMeta = typeof window.t === 'function' ? window.t('mcpMonitor.successFailedRate', { success: tool.successCalls || 0, failed: tool.failedCalls || 0, rate: toolSuccessRate }) : `成功 ${tool.successCalls || 0} / 失败 ${tool.failedCalls || 0} · 成功率 ${toolSuccessRate}%`;
         html += `
             <div class="monitor-stat-card">
-                <h4>${escapeHtml(tool.toolName || 'Unknown tool')}</h4>
+                <h4>${escapeHtml(tool.toolName || unknownToolLabel)}</h4>
                 <div class="monitor-stat-value">${tool.totalCalls || 0}</div>
                 <div class="monitor-stat-meta">
-                    Success ${tool.successCalls || 0} / Failed ${tool.failedCalls || 0} · Success rate ${toolSuccessRate}%
+                    ${escapeHtml(toolMeta)}
                 </div>
             </div>
         `;
@@ -1419,16 +1990,18 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
     }
 
     if (!Array.isArray(executions) || executions.length === 0) {
-        // Show different messages based on whether filter conditions are present
+        // 根据是否有筛选条件显示不同的提示
         const toolFilter = document.getElementById('monitor-tool-filter');
         const currentToolFilter = toolFilter ? toolFilter.value : 'all';
         const hasFilter = (statusFilter && statusFilter !== 'all') || (currentToolFilter && currentToolFilter !== 'all');
+        const noRecordsFilter = typeof window.t === 'function' ? window.t('mcpMonitor.noRecordsWithFilter') : '当前筛选条件下暂无记录';
+        const noExecutions = typeof window.t === 'function' ? window.t('mcpMonitor.noExecutions') : '暂无执行记录';
         if (hasFilter) {
-            container.innerHTML = '<div class="monitor-empty">No records under current filter conditions</div>';
+            container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noRecordsFilter) + '</div>';
         } else {
-            container.innerHTML = '<div class="monitor-empty">No execution records</div>';
+            container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noExecutions) + '</div>';
         }
-        // Hide bulk actions bar
+        // 隐藏批量操作栏
         const batchActions = document.getElementById('monitor-batch-actions');
         if (batchActions) {
             batchActions.style.display = 'none';
@@ -1436,16 +2009,24 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
         return;
     }
 
-    // Since filtering is done on the backend, directly use all passed execution records
-    // No need to filter on the frontend again since the backend has already returned filtered data
+    // 由于筛选已经在后端完成，这里直接使用所有传入的执行记录
+    // 不再需要前端再次筛选，因为后端已经返回了筛选后的数据
+    const unknownLabel = typeof window.t === 'function' ? window.t('mcpMonitor.unknown') : '未知';
+    const unknownToolLabel = typeof window.t === 'function' ? window.t('mcpMonitor.unknownTool') : '未知工具';
+    const viewDetailLabel = typeof window.t === 'function' ? window.t('mcpMonitor.viewDetail') : '查看详情';
+    const deleteLabel = typeof window.t === 'function' ? window.t('mcpMonitor.delete') : '删除';
+    const deleteExecTitle = typeof window.t === 'function' ? window.t('mcpMonitor.deleteExecTitle') : '删除此执行记录';
+    const statusKeyMap = { pending: 'statusPending', running: 'statusRunning', completed: 'statusCompleted', failed: 'statusFailed' };
+    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : undefined;
     const rows = executions
         .map(exec => {
             const status = (exec.status || 'unknown').toLowerCase();
             const statusClass = `monitor-status-chip ${status}`;
-            const statusLabel = getStatusText(status);
-            const startTime = exec.startTime ? new Date(exec.startTime).toLocaleString('zh-CN') : 'Unknown';
+            const statusKey = statusKeyMap[status];
+            const statusLabel = (typeof window.t === 'function' && statusKey) ? window.t('mcpMonitor.' + statusKey) : getStatusText(status);
+            const startTime = exec.startTime ? (new Date(exec.startTime).toLocaleString ? new Date(exec.startTime).toLocaleString(locale || 'en-US') : String(exec.startTime)) : unknownLabel;
             const duration = formatExecutionDuration(exec.startTime, exec.endTime);
-            const toolName = escapeHtml(exec.toolName || 'Unknown Tool');
+            const toolName = escapeHtml(exec.toolName || unknownToolLabel);
             const executionId = escapeHtml(exec.id || '');
             return `
                 <tr>
@@ -1453,13 +2034,13 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
                         <input type="checkbox" class="monitor-execution-checkbox" value="${executionId}" onchange="updateBatchActionsState()" />
                     </td>
                     <td>${toolName}</td>
-                    <td><span class="${statusClass}">${statusLabel}</span></td>
-                    <td>${startTime}</td>
-                    <td>${duration}</td>
+                    <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
+                    <td>${escapeHtml(startTime)}</td>
+                    <td>${escapeHtml(duration)}</td>
                     <td>
                         <div class="monitor-execution-actions">
-                            <button class="btn-secondary" onclick="showMCPDetail('${executionId}')">ViewDetails</button>
-                            <button class="btn-secondary btn-delete" onclick="deleteExecution('${executionId}')" title="Delete this execution record">Delete</button>
+                            <button class="btn-secondary" onclick="showMCPDetail('${executionId}')">${escapeHtml(viewDetailLabel)}</button>
+                            <button class="btn-secondary btn-delete" onclick="deleteExecution('${executionId}')" title="${escapeHtml(deleteExecTitle)}">${escapeHtml(deleteLabel)}</button>
                         </div>
                     </td>
                 </tr>
@@ -1467,20 +2048,25 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
         })
         .join('');
 
-    // First remove old table container and loading message (keep pagination controls)
+    // 先移除旧的表格容器和加载提示（保留分页控件）
     const oldTableContainer = container.querySelector('.monitor-table-container');
     if (oldTableContainer) {
         oldTableContainer.remove();
     }
-    // Clear loading messages
+    // 清除"加载中..."等提示信息
     const oldEmpty = container.querySelector('.monitor-empty');
     if (oldEmpty) {
         oldEmpty.remove();
     }
     
-    // Create table container
+    // 创建表格容器
     const tableContainer = document.createElement('div');
     tableContainer.className = 'monitor-table-container';
+    const colTool = typeof window.t === 'function' ? window.t('mcpMonitor.columnTool') : '工具';
+    const colStatus = typeof window.t === 'function' ? window.t('mcpMonitor.columnStatus') : '状态';
+    const colStartTime = typeof window.t === 'function' ? window.t('mcpMonitor.columnStartTime') : '开始时间';
+    const colDuration = typeof window.t === 'function' ? window.t('mcpMonitor.columnDuration') : '耗时';
+    const colActions = typeof window.t === 'function' ? window.t('mcpMonitor.columnActions') : '操作';
     tableContainer.innerHTML = `
         <table class="monitor-table">
             <thead>
@@ -1488,18 +2074,18 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
                     <th style="width: 40px;">
                         <input type="checkbox" id="monitor-select-all" onchange="toggleSelectAll(this)" />
                     </th>
-                    <th>Tool</th>
-                    <th>Status</th>
-                    <th>Start Time</th>
-                    <th>Duration</th>
-                    <th>Actions</th>
+                    <th>${escapeHtml(colTool)}</th>
+                    <th>${escapeHtml(colStatus)}</th>
+                    <th>${escapeHtml(colStartTime)}</th>
+                    <th>${escapeHtml(colDuration)}</th>
+                    <th>${escapeHtml(colActions)}</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
         </table>
     `;
     
-    // Insert table before pagination controls (if they exist)
+    // 在分页控件之前插入表格（如果存在分页控件）
     const existingPagination = container.querySelector('.monitor-pagination');
     if (existingPagination) {
         container.insertBefore(tableContainer, existingPagination);
@@ -1507,16 +2093,16 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
         container.appendChild(tableContainer);
     }
     
-    // Update bulk actions status
+    // 更新批量操作状态
     updateBatchActionsState();
 }
 
-// Render monitor panel pagination controls
+// 渲染监控面板分页控件
 function renderMonitorPagination() {
     const container = document.getElementById('monitor-executions');
     if (!container) return;
     
-    // Remove old pagination controls
+    // 移除旧的分页控件
     const oldPagination = container.querySelector('.monitor-pagination');
     if (oldPagination) {
         oldPagination.remove();
@@ -1524,19 +2110,25 @@ function renderMonitorPagination() {
     
     const { page, totalPages, total, pageSize } = monitorState.pagination;
     
-    // Always show pagination controls
+    // 始终显示分页控件
     const pagination = document.createElement('div');
     pagination.className = 'monitor-pagination';
     
-    // Handle the no-data case
+    // 处理没有数据的情况
     const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
     const endItem = total === 0 ? 0 : Math.min(page * pageSize, total);
-    
+    const paginationInfoText = typeof window.t === 'function' ? window.t('mcpMonitor.paginationInfo', { start: startItem, end: endItem, total: total }) : `显示 ${startItem}-${endItem} / 共 ${total} 条记录`;
+    const perPageLabel = typeof window.t === 'function' ? window.t('mcpMonitor.perPageLabel') : '每页显示';
+    const firstPageLabel = typeof window.t === 'function' ? window.t('mcp.firstPage') : '首页';
+    const prevPageLabel = typeof window.t === 'function' ? window.t('mcp.prevPage') : '上一页';
+    const pageInfoText = typeof window.t === 'function' ? window.t('mcp.pageInfo', { page: page, total: totalPages || 1 }) : `第 ${page} / ${totalPages || 1} 页`;
+    const nextPageLabel = typeof window.t === 'function' ? window.t('mcp.nextPage') : '下一页';
+    const lastPageLabel = typeof window.t === 'function' ? window.t('mcp.lastPage') : '末页';
     pagination.innerHTML = `
         <div class="pagination-info">
-            <span>Showing ${startItem}-${endItem} of ${total}</span>
+            <span>${escapeHtml(paginationInfoText)}</span>
             <label class="pagination-page-size">
-                Per page:
+                ${escapeHtml(perPageLabel)}
                 <select id="monitor-page-size" onchange="changeMonitorPageSize()">
                     <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
                     <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
@@ -1546,28 +2138,28 @@ function renderMonitorPagination() {
             </label>
         </div>
         <div class="pagination-controls">
-            <button class="btn-secondary" onclick="refreshMonitorPanel(1)" ${page === 1 || total === 0 ? 'disabled' : ''}>First</button>
-            <button class="btn-secondary" onclick="refreshMonitorPanel(${page - 1})" ${page === 1 || total === 0 ? 'disabled' : ''}>Prev</button>
-            <span class="pagination-page">Page ${page} / ${totalPages || 1}</span>
-            <button class="btn-secondary" onclick="refreshMonitorPanel(${page + 1})" ${page >= totalPages || total === 0 ? 'disabled' : ''}>Next</button>
-            <button class="btn-secondary" onclick="refreshMonitorPanel(${totalPages || 1})" ${page >= totalPages || total === 0 ? 'disabled' : ''}>Last</button>
+            <button class="btn-secondary" onclick="refreshMonitorPanel(1)" ${page === 1 || total === 0 ? 'disabled' : ''}>${escapeHtml(firstPageLabel)}</button>
+            <button class="btn-secondary" onclick="refreshMonitorPanel(${page - 1})" ${page === 1 || total === 0 ? 'disabled' : ''}>${escapeHtml(prevPageLabel)}</button>
+            <span class="pagination-page">${escapeHtml(pageInfoText)}</span>
+            <button class="btn-secondary" onclick="refreshMonitorPanel(${page + 1})" ${page >= totalPages || total === 0 ? 'disabled' : ''}>${escapeHtml(nextPageLabel)}</button>
+            <button class="btn-secondary" onclick="refreshMonitorPanel(${totalPages || 1})" ${page >= totalPages || total === 0 ? 'disabled' : ''}>${escapeHtml(lastPageLabel)}</button>
         </div>
     `;
     
     container.appendChild(pagination);
     
-    // Initialize per-page count selector
+    // 初始化每页显示数量选择器
     initializeMonitorPageSize();
 }
 
-// Delete execution record
+// 删除执行记录
 async function deleteExecution(executionId) {
     if (!executionId) {
         return;
     }
     
-    // ConfirmDelete
-    if (!confirm('Are you sure you want to delete this execution record? This action cannot be undone.')) {
+    const deleteConfirmMsg = typeof window.t === 'function' ? window.t('mcpMonitor.deleteExecConfirmSingle') : '确定要删除此执行记录吗？此操作不可恢复。';
+    if (!confirm(deleteConfirmMsg)) {
         return;
     }
     
@@ -1578,21 +2170,24 @@ async function deleteExecution(executionId) {
         
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || 'Failed to delete execution record');
+            const deleteFailedMsg = typeof window.t === 'function' ? window.t('mcpMonitor.deleteExecFailed') : '删除执行记录失败';
+            throw new Error(error.error || deleteFailedMsg);
         }
         
-        // Refresh current page after successful deletion
+        // 删除成功后刷新当前页面
         const currentPage = monitorState.pagination.page;
         await refreshMonitorPanel(currentPage);
         
-        alert('Execution record deleted');
+        const execDeletedMsg = typeof window.t === 'function' ? window.t('mcpMonitor.execDeleted') : '执行记录已删除';
+        alert(execDeletedMsg);
     } catch (error) {
-        console.error('Failed to delete execution record:', error);
-        alert('Failed to delete execution record: ' + error.message);
+        console.error('删除执行记录失败:', error);
+        const deleteFailedMsg = typeof window.t === 'function' ? window.t('mcpMonitor.deleteExecFailed') : '删除执行记录失败';
+        alert(deleteFailedMsg + ': ' + error.message);
     }
 }
 
-// Update bulk actions status
+// 更新批量操作状态
 function updateBatchActionsState() {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox:checked');
     const selectedCount = checkboxes.length;
@@ -1603,16 +2198,16 @@ function updateBatchActionsState() {
         if (batchActions) {
             batchActions.style.display = 'flex';
         }
-        if (selectedCountSpan) {
-            selectedCountSpan.textContent = `${selectedCount} selected`;
-        }
     } else {
         if (batchActions) {
             batchActions.style.display = 'none';
         }
     }
+    if (selectedCountSpan) {
+        selectedCountSpan.textContent = typeof window.t === 'function' ? window.t('mcp.selectedCount', { count: selectedCount }) : '已选择 ' + selectedCount + ' 项';
+    }
     
-    // Update select-all checkbox status
+    // 更新全选复选框状态
     const selectAllCheckbox = document.getElementById('monitor-select-all');
     if (selectAllCheckbox) {
         const allCheckboxes = document.querySelectorAll('.monitor-execution-checkbox');
@@ -1622,7 +2217,7 @@ function updateBatchActionsState() {
     }
 }
 
-// Toggle select all
+// 切换全选
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox');
     checkboxes.forEach(cb => {
@@ -1631,7 +2226,7 @@ function toggleSelectAll(checkbox) {
     updateBatchActionsState();
 }
 
-// Select all
+// 全选
 function selectAllExecutions() {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox');
     checkboxes.forEach(cb => {
@@ -1645,7 +2240,7 @@ function selectAllExecutions() {
     updateBatchActionsState();
 }
 
-// Deselect all
+// 取消全选
 function deselectAllExecutions() {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox');
     checkboxes.forEach(cb => {
@@ -1659,19 +2254,19 @@ function deselectAllExecutions() {
     updateBatchActionsState();
 }
 
-// Bulk delete execution records
+// 批量删除执行记录
 async function batchDeleteExecutions() {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox:checked');
     if (checkboxes.length === 0) {
-        alert('Please select execution records to delete first');
+        const selectFirstMsg = typeof window.t === 'function' ? window.t('mcpMonitor.selectExecFirst') : '请先选择要删除的执行记录';
+        alert(selectFirstMsg);
         return;
     }
     
     const ids = Array.from(checkboxes).map(cb => cb.value);
     const count = ids.length;
-    
-    // ConfirmDelete
-    if (!confirm(`Are you sure you want to delete ${count} selected execution records? This action cannot be undone.`)) {
+    const batchConfirmMsg = typeof window.t === 'function' ? window.t('mcpMonitor.batchDeleteConfirm', { count: count }) : `确定要删除选中的 ${count} 条执行记录吗？此操作不可恢复。`;
+    if (!confirm(batchConfirmMsg)) {
         return;
     }
     
@@ -1686,43 +2281,157 @@ async function batchDeleteExecutions() {
         
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || 'Failed to bulk delete execution records');
+            const batchFailedMsg = typeof window.t === 'function' ? window.t('mcp.batchDeleteFailed') : '批量删除执行记录失败';
+            throw new Error(error.error || batchFailedMsg);
         }
         
         const result = await response.json().catch(() => ({}));
         const deletedCount = result.deleted || count;
         
-        // Refresh current page after successful deletion
+        // 删除成功后刷新当前页面
         const currentPage = monitorState.pagination.page;
         await refreshMonitorPanel(currentPage);
         
-        alert(`Successfully deleted ${deletedCount} execution records`);
+        const batchSuccessMsg = typeof window.t === 'function' ? window.t('mcpMonitor.batchDeleteSuccess', { count: deletedCount }) : `成功删除 ${deletedCount} 条执行记录`;
+        alert(batchSuccessMsg);
     } catch (error) {
-        console.error('Failed to bulk delete execution records:', error);
-        alert('Failed to bulk delete execution records: ' + error.message);
+        console.error('批量删除执行记录失败:', error);
+        const batchFailedMsg = typeof window.t === 'function' ? window.t('mcp.batchDeleteFailed') : '批量删除执行记录失败';
+        alert(batchFailedMsg + ': ' + error.message);
     }
 }
 
 function formatExecutionDuration(start, end) {
+    const unknownLabel = typeof window.t === 'function' ? window.t('mcpMonitor.unknown') : '未知';
     if (!start) {
-        return 'Unknown';
+        return unknownLabel;
     }
     const startTime = new Date(start);
     const endTime = end ? new Date(end) : new Date();
     if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
-        return 'Unknown';
+        return unknownLabel;
     }
     const diffMs = Math.max(0, endTime - startTime);
     const seconds = Math.floor(diffMs / 1000);
     if (seconds < 60) {
-        return `${seconds}s`;
+        return typeof window.t === 'function' ? window.t('mcpMonitor.durationSeconds', { n: seconds }) : seconds + ' 秒';
     }
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) {
         const remain = seconds % 60;
-        return remain > 0 ? `${minutes}m ${remain}s` : `${minutes}m`;
+        if (remain > 0) {
+            return typeof window.t === 'function' ? window.t('mcpMonitor.durationMinutes', { minutes: minutes, seconds: remain }) : minutes + ' 分 ' + remain + ' 秒';
+        }
+        return typeof window.t === 'function' ? window.t('mcpMonitor.durationMinutesOnly', { minutes: minutes }) : minutes + ' 分';
     }
     const hours = Math.floor(minutes / 60);
     const remainMinutes = minutes % 60;
-    return remainMinutes > 0 ? `${hours}h ${remainMinutes}m` : `${hours}h`;
+    if (remainMinutes > 0) {
+        return typeof window.t === 'function' ? window.t('mcpMonitor.durationHours', { hours: hours, minutes: remainMinutes }) : hours + ' 小时 ' + remainMinutes + ' 分';
+    }
+    return typeof window.t === 'function' ? window.t('mcpMonitor.durationHoursOnly', { hours: hours }) : hours + ' 小时';
 }
+
+/**
+ * 语言切换后刷新对话页已渲染的进度条、时间线标题与时间格式（避免仍显示英文或 AM/PM）
+ */
+function refreshProgressAndTimelineI18n() {
+    const _t = function (k, o) {
+        return typeof window.t === 'function' ? window.t(k, o) : k;
+    };
+    const timeLocale = getCurrentTimeLocale();
+    const timeOpts = getTimeFormatOptions();
+
+    // 进度块内停止按钮：未禁用时统一为当前语言的「停止任务」（避免仍显示 Stop task）
+    document.querySelectorAll('.progress-message .progress-stop').forEach(function (btn) {
+        if (!btn.disabled && btn.id && btn.id.indexOf('-stop-btn') !== -1) {
+            const cancelling = _t('tasks.cancelling');
+            if (btn.textContent !== cancelling) {
+                btn.textContent = _t('tasks.stopTask');
+            }
+        }
+    });
+    document.querySelectorAll('.progress-toggle').forEach(function (btn) {
+        const timeline = btn.closest('.progress-container, .message-bubble') &&
+            btn.closest('.progress-container, .message-bubble').querySelector('.progress-timeline');
+        const expanded = timeline && timeline.classList.contains('expanded');
+        btn.textContent = expanded ? _t('tasks.collapseDetail') : _t('chat.expandDetail');
+    });
+    document.querySelectorAll('.progress-message').forEach(function (msgEl) {
+        const raw = msgEl.dataset.progressRawMessage;
+        const titleEl = msgEl.querySelector('.progress-title');
+        if (titleEl && raw) {
+            titleEl.textContent = '\uD83D\uDD0D ' + translateProgressMessage(raw);
+        }
+    });
+    // 转换后的详情区顶栏「渗透测试详情」：仅刷新不在 .progress-message 内的 progress 标题
+    document.querySelectorAll('.progress-container .progress-header .progress-title').forEach(function (titleEl) {
+        if (titleEl.closest('.progress-message')) return;
+        titleEl.textContent = '\uD83D\uDCCB ' + _t('chat.penetrationTestDetail');
+    });
+
+    // 时间线项：按类型重算标题，并重绘时间戳
+    document.querySelectorAll('.timeline-item').forEach(function (item) {
+        const type = item.dataset.timelineType;
+        const titleSpan = item.querySelector('.timeline-item-title');
+        const timeSpan = item.querySelector('.timeline-item-time');
+        if (!titleSpan) return;
+        const ap = (item.dataset.einoAgent && item.dataset.einoAgent !== '') ? ('[' + item.dataset.einoAgent + '] ') : '';
+        if (type === 'iteration' && item.dataset.iterationN) {
+            const n = parseInt(item.dataset.iterationN, 10) || 1;
+            const scope = item.dataset.einoScope;
+            if (scope === 'main') {
+                titleSpan.textContent = _t('chat.einoOrchestratorRound', { n: n });
+            } else if (scope === 'sub') {
+                const agent = item.dataset.einoAgent || '';
+                titleSpan.textContent = _t('chat.einoSubAgentStep', { n: n, agent: agent });
+            } else {
+                titleSpan.textContent = ap + _t('chat.iterationRound', { n: n });
+            }
+        } else if (type === 'thinking') {
+            titleSpan.textContent = ap + '\uD83E\uDD14 ' + _t('chat.aiThinking');
+        } else if (type === 'tool_calls_detected' && item.dataset.toolCallsCount != null) {
+            const count = parseInt(item.dataset.toolCallsCount, 10) || 0;
+            titleSpan.textContent = ap + '\uD83D\uDD27 ' + _t('chat.toolCallsDetected', { count: count });
+        } else if (type === 'tool_call' && (item.dataset.toolName !== undefined || item.dataset.toolIndex !== undefined)) {
+            const name = (item.dataset.toolName != null && item.dataset.toolName !== '') ? item.dataset.toolName : _t('chat.unknownTool');
+            const index = parseInt(item.dataset.toolIndex, 10) || 0;
+            const total = parseInt(item.dataset.toolTotal, 10) || 0;
+            titleSpan.textContent = ap + '\uD83D\uDD27 ' + _t('chat.callTool', { name: name, index: index, total: total });
+        } else if (type === 'tool_result' && (item.dataset.toolName !== undefined || item.dataset.toolSuccess !== undefined)) {
+            const name = (item.dataset.toolName != null && item.dataset.toolName !== '') ? item.dataset.toolName : _t('chat.unknownTool');
+            const success = item.dataset.toolSuccess === '1';
+            const icon = success ? '\u2705 ' : '\u274C ';
+            titleSpan.textContent = ap + icon + (success ? _t('chat.toolExecComplete', { name: name }) : _t('chat.toolExecFailed', { name: name }));
+        } else if (type === 'eino_agent_reply') {
+            titleSpan.textContent = ap + '\uD83D\uDCAC ' + _t('chat.einoAgentReplyTitle');
+        } else if (type === 'cancelled') {
+            titleSpan.textContent = '\u26D4 ' + _t('chat.taskCancelled');
+        } else if (type === 'progress' && item.dataset.progressMessage !== undefined) {
+            titleSpan.textContent = typeof window.translateProgressMessage === 'function' ? window.translateProgressMessage(item.dataset.progressMessage) : item.dataset.progressMessage;
+        }
+        if (timeSpan && item.dataset.createdAtIso) {
+            const d = new Date(item.dataset.createdAtIso);
+            if (!isNaN(d.getTime())) {
+                timeSpan.textContent = d.toLocaleTimeString(timeLocale, timeOpts);
+            }
+        }
+    });
+
+    // 详情区「展开/收起」按钮
+    document.querySelectorAll('.process-detail-btn span').forEach(function (span) {
+        const btn = span.closest('.process-detail-btn');
+        const assistantId = btn && btn.closest('.message.assistant') && btn.closest('.message.assistant').id;
+        if (!assistantId) return;
+        const detailsId = 'process-details-' + assistantId;
+        const timeline = document.getElementById(detailsId) && document.getElementById(detailsId).querySelector('.progress-timeline');
+        const expanded = timeline && timeline.classList.contains('expanded');
+        span.textContent = expanded ? _t('tasks.collapseDetail') : _t('chat.expandDetail');
+    });
+}
+
+document.addEventListener('languagechange', function () {
+    updateBatchActionsState();
+    loadActiveTasks();
+    refreshProgressAndTimelineI18n();
+});

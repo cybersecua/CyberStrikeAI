@@ -1,0 +1,2180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberStrikeAI</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="shortcut icon" type="image/png" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css">
+</head>
+<body>
+    <div id="login-overlay" class="login-overlay" style="display: none;">
+        <div class="login-card">
+            <div class="login-brand">
+                <h2>登录 CyberStrikeAI</h2>
+                <p class="login-subtitle">请输入配置中的访问密码</p>
+            </div>
+            <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label for="login-password">密码</label>
+                    <input type="password" id="login-password" placeholder="输入登录密码" required autocomplete="current-password" />
+                </div>
+                <div id="login-error" class="login-error" role="alert" style="display: none;"></div>
+                <button type="submit" class="btn-primary login-submit">
+                    <span>登录</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div class="logo header-logo-link" onclick="switchPage('dashboard')" role="button" title="返回仪表盘">
+                    <img src="/static/logo.png" alt="CyberStrikeAI Logo" style="width: 32px; height: 32px; margin-right: 8px;">
+                    <h1>CyberStrikeAI</h1>
+                    <span class="version-badge" title="当前版本">{{.Version}}</span>
+                </div>
+                <div class="header-right">
+                    <div class="header-actions">
+                        <button class="openapi-doc-btn" onclick="window.open('/api-docs', '_blank')" title="OpenAPI 文档">
+                            <span>API 文档</span>
+                        </button>
+                        <div class="user-menu-container">
+                            <button class="user-avatar-btn" onclick="toggleUserMenu()" title="用户菜单">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div id="user-menu-dropdown" class="user-menu-dropdown" style="display: none;">
+                                <div class="user-menu-item" onclick="logout()">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <polyline points="16 17 21 12 16 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    <span>退出登录</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <!-- 主侧边栏 -->
+            <aside class="main-sidebar" id="main-sidebar">
+                <div class="sidebar-collapse-btn" onclick="toggleSidebar()" title="折叠/展开侧边栏">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <nav class="main-sidebar-nav">
+                    <div class="nav-item" data-page="dashboard">
+                        <div class="nav-item-content" data-title="仪表盘" onclick="switchPage('dashboard')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="9"></rect>
+                                <rect x="14" y="3" width="7" height="5"></rect>
+                                <rect x="14" y="12" width="7" height="9"></rect>
+                                <rect x="3" y="16" width="7" height="5"></rect>
+                            </svg>
+                            <span>仪表盘</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="chat">
+                        <div class="nav-item-content" data-title="对话" onclick="switchPage('chat')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            <span>对话</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="info-collect">
+                        <div class="nav-item-content" data-title="信息收集" onclick="switchPage('info-collect')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <span>信息收集</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="tasks">
+                        <div class="nav-item-content" data-title="任务管理" onclick="switchPage('tasks')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 11l3 3L22 4"></path>
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                            </svg>
+                            <span>任务管理</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="vulnerabilities">
+                        <div class="nav-item-content" data-title="漏洞管理" onclick="switchPage('vulnerabilities')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path d="M9 12l2 2 4-4"></path>
+                            </svg>
+                            <span>漏洞管理</span>
+                        </div>
+                    </div>
+                    <div class="nav-item nav-item-has-submenu" data-page="mcp">
+                        <div class="nav-item-content" data-title="MCP" onclick="toggleSubmenu('mcp')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                            </svg>
+                            <span>MCP</span>
+                            <svg class="submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <div class="nav-submenu">
+                            <div class="nav-submenu-item" data-page="mcp-monitor" onclick="switchPage('mcp-monitor')">
+                                <span>MCP状态监控</span>
+                            </div>
+                            <div class="nav-submenu-item" data-page="mcp-management" onclick="switchPage('mcp-management')">
+                                <span>MCP管理</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="nav-item nav-item-has-submenu" data-page="knowledge">
+                        <div class="nav-item-content" data-title="知识" onclick="toggleSubmenu('knowledge')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                            </svg>
+                            <span>知识</span>
+                            <svg class="submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <div class="nav-submenu">
+                            <div class="nav-submenu-item" data-page="knowledge-retrieval-logs" onclick="switchPage('knowledge-retrieval-logs')">
+                                <span>检索历史</span>
+                            </div>
+                            <div class="nav-submenu-item" data-page="knowledge-management" onclick="switchPage('knowledge-management')">
+                                <span>知识管理</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="nav-item nav-item-has-submenu" data-page="skills">
+                        <div class="nav-item-content" data-title="Skills" onclick="toggleSubmenu('skills')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            <span>Skills</span>
+                            <svg class="submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <div class="nav-submenu">
+                            <div class="nav-submenu-item" data-page="skills-monitor" onclick="switchPage('skills-monitor')">
+                                <span>Skills状态监控</span>
+                            </div>
+                            <div class="nav-submenu-item" data-page="skills-management" onclick="switchPage('skills-management')">
+                                <span>Skills管理</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="nav-item nav-item-has-submenu" data-page="roles">
+                        <div class="nav-item-content" data-title="角色" onclick="toggleSubmenu('roles')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            <span>角色</span>
+                            <svg class="submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <div class="nav-submenu">
+                            <div class="nav-submenu-item" data-page="roles-management" onclick="switchPage('roles-management')">
+                                <span>角色管理</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="settings">
+                        <div class="nav-item-content" data-title="系统设置" onclick="switchPage('settings')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                            <span>系统设置</span>
+                        </div>
+                    </div>
+                </nav>
+            </aside>
+
+            <!-- 内容区域 -->
+            <div class="content-area">
+                <!-- 仪表盘页面 -->
+                <div id="page-dashboard" class="page active">
+                    <div class="dashboard-page">
+                        <div class="page-header">
+                            <h2>仪表盘</h2>
+                            <div class="page-header-actions">
+                                <button class="btn-secondary" onclick="refreshDashboard()" title="刷新数据">刷新</button>
+                            </div>
+                        </div>
+                        <div class="dashboard-content">
+                            <!-- 第一行：核心 KPI（仪表盘最佳实践：关键指标置顶） -->
+                            <div class="dashboard-kpi-row" id="dashboard-cards">
+                                <div class="dashboard-kpi-card" role="button" tabindex="0" onclick="switchPage('tasks')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('tasks'); }" title="点击查看任务管理"> <div class="dashboard-kpi-value" id="dashboard-running-tasks">-</div><div class="dashboard-kpi-label">运行中任务</div></div>
+                                <div class="dashboard-kpi-card" role="button" tabindex="0" onclick="switchPage('vulnerabilities')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('vulnerabilities'); }" title="点击查看漏洞管理"><div class="dashboard-kpi-value" id="dashboard-vuln-total">-</div><div class="dashboard-kpi-label">漏洞总数</div></div>
+                                <div class="dashboard-kpi-card" role="button" tabindex="0" onclick="switchPage('mcp-monitor')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('mcp-monitor'); }" title="点击查看 MCP 监控"><div class="dashboard-kpi-value" id="dashboard-kpi-tools-calls">-</div><div class="dashboard-kpi-label">工具调用次数</div></div>
+                                <div class="dashboard-kpi-card" role="button" tabindex="0" onclick="switchPage('mcp-monitor')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('mcp-monitor'); }" title="点击查看 MCP 监控"><div class="dashboard-kpi-value" id="dashboard-kpi-success-rate">-</div><div class="dashboard-kpi-label">工具执行成功率</div></div>
+                            </div>
+                            <!-- 两列主内容区 -->
+                            <div class="dashboard-grid">
+                                <div class="dashboard-main">
+                                    <section class="dashboard-section dashboard-section-chart">
+                                        <h3 class="dashboard-section-title">漏洞严重程度分布</h3>
+                                        <div class="dashboard-chart-wrap">
+                                            <div class="dashboard-stacked-bar" id="dashboard-stacked-bar">
+                                                <span class="dashboard-bar-seg seg-critical" id="dashboard-bar-critical" style="width: 0%"></span>
+                                                <span class="dashboard-bar-seg seg-high" id="dashboard-bar-high" style="width: 0%"></span>
+                                                <span class="dashboard-bar-seg seg-medium" id="dashboard-bar-medium" style="width: 0%"></span>
+                                                <span class="dashboard-bar-seg seg-low" id="dashboard-bar-low" style="width: 0%"></span>
+                                                <span class="dashboard-bar-seg seg-info" id="dashboard-bar-info" style="width: 0%"></span>
+                                            </div>
+                                            <div class="dashboard-legend" id="dashboard-vuln-bars">
+                                                <div class="dashboard-legend-item"><span class="dashboard-legend-dot critical"></span><span class="dashboard-legend-label">严重</span><span class="dashboard-legend-value" id="dashboard-severity-critical">0</span></div>
+                                                <div class="dashboard-legend-item"><span class="dashboard-legend-dot high"></span><span class="dashboard-legend-label">高危</span><span class="dashboard-legend-value" id="dashboard-severity-high">0</span></div>
+                                                <div class="dashboard-legend-item"><span class="dashboard-legend-dot medium"></span><span class="dashboard-legend-label">中危</span><span class="dashboard-legend-value" id="dashboard-severity-medium">0</span></div>
+                                                <div class="dashboard-legend-item"><span class="dashboard-legend-dot low"></span><span class="dashboard-legend-label">低危</span><span class="dashboard-legend-value" id="dashboard-severity-low">0</span></div>
+                                                <div class="dashboard-legend-item"><span class="dashboard-legend-dot info"></span><span class="dashboard-legend-label">信息</span><span class="dashboard-legend-value" id="dashboard-severity-info">0</span></div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="dashboard-section dashboard-section-overview">
+                                        <h3 class="dashboard-section-title">运行概览</h3>
+                                        <div class="dashboard-overview-list">
+                                            <div class="dashboard-overview-item dashboard-overview-item-batch" role="button" tabindex="0" onclick="switchPage('tasks')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('tasks'); }">
+                                                <span class="dashboard-overview-icon dashboard-overview-icon-batch" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+                                                <div class="dashboard-overview-content">
+                                                    <div class="dashboard-overview-header">
+                                                        <span class="dashboard-overview-label">批量任务队列</span>
+                                                        <span class="dashboard-overview-total" id="dashboard-batch-total">-</span>
+                                                    </div>
+                                                    <div class="dashboard-overview-stats">
+                                                        <span class="dashboard-overview-stat dashboard-overview-stat-pending">
+                                                            <span class="dashboard-overview-stat-badge badge-pending"></span>
+                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-pending">-</span>
+                                                            <span class="dashboard-overview-stat-label">待执行</span>
+                                                        </span>
+                                                        <span class="dashboard-overview-stat dashboard-overview-stat-running">
+                                                            <span class="dashboard-overview-stat-badge badge-running"></span>
+                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-running">-</span>
+                                                            <span class="dashboard-overview-stat-label">执行中</span>
+                                                        </span>
+                                                        <span class="dashboard-overview-stat dashboard-overview-stat-done">
+                                                            <span class="dashboard-overview-stat-badge badge-done"></span>
+                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-done">-</span>
+                                                            <span class="dashboard-overview-stat-label">已完成</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="dashboard-overview-progress">
+                                                        <div class="dashboard-overview-progress-bar">
+                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-pending" id="dashboard-batch-progress-pending" style="width: 0%"></div>
+                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-running" id="dashboard-batch-progress-running" style="width: 0%"></div>
+                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-done" id="dashboard-batch-progress-done" style="width: 0%"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="dashboard-overview-item dashboard-overview-item-tools" role="button" tabindex="0" onclick="switchPage('mcp-monitor')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('mcp-monitor'); }">
+                                                <span class="dashboard-overview-icon dashboard-overview-icon-tools" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+                                                <div class="dashboard-overview-content">
+                                                    <div class="dashboard-overview-header">
+                                                        <span class="dashboard-overview-label">工具调用</span>
+                                                        <span class="dashboard-overview-success-rate" id="dashboard-tools-success-rate">-</span>
+                                                    </div>
+                                                    <div class="dashboard-overview-value-group">
+                                                        <span class="dashboard-overview-value-large" id="dashboard-tools-calls">-</span>
+                                                        <span class="dashboard-overview-value-unit">次调用</span>
+                                                        <span class="dashboard-overview-value-separator">·</span>
+                                                        <span class="dashboard-overview-value-normal" id="dashboard-tools-count">-</span>
+                                                        <span class="dashboard-overview-value-unit">个工具</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="dashboard-overview-item dashboard-overview-item-knowledge" role="button" tabindex="0" onclick="switchPage('knowledge-management')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('knowledge-management'); }">
+                                                <span class="dashboard-overview-icon dashboard-overview-icon-knowledge" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>
+                                                <div class="dashboard-overview-content">
+                                                    <div class="dashboard-overview-header">
+                                                        <span class="dashboard-overview-label">知识</span>
+                                                        <span class="dashboard-overview-status" id="dashboard-knowledge-status">-</span>
+                                                    </div>
+                                                    <div class="dashboard-overview-value-group">
+                                                        <span class="dashboard-overview-value-large" id="dashboard-knowledge-items">-</span>
+                                                        <span class="dashboard-overview-value-unit">项知识</span>
+                                                        <span class="dashboard-overview-value-separator">·</span>
+                                                        <span class="dashboard-overview-value-normal" id="dashboard-knowledge-categories">-</span>
+                                                        <span class="dashboard-overview-value-unit">个分类</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="dashboard-overview-item dashboard-overview-item-skills" role="button" tabindex="0" onclick="switchPage('skills-monitor')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('skills-monitor'); }">
+                                                <span class="dashboard-overview-icon dashboard-overview-icon-skills" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+                                                <div class="dashboard-overview-content">
+                                                    <div class="dashboard-overview-header">
+                                                        <span class="dashboard-overview-label">Skills</span>
+                                                        <span class="dashboard-overview-status" id="dashboard-skills-status">-</span>
+                                                    </div>
+                                                    <div class="dashboard-overview-value-group">
+                                                        <span class="dashboard-overview-value-large" id="dashboard-skills-calls">-</span>
+                                                        <span class="dashboard-overview-value-unit">次调用</span>
+                                                        <span class="dashboard-overview-value-separator">·</span>
+                                                        <span class="dashboard-overview-value-normal" id="dashboard-skills-count">-</span>
+                                                        <span class="dashboard-overview-value-unit">个 Skill</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="dashboard-section dashboard-section-quick dashboard-quick-inline">
+                                        <h3 class="dashboard-section-title">快捷入口</h3>
+                                        <div class="dashboard-quick-links dashboard-quick-links-row">
+                                            <a class="dashboard-quick-link" onclick="switchPage('chat')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></span><span>对话</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('tasks')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span><span>任务管理</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('vulnerabilities')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></span><span>漏洞管理</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('mcp-management')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg></span><span>MCP 管理</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('knowledge-management')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg></span><span>知识管理</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('skills-management')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span><span>Skills 管理</span></a>
+                                            <a class="dashboard-quick-link" onclick="switchPage('roles-management')"><span class="dashboard-quick-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span><span>角色管理</span></a>
+                                        </div>
+                                    </section>
+                                </div>
+                                <div class="dashboard-side">
+                                    <section class="dashboard-section dashboard-section-tools">
+                                        <h3 class="dashboard-section-title">工具执行次数</h3>
+                                        <div class="dashboard-tools-chart-wrap">
+                                            <div class="dashboard-tools-chart-placeholder" id="dashboard-tools-pie-placeholder">暂无数据</div>
+                                            <div class="dashboard-tools-bar-chart" id="dashboard-tools-bar-chart"></div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+                            <div class="dashboard-cta-block">
+                                <div class="dashboard-cta-content">
+                                    <div class="dashboard-cta-icon" aria-hidden="true">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                    </div>
+                                    <div class="dashboard-cta-copy">
+                                        <p class="dashboard-cta-text">开始你的安全之旅</p>
+                                        <p class="dashboard-cta-sub">在对话中描述目标，AI 将协助执行扫描与漏洞分析</p>
+                                    </div>
+                                </div>
+                                <button class="dashboard-cta-btn" onclick="switchPage('chat')">
+                                    <span>前往对话</span>
+                                    <span class="dashboard-cta-btn-arrow" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 对话页面 -->
+                <div id="page-chat" class="page">
+                    <div class="chat-page-layout">
+                        <!-- 历史对话侧边栏 -->
+                        <aside class="conversation-sidebar">
+                            <div class="sidebar-header">
+                                <button class="new-chat-btn" onclick="startNewConversation()">
+                                    <span>+</span> 新对话
+                                </button>
+                            </div>
+                            <div class="sidebar-content">
+                                <!-- 全局搜索 -->
+                                <div class="conversation-search-box" style="margin-bottom: 16px; margin-top: 16px;">
+                                    <input type="text" id="conversation-search-input" placeholder="搜索历史记录..." 
+                                           oninput="handleConversationSearch(this.value)" 
+                                           onkeypress="if(event.key === 'Enter') handleConversationSearch(this.value)" />
+                                    <button class="conversation-search-clear" id="conversation-search-clear" 
+                                            onclick="clearConversationSearch()" style="display: none;" title="清除搜索">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                            <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                <!-- 对话分组 -->
+                                <div class="conversation-groups-section">
+                                    <div class="section-header">
+                                        <span class="section-title">对话分组</span>
+                                        <button class="add-group-btn" onclick="showCreateGroupModal()" title="新建分组">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div id="conversation-groups-list" class="conversation-groups-list"></div>
+                                </div>
+                                
+                                <!-- 最近对话 -->
+                                <div class="recent-conversations-section">
+                                    <div class="section-header">
+                                        <span class="section-title">最近对话</span>
+                                        <button class="batch-manage-btn" onclick="showBatchManageModal()" title="批量管理">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                <circle cx="8" cy="6" r="1" fill="currentColor"/>
+                                                <circle cx="8" cy="12" r="1" fill="currentColor"/>
+                                                <circle cx="8" cy="18" r="1" fill="currentColor"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div id="conversations-list" class="conversations-list"></div>
+                                </div>
+                            </div>
+                        </aside>
+                        
+                        <!-- 分组详情页面 -->
+                        <div id="group-detail-page" class="group-detail-page" style="display: none;">
+                            <div class="group-detail-header">
+                                <button class="back-btn" onclick="exitGroupDetail()">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <h2 id="group-detail-title" class="group-detail-title"></h2>
+                                <div class="group-detail-actions">
+                                    <button class="group-action-btn" onclick="toggleGroupSearch()" title="搜索" id="group-search-toggle-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+                                            <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        </svg>
+                                    </button>
+                                    <button class="group-action-btn" onclick="editGroup()" title="编辑">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    <button class="group-action-btn delete-btn" onclick="deleteGroup()" title="删除">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="group-search-container" class="group-search-container" style="display: none;">
+                                <div class="group-search-input-wrapper">
+                                    <input type="text" id="group-search-input" class="group-search-input" placeholder="搜索分组中的对话..." onkeyup="handleGroupSearchInput(event)" oninput="handleGroupSearchInput(event)">
+                                    <button class="group-search-clear-btn" onclick="clearGroupSearch()" title="清除搜索" id="group-search-clear-btn" style="display: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                            <path d="m8 8 8 8M16 8l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="group-detail-content">
+                                <div id="group-conversations-list" class="group-conversations-list"></div>
+                            </div>
+                        </div>
+
+                        <!-- 对话界面 -->
+                        <div class="chat-container">
+                            <!-- 会话顶部栏（只在有会话选中时显示） -->
+                            <div id="conversation-header" class="conversation-header" style="display: none;">
+                                <div class="conversation-header-content">
+                                    <button id="attack-chain-btn" class="attack-chain-btn" title="查看攻击链" disabled>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M10.5 13.5l3-3M8 8H5a4 4 0 1 0 0 8h3m8-8h3a4 4 0 0 1 0 8h-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <span>攻击链</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="active-tasks-bar" class="active-tasks-bar"></div>
+                            <div id="chat-messages" class="chat-messages"></div>
+                            <div id="chat-input-container" class="chat-input-container">
+                                <div class="role-selector-wrapper">
+                                    <button id="role-selector-btn" class="role-selector-btn" onclick="toggleRoleSelectionPanel()" title="选择角色">
+                                        <span id="role-selector-icon" class="role-selector-icon">🔵</span>
+                                        <span id="role-selector-text" class="role-selector-text">默认</span>
+                                        <svg class="role-selector-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    <!-- 角色选择下拉面板 -->
+                                    <div id="role-selection-panel" class="role-selection-panel" style="display: none;">
+                                        <div class="role-selection-panel-header">
+                                            <h3 class="role-selection-panel-title">选择角色</h3>
+                                            <button class="role-selection-panel-close" onclick="closeRoleSelectionPanel()" title="关闭">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div id="role-selection-list" class="role-selection-list-main"></div>
+                                    </div>
+                                </div>
+                                <div class="chat-input-with-files">
+                                    <div id="chat-file-list" class="chat-file-list" aria-label="已选文件列表"></div>
+                                    <div class="chat-input-field">
+                                        <textarea id="chat-input" placeholder="输入测试目标或命令... (输入 @ 选择工具 | Shift+Enter 换行，Enter 发送)" rows="1"></textarea>
+                                        <div id="mention-suggestions" class="mention-suggestions" role="listbox" aria-label="工具提及候选"></div>
+                                    </div>
+                                </div>
+                                <input type="file" id="chat-file-input" class="chat-file-input-hidden" multiple accept="*" title="选择文件">
+                                <button type="button" class="chat-upload-btn" onclick="document.getElementById('chat-file-input').click()" title="上传文件（可多选或拖拽到此处）">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <button class="send-btn" onclick="sendMessage()">
+                                    <span>发送</span>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MCP状态监控页面 -->
+                <div id="page-mcp-monitor" class="page">
+                    <div class="page-header">
+                        <h2>MCP 状态监控</h2>
+                        <button class="btn-secondary" onclick="refreshMonitorPanel()">刷新</button>
+                    </div>
+                    <div class="page-content">
+                        <div class="monitor-sections">
+                            <section class="monitor-section monitor-overview">
+                                <div class="section-header">
+                                    <h3>执行统计</h3>
+                                </div>
+                                <div id="monitor-stats" class="monitor-stats-grid">
+                                    <div class="monitor-empty">加载中...</div>
+                                </div>
+                            </section>
+                            <section class="monitor-section monitor-executions">
+                                <div class="section-header">
+                                    <h3>最新执行记录</h3>
+                                    <div class="section-actions">
+                                        <label>
+                                            工具搜索
+                                            <input type="text" id="monitor-tool-filter" placeholder="输入工具名称..." oninput="handleToolFilterInput()" onkeydown="if(event.key==='Enter') applyMonitorFilters()" />
+                                        </label>
+                                        <label>
+                                            状态筛选
+                                            <select id="monitor-status-filter" onchange="applyMonitorFilters()">
+                                                <option value="all">全部</option>
+                                                <option value="completed">已完成</option>
+                                                <option value="running">执行中</option>
+                                                <option value="failed">失败</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="monitor-batch-actions" class="monitor-batch-actions" style="display: none;">
+                                    <div class="batch-actions-info">
+                                        <span id="monitor-selected-count">已选择 0 项</span>
+                                    </div>
+                                    <div class="batch-actions-buttons">
+                                        <button class="btn-secondary" onclick="selectAllExecutions()">全选</button>
+                                        <button class="btn-secondary" onclick="deselectAllExecutions()">取消全选</button>
+                                        <button class="btn-secondary btn-delete" onclick="batchDeleteExecutions()">批量删除</button>
+                                    </div>
+                                </div>
+                                <div id="monitor-executions" class="monitor-table-container">
+                                    <div class="monitor-empty">加载中...</div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MCP管理页面 -->
+                <div id="page-mcp-management" class="page">
+                    <div class="page-header">
+                        <h2>MCP 管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="loadExternalMCPs()">刷新</button>
+                            <button class="btn-primary" onclick="showAddExternalMCPModal()">添加外部MCP</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <!-- MCP工具配置 -->
+                        <div class="settings-section" style="margin-bottom: 32px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <h3 style="margin: 0;">MCP 工具配置</h3>
+                                <button class="btn-primary" onclick="saveToolsConfig()">保存工具配置</button>
+                            </div>
+                            <div class="tools-controls">
+                                <div class="tools-actions">
+                                    <button class="btn-secondary" onclick="selectAllTools()">全选</button>
+                                    <button class="btn-secondary" onclick="deselectAllTools()">全不选</button>
+                                    <div class="search-box">
+                                        <input type="text" id="tools-search" placeholder="搜索工具..." onkeypress="handleSearchKeyPress(event)" oninput="if(this.value.trim() === '') clearSearch()" />
+                                        <button class="btn-search" onclick="searchTools()" title="搜索">🔍</button>
+                                    </div>
+                                    <div class="tools-stats" id="tools-stats"></div>
+                                </div>
+                                <div id="tools-list" class="tools-list"></div>
+                            </div>
+                        </div>
+
+                        <!-- 外部MCP配置 -->
+                        <div class="settings-section">
+                            <h3>外部 MCP 配置</h3>
+                            <div class="external-mcp-controls">
+                                <div class="external-mcp-actions">
+                                    <div class="external-mcp-stats" id="external-mcp-stats"></div>
+                                </div>
+                                <div id="external-mcp-list" class="external-mcp-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 知识管理页面 -->
+                <div id="page-knowledge-management" class="page">
+                    <div class="page-header">
+                        <h2>知识管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="refreshKnowledgeBase()">刷新</button>
+                            <button class="btn-secondary" onclick="rebuildKnowledgeIndex()">重建索引</button>
+                            <button class="btn-primary" onclick="showAddKnowledgeItemModal()">添加知识</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <div class="knowledge-controls">
+                            <div class="knowledge-stats-bar" id="knowledge-stats">
+                                <div class="knowledge-stat-item">
+                                    <span class="knowledge-stat-label">总知识项</span>
+                                    <span class="knowledge-stat-value">-</span>
+                                </div>
+                                <div class="knowledge-stat-item">
+                                    <span class="knowledge-stat-label">分类数</span>
+                                    <span class="knowledge-stat-value">-</span>
+                                </div>
+                                <div class="knowledge-stat-item">
+                                    <span class="knowledge-stat-label">总内容</span>
+                                    <span class="knowledge-stat-value">-</span>
+                                </div>
+                            </div>
+                            <div id="knowledge-index-progress" style="display: none; margin-bottom: 16px;"></div>
+                            <div class="knowledge-filters">
+                                <label>
+                                    分类筛选
+                                    <div class="custom-select-wrapper">
+                                        <div class="custom-select" id="knowledge-category-filter-wrapper">
+                                            <div class="custom-select-trigger" id="knowledge-category-filter-trigger">
+                                                <span>全部</span>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                </svg>
+                                            </div>
+                                            <div class="custom-select-dropdown" id="knowledge-category-filter-dropdown">
+                                                <div class="custom-select-option" data-value="" onclick="selectKnowledgeCategory('')">全部</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div class="search-box">
+                                    <input type="text" id="knowledge-search" placeholder="搜索知识..." oninput="handleKnowledgeSearchInput()" onkeydown="if(event.key==='Enter') searchKnowledgeItems()" />
+                                    <button class="btn-search" onclick="searchKnowledgeItems()" title="搜索">🔍</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="knowledge-items-list" class="knowledge-items-list">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                        <div id="knowledge-pagination"></div>
+                    </div>
+                </div>
+
+                <!-- 知识检索历史页面 -->
+                <div id="page-knowledge-retrieval-logs" class="page">
+                    <div class="page-header">
+                        <h2>检索历史</h2>
+                        <button class="btn-secondary" onclick="refreshRetrievalLogs()">刷新</button>
+                    </div>
+                    <div class="page-content">
+                        <div class="retrieval-logs-controls">
+                            <div class="retrieval-stats-bar" id="retrieval-stats">
+                                <div class="retrieval-stat-item">
+                                    <span class="retrieval-stat-label">总检索次数</span>
+                                    <span class="retrieval-stat-value">-</span>
+                                </div>
+                                <div class="retrieval-stat-item">
+                                    <span class="retrieval-stat-label">成功检索</span>
+                                    <span class="retrieval-stat-value">-</span>
+                                </div>
+                                <div class="retrieval-stat-item">
+                                    <span class="retrieval-stat-label">成功率</span>
+                                    <span class="retrieval-stat-value">-</span>
+                                </div>
+                                <div class="retrieval-stat-item">
+                                    <span class="retrieval-stat-label">检索到知识项</span>
+                                    <span class="retrieval-stat-value">-</span>
+                                </div>
+                            </div>
+                            <div class="retrieval-logs-filters">
+                                <label>
+                                    对话ID
+                                    <input type="text" id="retrieval-logs-conversation-id" placeholder="可选：筛选特定对话" />
+                                </label>
+                                <label>
+                                    消息ID
+                                    <input type="text" id="retrieval-logs-message-id" placeholder="可选：筛选特定消息" />
+                                </label>
+                                <button class="btn-secondary" onclick="filterRetrievalLogs()">筛选</button>
+                            </div>
+                        </div>
+                        <div id="retrieval-logs-list" class="retrieval-logs-list">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 信息收集页面 -->
+                <div id="page-info-collect" class="page">
+                    <div class="page-header">
+                        <h2>信息收集</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="resetFofaForm()">重置</button>
+                            <button class="btn-primary" onclick="submitFofaSearch()">确定</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <div class="info-collect-panel">
+                            <div class="info-collect-form">
+                                <div class="form-group">
+                                    <label for="fofa-query">FOFA 查询语法</label>
+                                    <textarea id="fofa-query" class="info-collect-query-input" rows="1" placeholder='例如：app="Apache" && country="CN"'></textarea>
+                                    <small class="form-hint">查询语法参考 FOFA 文档，支持 && / || / () 等。</small>
+                                    <div class="info-collect-presets" aria-label="FOFA 查询示例">
+                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('app=&quot;Apache&quot; &amp;&amp; country=&quot;CN&quot;')" title="填入示例">Apache + 中国</button>
+                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('title=&quot;登录&quot; &amp;&amp; country=&quot;CN&quot;')" title="填入示例">登录页 + 中国</button>
+                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('domain=&quot;example.com&quot;')" title="填入示例">指定域名</button>
+                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('ip=&quot;1.1.1.1&quot;')" title="填入示例">指定 IP</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fofa-nl">自然语言（AI 解析为 FOFA 语法）</label>
+                                    <div class="info-collect-nl-row">
+                                        <textarea id="fofa-nl" class="info-collect-query-input" rows="1" placeholder="例如：找美国 Missouri 的 Apache 站点，标题包含 Home"></textarea>
+                                        <button id="fofa-nl-parse-btn" class="btn-secondary" type="button" onclick="parseFofaNaturalLanguage()" title="将自然语言解析为 FOFA 查询语法">AI 解析</button>
+                                    </div>
+                                    <div id="fofa-nl-status" class="fofa-nl-status muted" style="display: none;" aria-live="polite"></div>
+                                    <small class="form-hint">解析后会弹窗展示 FOFA 语法（可编辑），确认无误后再填入查询框并执行查询。</small>
+                                </div>
+                                <div class="info-collect-form-row">
+                                    <div class="form-group">
+                                        <label for="fofa-size">返回数量</label>
+                                        <input type="number" id="fofa-size" min="1" max="10000" value="100" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="fofa-page">页码</label>
+                                        <input type="number" id="fofa-page" min="1" value="1" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-label" style="margin-top: 24px;">
+                                            <input type="checkbox" id="fofa-full" class="modern-checkbox" />
+                                            <span class="checkbox-custom"></span>
+                                            <span class="checkbox-text">full</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fofa-fields">返回字段名（逗号分隔）</label>
+                                    <input type="text" id="fofa-fields" value="host,ip,port,domain,title,protocol,country,province,city,server" />
+                                    <div class="info-collect-presets" aria-label="FOFA 字段模板">
+                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,ip,port,domain')" title="适合快速导出目标">最小字段</button>
+                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,title,ip,port,domain,protocol,server,icp,country,province,city')" title="适合浏览和筛选">Web 常用</button>
+                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,ip,port,domain,title,protocol,country,province,city,server,as_number,as_organization,icp,header,banner')" title="更偏指纹/情报">情报增强</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="info-collect-results">
+                            <div class="info-collect-results-header">
+                                <div class="info-collect-results-header-left">
+                                    <div class="info-collect-results-title">查询结果</div>
+                                    <div class="info-collect-results-meta" id="fofa-results-meta">-</div>
+                                </div>
+                                <div class="info-collect-results-toolbar" aria-label="结果工具条">
+                                    <div class="info-collect-selected" id="fofa-selected-meta">已选择 0 条</div>
+                                    <button class="btn-secondary btn-small" type="button" onclick="toggleFofaColumnsPanel()" title="显示/隐藏字段">列</button>
+                                    <button class="btn-secondary btn-small" type="button" onclick="exportFofaResults('csv')" title="导出当前结果为 CSV（UTF-8，兼容中文）">导出 CSV</button>
+                                    <button class="btn-secondary btn-small" type="button" onclick="exportFofaResults('json')" title="导出当前结果为 JSON">导出 JSON</button>
+                                    <button class="btn-secondary btn-small" type="button" onclick="exportFofaResults('xlsx')" title="导出当前结果为 Excel">导出 XLSX</button>
+                                    <button class="btn-primary btn-small" type="button" onclick="batchScanSelectedFofaRows()" title="将所选行创建为批量任务队列">批量扫描</button>
+                                </div>
+                            </div>
+                            <div class="info-collect-results-table-wrap">
+                                <!-- 字段显示/隐藏面板 -->
+                                <div id="fofa-columns-panel" class="info-collect-columns-panel" style="display: none;">
+                                    <div class="info-collect-columns-panel-header">
+                                        <div class="info-collect-columns-title">显示字段</div>
+                                        <div class="info-collect-columns-actions">
+                                            <button class="btn-secondary btn-small" type="button" onclick="showAllFofaColumns()">全选</button>
+                                            <button class="btn-secondary btn-small" type="button" onclick="hideAllFofaColumns()">全不选</button>
+                                            <button class="btn-secondary btn-small" type="button" onclick="closeFofaColumnsPanel()">关闭</button>
+                                        </div>
+                                    </div>
+                                    <div id="fofa-columns-list" class="info-collect-columns-list"></div>
+                                </div>
+                                <table class="info-collect-table">
+                                    <thead id="fofa-results-thead"></thead>
+                                    <tbody id="fofa-results-tbody">
+                                        <tr><td class="muted" style="padding: 16px;">暂无数据</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 漏洞管理页面 -->
+                <div id="page-vulnerabilities" class="page">
+                    <div class="page-header">
+                        <h2>漏洞管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="refreshVulnerabilities()">刷新</button>
+                            <button class="btn-primary" onclick="showAddVulnerabilityModal()">添加漏洞</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <!-- 统计看板 -->
+                        <div class="vulnerability-dashboard" id="vulnerability-dashboard">
+                            <div class="dashboard-stats">
+                                <div class="stat-card">
+                                    <div class="stat-label">总漏洞数</div>
+                                    <div class="stat-value" id="stat-total">-</div>
+                                </div>
+                                <div class="stat-card stat-critical">
+                                    <div class="stat-label">严重</div>
+                                    <div class="stat-value" id="stat-critical">-</div>
+                                </div>
+                                <div class="stat-card stat-high">
+                                    <div class="stat-label">高危</div>
+                                    <div class="stat-value" id="stat-high">-</div>
+                                </div>
+                                <div class="stat-card stat-medium">
+                                    <div class="stat-label">中危</div>
+                                    <div class="stat-value" id="stat-medium">-</div>
+                                </div>
+                                <div class="stat-card stat-low">
+                                    <div class="stat-label">低危</div>
+                                    <div class="stat-value" id="stat-low">-</div>
+                                </div>
+                                <div class="stat-card stat-info">
+                                    <div class="stat-label">信息</div>
+                                    <div class="stat-value" id="stat-info">-</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 筛选和搜索 -->
+                        <div class="vulnerability-controls">
+                            <div class="vulnerability-filters">
+                                <label>
+                                    漏洞ID
+                                    <input type="text" id="vulnerability-id-filter" placeholder="搜索漏洞ID" />
+                                </label>
+                                <label>
+                                    会话ID
+                                    <input type="text" id="vulnerability-conversation-filter" placeholder="筛选特定会话" />
+                                </label>
+                                <label>
+                                    严重程度
+                                    <select id="vulnerability-severity-filter">
+                                        <option value="">全部</option>
+                                        <option value="critical">严重</option>
+                                        <option value="high">高危</option>
+                                        <option value="medium">中危</option>
+                                        <option value="low">低危</option>
+                                        <option value="info">信息</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    状态
+                                    <select id="vulnerability-status-filter">
+                                        <option value="">全部</option>
+                                        <option value="open">待处理</option>
+                                        <option value="confirmed">已确认</option>
+                                        <option value="fixed">已修复</option>
+                                        <option value="false_positive">误报</option>
+                                    </select>
+                                </label>
+                                <button class="btn-secondary" onclick="filterVulnerabilities()">筛选</button>
+                                <button class="btn-secondary" onclick="clearVulnerabilityFilters()">清除</button>
+                            </div>
+                        </div>
+
+                        <!-- 漏洞列表 -->
+                        <div id="vulnerabilities-list" class="vulnerabilities-list">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                        
+                        <!-- 分页控件 -->
+                        <div id="vulnerability-pagination" class="pagination-container pagination-fixed"></div>
+                    </div>
+                </div>
+
+                <!-- 任务管理页面 -->
+                <div id="page-tasks" class="page">
+                    <div class="page-header">
+                        <h2>任务管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-primary" onclick="showBatchImportModal()">新建任务</button>
+                            <label class="auto-refresh-toggle">
+                                <input type="checkbox" id="tasks-auto-refresh" checked onchange="toggleTasksAutoRefresh(this.checked)">
+                                <span>自动刷新</span>
+                            </label>
+                            <button class="btn-secondary" onclick="refreshBatchQueues()">刷新</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <!-- 批量任务队列列表 -->
+                        <div class="batch-queues-section" id="batch-queues-section" style="display: none;">
+                            <!-- 筛选控件 -->
+                            <div class="batch-queues-filters tasks-filters">
+                                <label>
+                                    <span>状态筛选</span>
+                                    <select id="batch-queues-status-filter" onchange="filterBatchQueues()">
+                                        <option value="all">全部</option>
+                                        <option value="pending">待执行</option>
+                                        <option value="running">执行中</option>
+                                        <option value="paused">已暂停</option>
+                                        <option value="completed">已完成</option>
+                                        <option value="cancelled">已取消</option>
+                                    </select>
+                                </label>
+                                <label style="flex: 1; max-width: 300px;">
+                                    <span>搜索队列ID、标题或创建时间</span>
+                                    <input type="text" id="batch-queues-search" placeholder="输入关键字搜索..." 
+                                           oninput="filterBatchQueues()">
+                                </label>
+                            </div>
+                            <div id="batch-queues-list" class="batch-queues-list"></div>
+                            <!-- 分页控件 -->
+                            <div id="batch-queues-pagination" class="pagination-container pagination-fixed"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 角色管理页面 -->
+                <div id="page-roles-management" class="page">
+                    <div class="page-header">
+                        <h2>角色管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="refreshRoles()">刷新</button>
+                            <button class="btn-primary" onclick="showAddRoleModal()">创建角色</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <div class="roles-controls">
+                            <div class="roles-search-box">
+                                <input type="text" id="roles-search" placeholder="搜索角色..." oninput="handleRolesSearchInput()" onkeydown="if(event.key==='Enter') searchRoles()" />
+                                <button class="roles-search-clear" id="roles-search-clear" onclick="clearRolesSearch()" style="display: none;" title="清除搜索">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="roles-list" class="roles-grid">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Skills状态监控页面 -->
+                <div id="page-skills-monitor" class="page">
+                    <div class="page-header">
+                        <h2>Skills状态监控</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="refreshSkillsMonitor()">刷新</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <div class="monitor-sections">
+                            <section class="monitor-section monitor-overview">
+                                <div class="section-header">
+                                    <h3>调用统计</h3>
+                                </div>
+                                <div id="skills-stats" class="monitor-stats-grid">
+                                    <div class="monitor-empty">加载中...</div>
+                                </div>
+                            </section>
+                            <section class="monitor-section monitor-executions">
+                                <div class="section-header">
+                                    <h3>Skills调用统计</h3>
+                                    <div class="section-actions">
+                                        <button class="btn-secondary btn-small" onclick="clearSkillsStats()" title="清空所有统计数据">清空统计</button>
+                                    </div>
+                                </div>
+                                <div id="skills-monitor-list" class="monitor-table-container">
+                                    <div class="monitor-empty">加载中...</div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Skills管理页面 -->
+                <div id="page-skills-management" class="page">
+                    <div class="page-header">
+                        <h2>Skills管理</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="refreshSkills()">刷新</button>
+                            <button class="btn-primary" onclick="showAddSkillModal()">创建Skill</button>
+                        </div>
+                    </div>
+                    <div class="page-content page-content-with-pagination">
+                        <div class="skills-controls">
+                            <div class="skills-search-box">
+                                <input type="text" id="skills-search" placeholder="搜索Skills..." oninput="handleSkillsSearchInput()" onkeydown="if(event.key==='Enter') searchSkills()" />
+                                <button class="skills-search-clear" id="skills-search-clear" onclick="clearSkillsSearch()" style="display: none;" title="清除搜索">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="skills-list" class="skills-grid">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                        <div id="skills-pagination" class="pagination-container pagination-fixed"></div>
+                    </div>
+                </div>
+
+                <!-- 系统设置页面 -->
+                <div id="page-settings" class="page">
+                    <div class="page-header">
+                        <h2>系统设置</h2>
+                    </div>
+                    <div class="page-content settings-layout">
+                        <!-- 左侧导航栏 -->
+                        <aside class="settings-sidebar">
+                            <nav class="settings-nav">
+                                <div class="settings-nav-item active" data-section="basic" onclick="switchSettingsSection('basic')">
+                                    <span>基本设置</span>
+                                </div>
+                                <div class="settings-nav-item" data-section="robots" onclick="switchSettingsSection('robots')">
+                                    <span>机器人设置</span>
+                                </div>
+                                <div class="settings-nav-item" data-section="terminal" onclick="switchSettingsSection('terminal')">
+                                    <span>终端</span>
+                                </div>
+                                <div class="settings-nav-item" data-section="security" onclick="switchSettingsSection('security')">
+                                    <span>安全设置</span>
+                                </div>
+                            </nav>
+                        </aside>
+                        
+                        <!-- 右侧内容区域 -->
+                        <div class="settings-content">
+                            <!-- 基本设置 -->
+                            <div id="settings-section-basic" class="settings-section-content active">
+                                <div class="settings-section-header">
+                                    <h3>基本设置</h3>
+                                </div>
+                                
+                                <!-- OpenAI配置 -->
+                                <div class="settings-subsection">
+                                    <h4>OpenAI 配置</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="openai-base-url">Base URL <span style="color: red;">*</span></label>
+                                            <input type="text" id="openai-base-url" placeholder="https://api.openai.com/v1" required />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="openai-api-key">API Key <span style="color: red;">*</span></label>
+                                            <input type="password" id="openai-api-key" placeholder="输入OpenAI API Key" required />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="openai-model">模型 <span style="color: red;">*</span></label>
+                                            <input type="text" id="openai-model" placeholder="gpt-4" required />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- FOFA配置 -->
+                                <div class="settings-subsection">
+                                    <h4>FOFA 配置</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="fofa-base-url">Base URL</label>
+                                            <input type="text" id="fofa-base-url" placeholder="https://fofa.info/api/v1/search/all（可选）" />
+                                            <small class="form-hint">留空则使用默认地址。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="fofa-email">Email</label>
+                                            <input type="text" id="fofa-email" placeholder="输入 FOFA 账号邮箱" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="fofa-api-key">API Key</label>
+                                            <input type="password" id="fofa-api-key" placeholder="输入 FOFA API Key" autocomplete="off" />
+                                            <small class="form-hint">仅保存在服务器配置中（`config.yaml`）。</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Agent配置 -->
+                                <div class="settings-subsection">
+                                    <h4>Agent 配置</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="agent-max-iterations">最大迭代次数</label>
+                                            <input type="number" id="agent-max-iterations" min="1" max="100" placeholder="30" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 知识库配置 -->
+                                <div class="settings-subsection">
+                                    <h4>知识库配置</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="knowledge-enabled" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text">启用知识检索功能</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-base-path">知识库路径</label>
+                                            <input type="text" id="knowledge-base-path" placeholder="knowledge_base" />
+                                            <small class="form-hint">相对于配置文件所在目录的路径</small>
+                                        </div>
+                                        
+                                        <div class="settings-subsection-header">
+                                            <h5>嵌入模型配置</h5>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-embedding-provider">提供商</label>
+                                            <select id="knowledge-embedding-provider">
+                                                <option value="openai">OpenAI</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-embedding-base-url">Base URL</label>
+                                            <input type="text" id="knowledge-embedding-base-url" placeholder="留空则使用OpenAI配置的base_url" />
+                                            <small class="form-hint">留空则使用OpenAI配置的base_url</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-embedding-api-key">API Key</label>
+                                            <input type="password" id="knowledge-embedding-api-key" placeholder="留空则使用OpenAI配置的api_key" />
+                                            <small class="form-hint">留空则使用OpenAI配置的api_key</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-embedding-model">模型名称</label>
+                                            <input type="text" id="knowledge-embedding-model" placeholder="text-embedding-v4" />
+                                        </div>
+                                        
+                                        <div class="settings-subsection-header">
+                                            <h5>检索配置</h5>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-retrieval-top-k">Top-K 结果数量</label>
+                                            <input type="number" id="knowledge-retrieval-top-k" min="1" max="20" placeholder="5" />
+                                            <small class="form-hint">检索返回的Top-K结果数量</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-retrieval-similarity-threshold">相似度阈值</label>
+                                            <input type="number" id="knowledge-retrieval-similarity-threshold" min="0" max="1" step="0.1" placeholder="0.7" />
+                                            <small class="form-hint">相似度阈值（0-1），低于此值的结果将被过滤</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-retrieval-hybrid-weight">混合检索权重</label>
+                                            <input type="number" id="knowledge-retrieval-hybrid-weight" min="0" max="1" step="0.1" placeholder="0.7" />
+                                            <small class="form-hint">向量检索的权重（0-1），1.0表示纯向量检索，0.0表示纯关键词检索</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-actions">
+                                    <button class="btn-primary" onclick="applySettings()">应用配置</button>
+                                </div>
+                            </div>
+
+                            <!-- 机器人设置 -->
+                            <div id="settings-section-robots" class="settings-section-content">
+                                <div class="settings-section-header">
+                                    <h3>机器人设置</h3>
+                                    <p class="settings-description">配置企业微信、钉钉、飞书等机器人，在手机端直接与 CyberStrikeAI 对话，无需在服务器上打开网页。</p>
+                                </div>
+
+                                <!-- 企业微信 -->
+                                <div class="settings-subsection">
+                                    <h4>企业微信</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="robot-wecom-enabled" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text">启用企业微信机器人</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-wecom-token">Token</label>
+                                            <input type="text" id="robot-wecom-token" placeholder="Token" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-wecom-encoding-aes-key">EncodingAESKey</label>
+                                            <input type="text" id="robot-wecom-encoding-aes-key" placeholder="EncodingAESKey（明文模式可留空）" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-wecom-corp-id">CorpID</label>
+                                            <input type="text" id="robot-wecom-corp-id" placeholder="企业 ID" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-wecom-secret">Secret</label>
+                                            <input type="password" id="robot-wecom-secret" placeholder="应用 Secret" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-wecom-agent-id">AgentID</label>
+                                            <input type="number" id="robot-wecom-agent-id" placeholder="应用 AgentId" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 钉钉 -->
+                                <div class="settings-subsection">
+                                    <h4>钉钉</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="robot-dingtalk-enabled" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text">启用钉钉机器人</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-dingtalk-client-id">Client ID (AppKey)</label>
+                                            <input type="text" id="robot-dingtalk-client-id" placeholder="钉钉应用 AppKey" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-dingtalk-client-secret">Client Secret</label>
+                                            <input type="password" id="robot-dingtalk-client-secret" placeholder="钉钉应用 Secret" autocomplete="off" />
+                                            <small class="form-hint">需开启机器人能力并配置流式接入</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 飞书 -->
+                                <div class="settings-subsection">
+                                    <h4>飞书 (Lark)</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="robot-lark-enabled" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text">启用飞书机器人</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-lark-app-id">App ID</label>
+                                            <input type="text" id="robot-lark-app-id" placeholder="飞书应用 App ID" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-lark-app-secret">App Secret</label>
+                                            <input type="password" id="robot-lark-app-secret" placeholder="飞书应用 App Secret" autocomplete="off" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="robot-lark-verify-token">Verify Token（可选）</label>
+                                            <input type="text" id="robot-lark-verify-token" placeholder="事件订阅 Verification Token" autocomplete="off" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-subsection">
+                                    <h4>机器人命令说明</h4>
+                                    <p class="settings-description">在对话中可发送以下命令（支持中英文）：</p>
+                                    <ul style="color: var(--text-muted); font-size: 13px; line-height: 1.8; margin: 8px 0 0 16px;">
+                                        <li><code>帮助</code> <code>help</code> — 显示本帮助 | Show this help</li>
+                                        <li><code>列表</code> <code>list</code> — 列出所有对话标题与 ID | List conversations</li>
+                                        <li><code>切换 &lt;ID&gt;</code> <code>switch &lt;ID&gt;</code> — 指定对话继续 | Switch to conversation</li>
+                                        <li><code>新对话</code> <code>new</code> — 开启新对话 | Start new conversation</li>
+                                        <li><code>清空</code> <code>clear</code> — 清空当前上下文 | Clear context</li>
+                                        <li><code>当前</code> <code>current</code> — 显示当前对话 ID 与标题 | Show current conversation</li>
+                                        <li><code>停止</code> <code>stop</code> — 中断当前任务 | Stop running task</li>
+                                        <li><code>角色</code> <code>roles</code> — 列出所有可用角色 | List roles</li>
+                                        <li><code>角色 &lt;名&gt;</code> <code>role &lt;name&gt;</code> — 切换当前角色 | Switch role</li>
+                                        <li><code>删除 &lt;ID&gt;</code> <code>delete &lt;ID&gt;</code> — 删除指定对话 | Delete conversation</li>
+                                        <li><code>版本</code> <code>version</code> — 显示当前版本号 | Show version</li>
+                                    </ul>
+                                    <p class="settings-description" style="margin-top: 8px;">除以上命令外，直接输入内容将发送给 AI 进行渗透测试/安全分析。Otherwise, send any text for AI penetration testing / security analysis.</p>
+                                </div>
+
+                                <div class="settings-actions">
+                                    <button class="btn-primary" onclick="applySettings()">应用配置</button>
+                                </div>
+                            </div>
+
+                            <!-- 终端 -->
+                            <div id="settings-section-terminal" class="settings-section-content">
+                                <div class="settings-section-header">
+                                    <h3>终端</h3>
+                                    <p class="settings-description">在服务器上执行命令，便于运维与调试。命令在服务端执行，请勿执行敏感或破坏性操作。</p>
+                                </div>
+                                <div class="terminal-wrapper">
+                                    <div class="terminal-tabs">
+                                        <div class="terminal-tab active" data-tab-id="1"><span class="terminal-tab-label" onclick="switchTerminalTab(1)">终端 1</span><button type="button" class="terminal-tab-close" onclick="removeTerminalTab(1); event.stopPropagation();" title="关闭">×</button></div>
+                                        <button type="button" class="terminal-tab-new" onclick="addTerminalTab()" title="新终端">+</button>
+                                    </div>
+                                    <div class="terminal-panes">
+                                        <div id="terminal-pane-1" class="terminal-pane active">
+                                            <div id="terminal-container-1" class="terminal-container"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 安全设置 -->
+                            <div id="settings-section-security" class="settings-section-content">
+                                <div class="settings-section-header">
+                                    <h3>安全设置</h3>
+                                </div>
+                                
+                                <div class="settings-subsection">
+                                    <h4>修改密码</h4>
+                                    <p class="settings-description">修改登录密码后，需要使用新密码重新登录。</p>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="auth-current-password">当前密码</label>
+                                            <input type="password" id="auth-current-password" placeholder="输入当前登录密码" autocomplete="current-password" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="auth-new-password">新密码</label>
+                                            <input type="password" id="auth-new-password" placeholder="设置新密码（至少 8 位）" autocomplete="new-password" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="auth-confirm-password">确认新密码</label>
+                                            <input type="password" id="auth-confirm-password" placeholder="再次输入新密码" autocomplete="new-password" />
+                                        </div>
+                                        <div class="form-actions">
+                                            <button class="btn-secondary" type="button" onclick="resetPasswordForm()">清空</button>
+                                            <button class="btn-primary change-password-submit" type="button" onclick="changePassword()">修改密码</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MCP调用详情模态框 -->
+    <div id="mcp-detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>工具调用详情</h2>
+                <span class="modal-close" onclick="closeMCPDetail()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="detail-section detail-section-overview">
+                    <div class="detail-section-header">
+                        <h3>执行信息</h3>
+                    </div>
+                    <div class="detail-info-grid">
+                        <div class="detail-item">
+                            <strong>工具</strong>
+                            <span id="detail-tool-name"></span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>状态</strong>
+                            <span id="detail-status" class="status-chip status-unknown"></span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>时间</strong>
+                            <span id="detail-time"></span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>执行 ID</strong>
+                            <span id="detail-execution-id" class="mono-text"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <div class="detail-section-header">
+                        <h3>请求参数</h3>
+                        <button class="btn-ghost" type="button" onclick="copyDetailBlock('detail-request', this)">复制 JSON</button>
+                    </div>
+                    <div class="detail-code-card">
+                        <pre id="detail-request" class="code-block"></pre>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <div class="detail-section-header">
+                        <h3>响应结果</h3>
+                        <button class="btn-ghost" type="button" onclick="copyDetailBlock('detail-response', this)">复制内容</button>
+                    </div>
+                    <div class="detail-code-card">
+                        <pre id="detail-response" class="code-block"></pre>
+                    </div>
+                </div>
+                <div class="detail-section detail-success-wrapper" id="detail-success-section" style="display: none;">
+                    <div class="detail-section-header">
+                        <h3>正确信息</h3>
+                        <button class="btn-ghost" type="button" onclick="copyDetailBlock('detail-success', this)">复制内容</button>
+                    </div>
+                    <div class="detail-code-card">
+                        <pre id="detail-success" class="code-block"></pre>
+                    </div>
+                </div>
+                <div class="detail-section detail-error-wrapper" id="detail-error-section" style="display: none;">
+                    <div class="detail-section-header">
+                        <h3>错误信息</h3>
+                        <button class="btn-ghost" type="button" onclick="copyDetailBlock('detail-error', this)">复制错误</button>
+                    </div>
+                    <div class="detail-code-card">
+                        <pre id="detail-error" class="code-block error"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 外部MCP配置模态框 -->
+    <div id="external-mcp-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="external-mcp-modal-title">添加外部MCP</h2>
+                <span class="modal-close" onclick="closeExternalMCPModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="external-mcp-json">配置JSON <span style="color: red;">*</span></label>
+                    <textarea id="external-mcp-json" rows="15" placeholder='{\n  "hexstrike-ai": {\n    "command": "python3",\n    "args": ["/path/to/script.py"],\n    "description": "描述",\n    "timeout": 300\n  }\n}' style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.875rem; line-height: 1.5;"></textarea>
+                    <div class="password-hint">
+                        <strong>配置格式：</strong>JSON对象，key为配置名称，value为配置内容。状态通过"启动/停止"按钮控制，无需在JSON中配置。<br>
+                        <strong>配置示例：</strong><br>
+                        <strong>stdio模式：</strong><br>
+                        <code style="display: block; margin: 8px 0; padding: 8px; background: var(--bg-secondary); border-radius: 4px; white-space: pre-wrap;">{
+  "hexstrike-ai": {
+    "command": "python3",
+    "args": ["/path/to/script.py", "--server", "http://example.com"],
+    "description": "描述",
+    "timeout": 300
+  }
+}</code>
+                        <strong>HTTP模式：</strong><br>
+                        <code style="display: block; margin: 8px 0; padding: 8px; background: var(--bg-secondary); border-radius: 4px; white-space: pre-wrap;">{
+  "cyberstrike-ai-http": {
+    "transport": "http",
+    "url": "http://127.0.0.1:8081/mcp"
+  }
+}</code>
+                        <strong>SSE模式：</strong><br>
+                        <code style="display: block; margin: 8px 0; padding: 8px; background: var(--bg-secondary); border-radius: 4px; white-space: pre-wrap;">{
+  "cyberstrike-ai-sse": {
+    "transport": "sse",
+    "url": "http://127.0.0.1:8081/mcp/sse"
+  }
+}</code>
+                    </div>
+                    <div id="external-mcp-json-error" class="error-message" style="display: none; margin-top: 8px; padding: 8px; background: rgba(220, 53, 69, 0.1); border: 1px solid rgba(220, 53, 69, 0.3); border-radius: 4px; color: var(--error-color); font-size: 0.875rem;"></div>
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn-secondary" onclick="formatExternalMCPJSON()" style="margin-top: 8px;">格式化JSON</button>
+                    <button type="button" class="btn-secondary" onclick="loadExternalMCPExample()" style="margin-top: 8px; margin-left: 8px;">加载示例</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeExternalMCPModal()">取消</button>
+                <button class="btn-primary" onclick="saveExternalMCP()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 攻击链可视化模态框 -->
+    <div id="attack-chain-modal" class="modal">
+        <div class="modal-content attack-chain-modal-content">
+            <div class="modal-header">
+                <h2>攻击链可视化</h2>
+                <div class="modal-header-actions">
+                    <button class="btn-primary attack-chain-action-btn" onclick="regenerateAttackChain()" title="重新生成攻击链（包含最新对话内容）">
+                        🔄 重新生成
+                    </button>
+                    <button class="btn-secondary attack-chain-action-btn" onclick="exportAttackChain('png')" title="导出为PNG">
+                        📥 PNG
+                    </button>
+                    <button class="btn-secondary attack-chain-action-btn" onclick="exportAttackChain('svg')" title="导出为SVG">
+                        📥 SVG
+                    </button>
+                    <button class="btn-secondary attack-chain-action-btn" onclick="refreshAttackChain()" title="刷新当前攻击链（不重新生成）">
+                        ↻ 刷新
+                    </button>
+                    <span class="modal-close" onclick="closeAttackChainModal()">&times;</span>
+                </div>
+            </div>
+            <div class="modal-body attack-chain-body">
+                <div class="attack-chain-main-layout">
+                    <div class="attack-chain-visualization-area">
+                        <div class="attack-chain-toolbar">
+                            <div class="attack-chain-info">
+                                <span id="attack-chain-stats">节点: 0 | 边: 0</span>
+                            </div>
+                            <div class="attack-chain-filters">
+                                <input type="text" id="attack-chain-search" placeholder="搜索节点..." 
+                                       oninput="filterAttackChainNodes(this.value)">
+                                <select id="attack-chain-type-filter" 
+                                        onchange="filterAttackChainByType(this.value)">
+                                    <option value="all">所有类型</option>
+                                    <option value="target">目标</option>
+                                    <option value="action">行动</option>
+                                    <option value="vulnerability">漏洞</option>
+                                </select>
+                                <select id="attack-chain-risk-filter"
+                                        onchange="filterAttackChainByRisk(this.value)">
+                                    <option value="all">所有风险</option>
+                                    <option value="high">高风险 (80-100)</option>
+                                    <option value="medium-high">中高风险 (60-79)</option>
+                                    <option value="medium">中风险 (40-59)</option>
+                                    <option value="low">低风险 (0-39)</option>
+                                </select>
+                                <button class="btn-secondary" onclick="resetAttackChainFilters()">
+                                    重置筛选
+                                </button>
+                            </div>
+                        </div>
+                        <div id="attack-chain-container" class="attack-chain-container">
+                            <div class="loading-spinner">加载中...</div>
+                        </div>
+                    </div>
+                    <div class="attack-chain-sidebar">
+                        <div class="attack-chain-sidebar-content">
+                            <div class="attack-chain-legend">
+                                <div class="legend-section">
+                                    <div class="legend-title">风险等级</div>
+                                    <div class="legend-item">
+                                        <span class="legend-color" style="background: #ff4444;"></span>
+                                        <span>高风险 (80-100)</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-color" style="background: #ff8800;"></span>
+                                        <span>中高风险 (60-79)</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-color" style="background: #ffbb00;"></span>
+                                        <span>中风险 (40-59)</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-color" style="background: #88cc00;"></span>
+                                        <span>低风险 (0-39)</span>
+                                    </div>
+                                </div>
+                                <div class="legend-section">
+                                    <div class="legend-title">连接线含义</div>
+                                    <div class="legend-item">
+                                        <span class="legend-line" style="border-top: 2px solid #42a5f5;"></span>
+                                        <span>蓝色线：行动发现漏洞</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-line" style="border-top: 2px solid #e53935;"></span>
+                                        <span>红色线：使能/促成关系</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-line" style="border-top: 2px solid #616161;"></span>
+                                        <span>灰色线：逻辑顺序</span>
+                                    </div>
+                                </div>
+                                <div id="attack-chain-details" class="legend-section attack-chain-details" style="display: none;">
+                                    <div class="legend-title attack-chain-details-title">
+                                        <span>节点详情</span>
+                                        <button class="attack-chain-details-close" onclick="closeNodeDetails()" title="关闭详情">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div id="attack-chain-details-content" class="attack-chain-details-content"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <!-- DOMPurify for HTML sanitization to prevent XSS -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+    <!-- Cytoscape.js for attack chain visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+    <!-- ELK.js for high-quality DAG layout (reduces edge crossings) -->
+    <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.2/lib/elk.bundled.js"></script>
+    <!-- SheetJS for XLSX export (info-collect) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        // 确保ELK对象全局可用
+        if (typeof ELK === 'undefined' && typeof elk !== 'undefined') {
+            window.ELK = elk;
+        }
+    </script>
+    <!-- 知识项编辑模态框 -->
+    <!-- Skill模态框 -->
+    <div id="skill-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="skill-modal-title">添加Skill</h2>
+                <span class="modal-close" onclick="closeSkillModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="skill-name">Skill名称 <span style="color: red;">*</span></label>
+                    <input type="text" id="skill-name" placeholder="例如: sql-injection-testing" required />
+                    <small class="form-hint">只能包含字母、数字、连字符和下划线</small>
+                </div>
+                <div class="form-group">
+                    <label for="skill-description">描述</label>
+                    <input type="text" id="skill-description" placeholder="Skill的简短描述" />
+                </div>
+                <div class="form-group">
+                    <label for="skill-content">内容（Markdown格式） <span style="color: red;">*</span></label>
+                    <textarea id="skill-content" rows="20" placeholder="输入skill内容，支持Markdown格式..." style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.875rem; line-height: 1.5;" required></textarea>
+                    <small class="form-hint">支持YAML front matter格式（可选），例如：<br>
+---<br>
+name: skill-name<br>
+description: Skill描述<br>
+version: 1.0.0<br>
+---<br><br>
+# Skill标题<br>
+这里是skill内容...</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeSkillModal()">取消</button>
+                <button class="btn-primary" onclick="saveSkill()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="knowledge-item-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="knowledge-item-modal-title">添加知识</h2>
+                <span class="modal-close" onclick="closeKnowledgeItemModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="knowledge-item-category">分类（风险类型）<span style="color: red;">*</span></label>
+                    <input type="text" id="knowledge-item-category" placeholder="例如：SQL注入" required />
+                </div>
+                <div class="form-group">
+                    <label for="knowledge-item-title">标题<span style="color: red;">*</span></label>
+                    <input type="text" id="knowledge-item-title" placeholder="知识项标题" required />
+                </div>
+                <div class="form-group">
+                    <label for="knowledge-item-content">内容（Markdown格式）<span style="color: red;">*</span></label>
+                    <textarea id="knowledge-item-content" rows="20" placeholder="输入知识内容，支持Markdown格式..." style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.875rem; line-height: 1.5;" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeKnowledgeItemModal()">取消</button>
+                <button class="btn-primary" onclick="saveKnowledgeItem()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量管理对话模态框 -->
+    <div id="batch-manage-modal" class="modal">
+        <div class="modal-content batch-manage-modal-content">
+            <div class="modal-header">
+                <h2 id="batch-manage-title">管理对话记录·共<span id="batch-manage-count">0</span>条</h2>
+                <div class="batch-manage-header-actions">
+                    <div class="batch-search-box">
+                        <input type="text" id="batch-search-input" placeholder="搜索历史记录" oninput="filterBatchConversations(this.value)" />
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+                            <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <span class="modal-close" onclick="closeBatchManageModal()">&times;</span>
+                </div>
+            </div>
+            <div class="modal-body batch-manage-body">
+                <div class="batch-conversations-table">
+                    <div class="batch-table-header">
+                        <div class="batch-table-col-checkbox"></div>
+                        <div class="batch-table-col-name">对话名称</div>
+                        <div class="batch-table-col-time">最近一次对话时间</div>
+                        <div class="batch-table-col-action">操作</div>
+                    </div>
+                    <div id="batch-conversations-list" class="batch-conversations-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer batch-manage-footer">
+                <label class="select-all-checkbox">
+                    <input type="checkbox" id="batch-select-all" onchange="toggleSelectAllBatch()" />
+                    <span>全选</span>
+                </label>
+                <div class="batch-footer-actions">
+                    <button class="btn-secondary" onclick="closeBatchManageModal()">取消</button>
+                    <button class="btn-primary" onclick="deleteSelectedConversations()">删除所选</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建分组模态框 -->
+    <div id="create-group-modal" class="modal">
+        <div class="modal-content create-group-modal-content">
+            <div class="modal-header">
+                <h2>创建分组</h2>
+                <span class="modal-close" onclick="closeCreateGroupModal()">&times;</span>
+            </div>
+            <div class="modal-body create-group-body">
+                <p class="create-group-description">分组功能可将对话集中归类管理，让对话更加井然有序。</p>
+                <div class="create-group-input-wrapper">
+                    <button type="button" class="group-icon-input" id="create-group-icon-btn" onclick="toggleGroupIconPicker()" title="点击选择图标">📁</button>
+                    <input type="text" id="create-group-name-input" placeholder="请输入分组名称" />
+                    <!-- Emoji选择器面板 -->
+                    <div id="group-icon-picker" class="group-icon-picker" style="display: none;">
+                        <div class="icon-picker-header">
+                            <span>选择图标</span>
+                            <div class="icon-picker-custom">
+                                <input type="text" id="custom-icon-input" class="custom-icon-input" placeholder="自定义" maxlength="2" />
+                                <button type="button" class="custom-icon-btn" onclick="applyCustomIcon()">确定</button>
+                            </div>
+                        </div>
+                        <div class="icon-picker-grid">
+                            <span class="icon-option" onclick="selectGroupIcon('📁')">📁</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🔒')">🔒</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🛡️')">🛡️</span>
+                            <span class="icon-option" onclick="selectGroupIcon('⚔️')">⚔️</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🎯')">🎯</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🔍')">🔍</span>
+                            <span class="icon-option" onclick="selectGroupIcon('💻')">💻</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🐛')">🐛</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🚀')">🚀</span>
+                            <span class="icon-option" onclick="selectGroupIcon('⚡')">⚡</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🔥')">🔥</span>
+                            <span class="icon-option" onclick="selectGroupIcon('💡')">💡</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🎮')">🎮</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🏴‍☠️')">🏴‍☠️</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🕵️')">🕵️</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🔑')">🔑</span>
+                            <span class="icon-option" onclick="selectGroupIcon('📡')">📡</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🌐')">🌐</span>
+                            <span class="icon-option" onclick="selectGroupIcon('📊')">📊</span>
+                            <span class="icon-option" onclick="selectGroupIcon('📝')">📝</span>
+                            <span class="icon-option" onclick="selectGroupIcon('🗂️')">🗂️</span>
+                            <span class="icon-option" onclick="selectGroupIcon('📌')">📌</span>
+                            <span class="icon-option" onclick="selectGroupIcon('⭐')">⭐</span>
+                            <span class="icon-option" onclick="selectGroupIcon('💎')">💎</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="create-group-suggestions">
+                    <div class="suggestion-tag" onclick="selectSuggestion('渗透测试')">渗透测试</div>
+                    <div class="suggestion-tag" onclick="selectSuggestion('CTF')">CTF</div>
+                    <div class="suggestion-tag" onclick="selectSuggestion('红队')">红队</div>
+                    <div class="suggestion-tag" onclick="selectSuggestion('漏洞挖掘')">漏洞挖掘</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeCreateGroupModal()">取消</button>
+                <button class="btn-primary" onclick="createGroup(event)">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上下文菜单 -->
+    <div id="conversation-context-menu" class="context-menu" style="display: none;">
+        <div id="attack-chain-menu-item" class="context-menu-item" onclick="showAttackChainFromContext()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10.5 13.5l3-3M8 8H5a4 4 0 1 0 0 8h3m8-8h3a4 4 0 0 1 0 8h-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>查看攻击链</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="renameConversation()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>重命名</span>
+        </div>
+        <div class="context-menu-item" onclick="pinConversation()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 17v5M5 17h14l-1-7H6l-1 7zM9 10V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span id="pin-conversation-menu-text">置顶此对话</span>
+        </div>
+        <div class="context-menu-item" onclick="showBatchManageModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="8" cy="6" r="1" fill="currentColor"/>
+                <circle cx="8" cy="12" r="1" fill="currentColor"/>
+                <circle cx="8" cy="18" r="1" fill="currentColor"/>
+            </svg>
+            <span>批量管理</span>
+        </div>
+        <div class="context-menu-item context-menu-item-has-submenu" onmouseenter="handleMoveToGroupSubmenuEnter()" onmouseleave="handleMoveToGroupSubmenuLeave(event)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>移动到分组</span>
+            <svg class="submenu-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div id="move-to-group-submenu" class="context-submenu" style="display: none;" onmouseenter="clearSubmenuHideTimeout()" onmouseleave="hideMoveToGroupSubmenu()"></div>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item context-menu-item-danger" onclick="deleteConversationFromContext()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>删除此对话</span>
+        </div>
+    </div>
+
+    <!-- 分组上下文菜单 -->
+    <div id="group-context-menu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" onclick="renameGroupFromContext()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>重命名</span>
+        </div>
+        <div class="context-menu-item" onclick="pinGroupFromContext()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 17v5M5 17h14l-1-7H6l-1 7zM9 10V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span id="pin-group-menu-text">置顶此分组</span>
+        </div>
+        <div class="context-menu-item context-menu-item-danger" onclick="deleteGroupFromContext()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>删除此分组</span>
+        </div>
+    </div>
+
+    <!-- 新建任务模态框 -->
+    <div id="batch-import-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>新建任务</h2>
+                <span class="modal-close" onclick="closeBatchImportModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="batch-queue-title">任务标题</label>
+                    <input type="text" id="batch-queue-title" placeholder="请输入任务标题（可选，用于标识和筛选）" />
+                    <div class="form-hint" style="margin-top: 4px;">
+                        为批量任务队列设置一个标题，方便后续查找和管理。
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="batch-queue-role">角色</label>
+                    <select id="batch-queue-role" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+                        <option value="">默认</option>
+                    </select>
+                    <div class="form-hint" style="margin-top: 4px;">
+                        选择一个角色，所有任务将使用该角色的配置（提示词和工具）执行。
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="batch-tasks-input">任务列表（每行一个任务）<span style="color: red;">*</span></label>
+                    <textarea id="batch-tasks-input" rows="15" placeholder="请输入任务列表，每行一个任务，例如：&#10;扫描 192.168.1.1 的开放端口&#10;检查 https://example.com 是否存在SQL注入&#10;枚举 example.com 的子域名" style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.875rem; line-height: 1.5;"></textarea>
+                    <div class="form-hint" style="margin-top: 8px;">
+                        <strong>提示：</strong>每行输入一个任务指令，系统将依次执行这些任务。空行会被自动忽略。
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div id="batch-import-stats" class="batch-import-stats"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeBatchImportModal()">取消</button>
+                <button class="btn-primary" onclick="createBatchQueue()">创建队列</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量任务队列详情模态框 -->
+    <div id="batch-queue-detail-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="batch-queue-detail-title">批量任务队列详情</h2>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="modal-header-actions">
+                        <button class="btn-secondary btn-small" id="batch-queue-add-task-btn" onclick="showAddBatchTaskModal()" style="display: none;">添加任务</button>
+                        <button class="btn-primary btn-small" id="batch-queue-start-btn" onclick="startBatchQueue()" style="display: none;">开始执行</button>
+                        <button class="btn-secondary btn-small" id="batch-queue-pause-btn" onclick="pauseBatchQueue()" style="display: none;">暂停队列</button>
+                        <button class="btn-secondary btn-small btn-danger" id="batch-queue-delete-btn" onclick="deleteBatchQueue()" style="display: none;">删除队列</button>
+                    </div>
+                    <span class="modal-close" onclick="closeBatchQueueDetailModal()">&times;</span>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="batch-queue-detail-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑批量任务模态框 -->
+    <div id="edit-batch-task-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>编辑任务</h2>
+                <span class="modal-close" onclick="closeEditBatchTaskModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-task-message">任务消息</label>
+                    <textarea id="edit-task-message" class="form-control" rows="5" placeholder="请输入任务消息"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" onclick="saveBatchTask()">保存</button>
+                    <button class="btn-secondary" onclick="closeEditBatchTaskModal()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加批量任务模态框 -->
+    <div id="add-batch-task-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>添加任务</h2>
+                <span class="modal-close" onclick="closeAddBatchTaskModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="add-task-message">任务消息</label>
+                    <textarea id="add-task-message" class="form-control" rows="5" placeholder="请输入任务消息"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" onclick="saveAddBatchTask()">添加</button>
+                    <button class="btn-secondary" onclick="closeAddBatchTaskModal()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 漏洞编辑模态框 -->
+    <div id="vulnerability-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="vulnerability-modal-title">添加漏洞</h2>
+                <span class="modal-close" onclick="closeVulnerabilityModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="vulnerability-conversation-id">会话ID <span style="color: red;">*</span></label>
+                    <input type="text" id="vulnerability-conversation-id" placeholder="输入会话ID" required />
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-title">标题 <span style="color: red;">*</span></label>
+                    <input type="text" id="vulnerability-title" placeholder="漏洞标题" required />
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-description">描述</label>
+                    <textarea id="vulnerability-description" rows="5" placeholder="漏洞详细描述"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-severity">严重程度 <span style="color: red;">*</span></label>
+                    <select id="vulnerability-severity" required>
+                        <option value="">请选择</option>
+                        <option value="critical">严重</option>
+                        <option value="high">高危</option>
+                        <option value="medium">中危</option>
+                        <option value="low">低危</option>
+                        <option value="info">信息</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-status">状态</label>
+                    <select id="vulnerability-status">
+                        <option value="open">待处理</option>
+                        <option value="confirmed">已确认</option>
+                        <option value="fixed">已修复</option>
+                        <option value="false_positive">误报</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-type">漏洞类型</label>
+                    <input type="text" id="vulnerability-type" placeholder="如：SQL注入、XSS、CSRF等" />
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-target">目标</label>
+                    <input type="text" id="vulnerability-target" placeholder="受影响的目标（URL、IP地址等）" />
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-proof">证明（POC）</label>
+                    <textarea id="vulnerability-proof" rows="5" placeholder="漏洞证明，如请求/响应、截图等"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-impact">影响</label>
+                    <textarea id="vulnerability-impact" rows="3" placeholder="漏洞影响说明"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="vulnerability-recommendation">修复建议</label>
+                    <textarea id="vulnerability-recommendation" rows="3" placeholder="修复建议"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeVulnerabilityModal()">取消</button>
+                <button class="btn-primary" onclick="saveVulnerability()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 角色选择弹窗 -->
+    <div id="role-select-modal" class="modal">
+        <div class="modal-content role-select-modal-content">
+            <div class="modal-header">
+                <h2>选择角色</h2>
+                <span class="modal-close" onclick="closeRoleSelectModal()">&times;</span>
+            </div>
+            <div class="modal-body role-select-body">
+                <div id="role-select-list" class="role-select-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 角色编辑模态框 -->
+    <div id="role-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="role-modal-title">添加角色</h2>
+                <span class="modal-close" onclick="closeRoleModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="role-name">角色名称 <span style="color: red;">*</span></label>
+                    <input type="text" id="role-name" placeholder="输入角色名称" required />
+                </div>
+                <div class="form-group">
+                    <label for="role-description">角色描述</label>
+                    <input type="text" id="role-description" placeholder="输入角色描述" />
+                </div>
+                <div class="form-group">
+                    <label for="role-icon">角色图标</label>
+                    <input type="text" id="role-icon" placeholder="输入emoji图标，例如: 🏆" maxlength="10" />
+                    <small class="form-hint">输入一个emoji作为角色的图标，将显示在角色选择器中。</small>
+                </div>
+                <div class="form-group">
+                    <label for="role-user-prompt">用户提示词</label>
+                    <textarea id="role-user-prompt" rows="10" placeholder="输入用户提示词，会在用户消息前追加此提示词..."></textarea>
+                    <small class="form-hint">此提示词会追加到用户消息前，用于指导AI的行为。注意：这不会修改系统提示词。</small>
+                </div>
+                <div class="form-group" id="role-tools-section">
+                    <label>关联的工具（可选）</label>
+                    <div id="role-tools-default-hint" class="role-tools-default-hint" style="display: none;">
+                        <div class="role-tools-default-info">
+                            <span class="role-tools-default-icon">ℹ️</span>
+                            <div class="role-tools-default-content">
+                                <div class="role-tools-default-title">默认角色使用所有工具</div>
+                                <div class="role-tools-default-desc">默认角色会自动使用MCP管理中启用的所有工具，无需单独配置。</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="role-tools-controls">
+                        <div class="role-tools-actions">
+                            <button type="button" class="btn-secondary" onclick="selectAllRoleTools()">全选</button>
+                            <button type="button" class="btn-secondary" onclick="deselectAllRoleTools()">全不选</button>
+                            <div class="role-tools-search-box">
+                                <input type="text" id="role-tools-search" placeholder="搜索工具..." 
+                                       oninput="searchRoleTools(this.value)" 
+                                       onkeypress="if(event.key === 'Enter') searchRoleTools(this.value)" />
+                                <button class="role-tools-search-clear" id="role-tools-search-clear" 
+                                        onclick="clearRoleToolsSearch()" style="display: none;" title="清除搜索">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="role-tools-stats" class="role-tools-stats"></div>
+                    </div>
+                    <div id="role-tools-list" class="role-tools-list">
+                        <div class="tools-loading">正在加载工具列表...</div>
+                    </div>
+                    <small class="form-hint">勾选要关联的工具，留空则使用MCP管理中的全部工具配置。</small>
+                </div>
+                <div class="form-group" id="role-skills-section">
+                    <label>关联的Skills（可选）</label>
+                    <div class="role-skills-controls">
+                        <div class="role-skills-actions">
+                            <button type="button" class="btn-secondary" onclick="selectAllRoleSkills()">全选</button>
+                            <button type="button" class="btn-secondary" onclick="deselectAllRoleSkills()">全不选</button>
+                            <div class="role-skills-search-box">
+                                <input type="text" id="role-skills-search" placeholder="搜索skill..." 
+                                       oninput="searchRoleSkills(this.value)" 
+                                       onkeypress="if(event.key === 'Enter') searchRoleSkills(this.value)" />
+                                <button class="role-skills-search-clear" id="role-skills-search-clear" 
+                                        onclick="clearRoleSkillsSearch()" style="display: none;" title="清除搜索">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="role-skills-stats" class="role-skills-stats"></div>
+                    </div>
+                    <div id="role-skills-list" class="role-skills-list">
+                        <div class="skills-loading">正在加载skills列表...</div>
+                    </div>
+                    <small class="form-hint">勾选要关联的skills，这些skills的内容会在执行任务前注入到系统提示词中，帮助AI更好地理解相关专业知识。</small>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="role-enabled" class="modern-checkbox" checked />
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">启用此角色</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeRoleModal()">取消</button>
+                <button class="btn-primary" onclick="saveRole()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/builtin-tools.js"></script>
+    <script src="/static/js/auth.js"></script>
+    <script src="/static/js/info-collect.js"></script>
+    <script src="/static/js/router.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/monitor.js"></script>
+    <script src="/static/js/chat.js"></script>
+    <script src="/static/js/settings.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
+    <script src="/static/js/terminal.js"></script>
+    <script src="/static/js/knowledge.js"></script>
+    <script src="/static/js/skills.js"></script>
+    <script src="/static/js/vulnerability.js?v=4"></script>
+    <script src="/static/js/tasks.js"></script>
+    <script src="/static/js/roles.js"></script>
+</body>
+</html>
+

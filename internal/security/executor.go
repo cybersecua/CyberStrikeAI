@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/mcp"
@@ -20,6 +22,15 @@ import (
 
 	"go.uber.org/zap"
 )
+
+// ToolOutputCallback 用于在工具执行过程中把 stdout/stderr 增量推给上层（SSE）。
+// 通过 context 传递，避免修改 MCP ToolHandler 签名导致的”写死工具”问题。
+type ToolOutputCallback func(chunk string)
+
+type toolOutputCallbackCtxKey struct{}
+
+// ToolOutputCallbackCtxKey 是 context 中的 key，供 Agent 写入回调，Executor 读取并流式回调。
+var ToolOutputCallbackCtxKey = toolOutputCallbackCtxKey{}
 
 // Executor security tool executor
 type Executor struct {
@@ -239,7 +250,16 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 		zap.Bool("proxied", e.proxyConfig != nil && e.proxyConfig.Enabled),
 	)
 
-	output, err := cmd.CombinedOutput()
+	var output string
+	var err error
+	// 如果上层提供了 stdout/stderr 增量回调，则边执行边读取并回调。
+	if cb, ok := ctx.Value(ToolOutputCallbackCtxKey).(ToolOutputCallback); ok && cb != nil {
+		output, err = streamCommandOutput(cmd, cb)
+	} else {
+		outputBytes, err2 := cmd.CombinedOutput()
+		output = string(outputBytes)
+		err = err2
+	}
 	if err != nil {
 		// check if exit code is in the allowed list
 		exitCode := getExitCode(err)
@@ -1738,7 +1758,16 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 	}
 
 	// non-background command: wait for output
-	output, err := cmd.CombinedOutput()
+	var output string
+	var err error
+	// If the caller provided a streaming callback, read output incrementally.
+	if cb, ok := ctx.Value(ToolOutputCallbackCtxKey).(ToolOutputCallback); ok && cb != nil {
+		output, err = streamCommandOutput(cmd, cb)
+	} else {
+		outputBytes, err2 := cmd.CombinedOutput()
+		output = string(outputBytes)
+		err = err2
+	}
 	if err != nil {
 		e.logger.Error("system command execution failed",
 			zap.String("command", command),
@@ -1773,19 +1802,19 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 }
 
 // resolveToolWorkDir resolves the tool working directory.
-// Priority: explicit args["workdir"] -> executor default workdir.
+// Priority: explicit args[“workdir”] -> executor default workdir.
 func (e *Executor) resolveToolWorkDir(args map[string]interface{}) string {
 	base := e.defaultWorkDir
-	if wd, ok := args["workdir"].(string); ok && strings.TrimSpace(wd) != "" {
+	if wd, ok := args[“workdir”].(string); ok && strings.TrimSpace(wd) != “” {
 		if filepath.IsAbs(wd) {
 			return filepath.Clean(wd)
 		}
-		if base == "" {
+		if base == “” {
 			if cwd, err := os.Getwd(); err == nil {
 				base = cwd
 			}
 		}
-		if base != "" {
+		if base != “” {
 			return filepath.Clean(filepath.Join(base, wd))
 		}
 		return filepath.Clean(wd)
@@ -1795,7 +1824,7 @@ func (e *Executor) resolveToolWorkDir(args map[string]interface{}) string {
 
 // detectDefaultToolWorkDir determines a stable workspace directory for tool execution.
 func detectDefaultToolWorkDir() string {
-	if env := strings.TrimSpace(os.Getenv("CYBERSTRIKE_WORKDIR")); env != "" {
+	if env := strings.TrimSpace(os.Getenv(“CYBERSTRIKE_WORKDIR”)); env != “” {
 		if info, err := os.Stat(env); err == nil && info.IsDir() {
 			return env
 		}
@@ -1814,7 +1843,76 @@ func detectDefaultToolWorkDir() string {
 		}
 	}
 
-	return ""
+	return “”
+}
+
+// streamCommandOutput reads command stdout/stderr incrementally, calling cb(chunk)
+// for each piece while accumulating the full output for the return value.
+func streamCommandOutput(cmd *exec.Cmd, cb ToolOutputCallback) (string, error) {
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return “”, err
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		_ = stdoutPipe.Close()
+		return “”, err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdoutPipe.Close()
+		_ = stderrPipe.Close()
+		return “”, err
+	}
+
+	chunks := make(chan string, 64)
+	var wg sync.WaitGroup
+	readFn := func(r io.Reader) {
+		defer wg.Done()
+		br := bufio.NewReader(r)
+		for {
+			s, readErr := br.ReadString('\n')
+			if s != “” {
+				chunks <- s
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}
+
+	wg.Add(2)
+	go readFn(stdoutPipe)
+	go readFn(stderrPipe)
+
+	go func() {
+		wg.Wait()
+		close(chunks)
+	}()
+
+	var outBuilder strings.Builder
+	var deltaBuilder strings.Builder
+	lastFlush := time.Now()
+
+	flush := func() {
+		if deltaBuilder.Len() == 0 {
+			return
+		}
+		cb(deltaBuilder.String())
+		deltaBuilder.Reset()
+		lastFlush = time.Now()
+	}
+
+	for chunk := range chunks {
+		outBuilder.WriteString(chunk)
+		deltaBuilder.WriteString(chunk)
+		if deltaBuilder.Len() >= 2048 || time.Since(lastFlush) >= 200*time.Millisecond {
+			flush()
+		}
+	}
+	flush()
+
+	waitErr := cmd.Wait()
+	return outBuilder.String(), waitErr
 }
 
 // executeInternalTool executes an internal tool (does not execute external commands)
@@ -2117,6 +2215,17 @@ func (e *Executor) buildInputSchema(toolConfig *config.ToolConfig) map[string]in
 			prop := map[string]interface{}{
 				"type":        openAIType,
 				"description": param.Description,
+			}
+
+			// JSON Schema/OpenAI requires array types to include items
+			if openAIType == "array" {
+				itemType := strings.TrimSpace(param.ItemType)
+				if itemType == "" {
+					itemType = "string"
+				}
+				prop["items"] = map[string]interface{}{
+					"type": e.convertToOpenAIType(itemType),
+				}
 			}
 
 			// add default value

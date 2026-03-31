@@ -1,13 +1,13 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -16,14 +16,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Client is a unified HTTP client for interacting with OpenAI-compatible models.
+// Client 统一封装与OpenAI兼容模型交互的HTTP客户端。
 type Client struct {
 	httpClient *http.Client
 	config     *config.OpenAIConfig
 	logger     *zap.Logger
 }
 
-// APIError represents a non-200 error returned by the OpenAI API.
+// APIError 表示OpenAI接口返回的非200错误。
 type APIError struct {
 	StatusCode int
 	Body       string
@@ -33,7 +33,7 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("openai api error: status=%d body=%s", e.StatusCode, e.Body)
 }
 
-// NewClient creates a new OpenAI client.
+// NewClient 创建一个新的OpenAI客户端。
 func NewClient(cfg *config.OpenAIConfig, httpClient *http.Client, logger *zap.Logger) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -48,12 +48,12 @@ func NewClient(cfg *config.OpenAIConfig, httpClient *http.Client, logger *zap.Lo
 	}
 }
 
-// UpdateConfig dynamically updates the OpenAI configuration.
+// UpdateConfig 动态更新OpenAI配置。
 func (c *Client) UpdateConfig(cfg *config.OpenAIConfig) {
 	c.config = cfg
 }
 
-// ChatCompletion calls the /chat/completions endpoint.
+// ChatCompletion 调用 /chat/completions 接口。
 func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out interface{}) error {
 	if c == nil {
 		return fmt.Errorf("openai client is not initialized")
@@ -84,7 +84,6 @@ func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out in
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-	req.Header.Set("User-Agent", "CyberStrikeAI/1.0")
 
 	requestStart := time.Now()
 	resp, err := c.httpClient.Do(req)
@@ -104,21 +103,14 @@ func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out in
 		bodyChan <- responseBody
 	}()
 
-	hardTimeout := time.NewTimer(25 * time.Minute)
-	defer hardTimeout.Stop()
-
 	var respBody []byte
 	select {
 	case respBody = <-bodyChan:
 	case err := <-errChan:
 		return fmt.Errorf("read openai response: %w", err)
 	case <-ctx.Done():
-		// Close resp.Body to unblock the io.ReadAll goroutine
-		resp.Body.Close()
 		return fmt.Errorf("read openai response timeout: %w", ctx.Err())
-	case <-hardTimeout.C:
-		// Close resp.Body to unblock the io.ReadAll goroutine
-		resp.Body.Close()
+	case <-time.After(25 * time.Minute):
 		return fmt.Errorf("read openai response timeout (25m)")
 	}
 
@@ -126,15 +118,11 @@ func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out in
 		zap.Int("status", resp.StatusCode),
 		zap.Duration("duration", time.Since(requestStart)),
 		zap.Int("responseSizeKB", len(respBody)/1024),
-		zap.String("request_url", req.URL.String()),
 	)
 
 	if resp.StatusCode != http.StatusOK {
 		c.logger.Warn("OpenAI chat completion returned non-200",
 			zap.Int("status", resp.StatusCode),
-			zap.String("request_url", req.URL.String()),
-			zap.String("model", c.config.Model),
-			zap.String("base_url", c.config.BaseURL),
 			zap.String("body", string(respBody)),
 		)
 		return &APIError{
@@ -144,7 +132,6 @@ func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out in
 	}
 
 	if out != nil {
-		respBody = normalizeNonStandardToolCalls(respBody, c.logger)
 		if err := json.Unmarshal(respBody, out); err != nil {
 			c.logger.Error("failed to unmarshal OpenAI response",
 				zap.Error(err),
@@ -157,183 +144,341 @@ func (c *Client) ChatCompletion(ctx context.Context, payload interface{}, out in
 	return nil
 }
 
-// FetchFirstModel queries the /v1/models endpoint and returns the ID of the
-// first available model.  This is used to auto-discover the served model name
-// when the user hasn't explicitly configured one.
-func FetchFirstModel(baseURL, apiKey string, httpClient *http.Client, logger *zap.Logger) (string, error) {
-	models, err := FetchModels(baseURL, apiKey, httpClient)
-	if err != nil {
-		return "", err
+// ChatCompletionStream 调用 /chat/completions 的流式模式（stream=true），并在每个 delta 到达时回调 onDelta。
+// 返回最终拼接的 content（只拼 content delta；工具调用 delta 未做处理）。
+func (c *Client) ChatCompletionStream(ctx context.Context, payload interface{}, onDelta func(delta string) error) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("openai client is not initialized")
 	}
-	if len(models) == 0 {
-		return "", fmt.Errorf("no models available at %s", strings.TrimSuffix(strings.TrimSpace(baseURL), "/"))
+	if c.config == nil {
+		return "", fmt.Errorf("openai config is nil")
 	}
-	modelID := models[0]
-	if logger != nil {
-		logger.Info("Auto-discovered model from endpoint",
-			zap.String("base_url", strings.TrimSuffix(strings.TrimSpace(baseURL), "/")),
-			zap.String("model", modelID),
-			zap.Int("total_models", len(models)),
-		)
-	}
-	return modelID, nil
-}
-
-// FetchModels queries the /v1/models endpoint and returns all available model IDs.
-func FetchModels(baseURL, apiKey string, httpClient *http.Client) ([]string, error) {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
-	}
-	base := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		return nil, fmt.Errorf("base_url is empty")
+	if strings.TrimSpace(c.config.APIKey) == "" {
+		return "", fmt.Errorf("openai api key is empty")
 	}
 
-	req, err := http.NewRequest(http.MethodGet, base+"/models", nil)
-	if err != nil {
-		return nil, fmt.Errorf("build models request: %w", err)
-	}
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+	baseURL := strings.TrimSuffix(c.config.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
 	}
 
-	resp, err := httpClient.Do(req)
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("fetch models: %w", err)
+		return "", fmt.Errorf("marshal openai payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build openai request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+
+	requestStart := time.Now()
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("call openai api: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	// 非200：读完 body 返回
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models endpoint returned %d: %s", resp.StatusCode, string(body))
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(respBody),
+		}
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+	type streamDelta struct {
+		// OpenAI 兼容流式通常使用 content；但部分兼容实现可能用 text。
+		Content string `json:"content,omitempty"`
+		Text    string `json:"text,omitempty"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse models response: %w", err)
+	type streamChoice struct {
+		Delta        streamDelta `json:"delta"`
+		FinishReason *string     `json:"finish_reason,omitempty"`
 	}
-	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("no models available at %s", base)
+	type streamResponse struct {
+		ID      string         `json:"id,omitempty"`
+		Choices []streamChoice `json:"choices"`
+		Error   *struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error,omitempty"`
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, m := range result.Data {
-		id := strings.TrimSpace(m.ID)
-		if id == "" {
+	reader := bufio.NewReader(resp.Body)
+	var full strings.Builder
+
+	// 典型 SSE 结构：
+	// data: {...}\n\n
+	// data: [DONE]\n\n
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return full.String(), fmt.Errorf("read openai stream: %w", readErr)
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			continue
 		}
-		models = append(models, id)
+		if !strings.HasPrefix(trimmed, "data:") {
+			continue
+		}
+		dataStr := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+		if dataStr == "[DONE]" {
+			break
+		}
+
+		var chunk streamResponse
+		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
+			// 解析失败跳过（兼容各种兼容层的差异）
+			continue
+		}
+		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
+			return full.String(), fmt.Errorf("openai stream error: %s", chunk.Error.Message)
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		delta := chunk.Choices[0].Delta.Content
+		if delta == "" {
+			delta = chunk.Choices[0].Delta.Text
+		}
+		if delta == "" {
+			continue
+		}
+
+		full.WriteString(delta)
+		if onDelta != nil {
+			if err := onDelta(delta); err != nil {
+				return full.String(), err
+			}
+		}
 	}
-	if len(models) == 0 {
-		return nil, fmt.Errorf("no models available at %s", base)
-	}
-	return models, nil
+
+	c.logger.Debug("received OpenAI stream completion",
+		zap.Duration("duration", time.Since(requestStart)),
+		zap.Int("contentLen", full.Len()),
+	)
+
+	return full.String(), nil
 }
 
-var (
-	jsonToolCallPattern     = regexp.MustCompile(`(?is)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
-	xmlToolCallPattern      = regexp.MustCompile(`(?is)<tool_call>\s*<function=([a-zA-Z0-9_\-:.]+)\s*(.*?)</function>\s*</tool_call>`)
-	xmlToolParamPattern     = regexp.MustCompile(`(?is)<parameter=([a-zA-Z0-9_\-:.]+)>\s*(.*?)\s*</parameter>`)
-	removeToolCallBlockExpr = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>`)
-)
+// StreamToolCall 流式工具调用的累积结果（arguments 以字符串形式拼接，留给上层再解析为 JSON）。
+type StreamToolCall struct {
+	Index            int
+	ID               string
+	Type             string
+	FunctionName    string
+	FunctionArgsStr string
+}
 
-// normalizeNonStandardToolCalls converts text-embedded tool-call formats (often
-// returned by some OpenAI-compatible backends) into standard message.tool_calls.
-func normalizeNonStandardToolCalls(respBody []byte, logger *zap.Logger) []byte {
-	var root map[string]interface{}
-	if err := json.Unmarshal(respBody, &root); err != nil {
-		return respBody
+// ChatCompletionStreamWithToolCalls 流式模式：同时把 content delta 实时回调，并在结束后返回 tool_calls 和 finish_reason。
+func (c *Client) ChatCompletionStreamWithToolCalls(
+	ctx context.Context,
+	payload interface{},
+	onContentDelta func(delta string) error,
+) (string, []StreamToolCall, string, error) {
+	if c == nil {
+		return "", nil, "", fmt.Errorf("openai client is not initialized")
+	}
+	if c.config == nil {
+		return "", nil, "", fmt.Errorf("openai config is nil")
+	}
+	if strings.TrimSpace(c.config.APIKey) == "" {
+		return "", nil, "", fmt.Errorf("openai api key is empty")
 	}
 
-	choices, ok := root["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return respBody
+	baseURL := strings.TrimSuffix(c.config.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
 	}
 
-	modified := false
-	for _, rawChoice := range choices {
-		choice, ok := rawChoice.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		message, ok := choice["message"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if existing, ok := message["tool_calls"].([]interface{}); ok && len(existing) > 0 {
-			continue
-		}
-		content, _ := message["content"].(string)
-		if strings.TrimSpace(content) == "" {
-			continue
-		}
-
-		toolName, toolArgs, cleanContent, found := extractToolCallFromContent(content)
-		if !found || strings.TrimSpace(toolName) == "" {
-			continue
-		}
-
-		message["tool_calls"] = []interface{}{
-			map[string]interface{}{
-				"id":   fmt.Sprintf("compat-tool-%d", time.Now().UnixNano()),
-				"type": "function",
-				"function": map[string]interface{}{
-					"name":      toolName,
-					"arguments": toolArgs,
-				},
-			},
-		}
-		message["content"] = cleanContent
-		choice["finish_reason"] = "tool_calls"
-		modified = true
-	}
-
-	if !modified {
-		return respBody
-	}
-	normalized, err := json.Marshal(root)
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return respBody
+		return "", nil, "", fmt.Errorf("marshal openai payload: %w", err)
 	}
-	if logger != nil {
-		logger.Info("Normalized non-standard tool call markup into message.tool_calls")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", nil, "", fmt.Errorf("build openai request: %w", err)
 	}
-	return normalized
-}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 
-func extractToolCallFromContent(content string) (name string, args map[string]interface{}, cleanContent string, ok bool) {
-	cleanContent = strings.TrimSpace(removeToolCallBlockExpr.ReplaceAllString(content, ""))
+	requestStart := time.Now()
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("call openai api: %w", err)
+	}
+	defer resp.Body.Close()
 
-	if m := jsonToolCallPattern.FindStringSubmatch(content); len(m) == 2 {
-		var payload struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments"`
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", nil, "", &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(respBody),
 		}
-		if err := json.Unmarshal([]byte(m[1]), &payload); err == nil && strings.TrimSpace(payload.Name) != "" {
-			return strings.TrimSpace(payload.Name), payload.Arguments, cleanContent, true
-		}
 	}
 
-	if m := xmlToolCallPattern.FindStringSubmatch(content); len(m) == 3 {
-		name = strings.TrimSpace(m[1])
-		args = make(map[string]interface{})
-		for _, pm := range xmlToolParamPattern.FindAllStringSubmatch(m[2], -1) {
-			if len(pm) != 3 {
-				continue
+	// delta tool_calls 的增量结构
+	type toolCallFunctionDelta struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	}
+	type toolCallDelta struct {
+		Index    int                     `json:"index,omitempty"`
+		ID       string                  `json:"id,omitempty"`
+		Type     string                  `json:"type,omitempty"`
+		Function toolCallFunctionDelta  `json:"function,omitempty"`
+	}
+	type streamDelta2 struct {
+		Content   string          `json:"content,omitempty"`
+		Text      string          `json:"text,omitempty"`
+		ToolCalls []toolCallDelta `json:"tool_calls,omitempty"`
+	}
+	type streamChoice2 struct {
+		Delta        streamDelta2 `json:"delta"`
+		FinishReason *string      `json:"finish_reason,omitempty"`
+	}
+	type streamResponse2 struct {
+		Choices []streamChoice2 `json:"choices"`
+		Error   *struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error,omitempty"`
+	}
+
+	type toolCallAccum struct {
+		id    string
+		typ   string
+		name  string
+		args  strings.Builder
+	}
+	toolCallAccums := make(map[int]*toolCallAccum)
+
+	reader := bufio.NewReader(resp.Body)
+	var full strings.Builder
+	finishReason := ""
+
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
 			}
-			key := strings.TrimSpace(pm[1])
-			val := strings.TrimSpace(pm[2])
-			if key != "" {
-				args[key] = val
+			return full.String(), nil, finishReason, fmt.Errorf("read openai stream: %w", readErr)
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "data:") {
+			continue
+		}
+		dataStr := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+		if dataStr == "[DONE]" {
+			break
+		}
+
+		var chunk streamResponse2
+		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
+			// 兼容：解析失败跳过
+			continue
+		}
+		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
+			return full.String(), nil, finishReason, fmt.Errorf("openai stream error: %s", chunk.Error.Message)
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chunk.Choices[0]
+		if choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != "" {
+			finishReason = strings.TrimSpace(*choice.FinishReason)
+		}
+
+		delta := choice.Delta
+
+		content := delta.Content
+		if content == "" {
+			content = delta.Text
+		}
+		if content != "" {
+			full.WriteString(content)
+			if onContentDelta != nil {
+				if err := onContentDelta(content); err != nil {
+					return full.String(), nil, finishReason, err
+				}
 			}
 		}
-		if name != "" {
-			return name, args, cleanContent, true
+
+		if len(delta.ToolCalls) > 0 {
+			for _, tc := range delta.ToolCalls {
+				acc, ok := toolCallAccums[tc.Index]
+				if !ok {
+					acc = &toolCallAccum{}
+					toolCallAccums[tc.Index] = acc
+				}
+				if tc.ID != "" {
+					acc.id = tc.ID
+				}
+				if tc.Type != "" {
+					acc.typ = tc.Type
+				}
+				if tc.Function.Name != "" {
+					acc.name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.args.WriteString(tc.Function.Arguments)
+				}
+			}
 		}
 	}
-	return "", nil, content, false
+
+	// 组装 tool calls
+	indices := make([]int, 0, len(toolCallAccums))
+	for idx := range toolCallAccums {
+		indices = append(indices, idx)
+	}
+	// 手写简单排序（避免额外 import）
+	for i := 0; i < len(indices); i++ {
+		for j := i + 1; j < len(indices); j++ {
+			if indices[j] < indices[i] {
+				indices[i], indices[j] = indices[j], indices[i]
+			}
+		}
+	}
+
+	toolCalls := make([]StreamToolCall, 0, len(indices))
+	for _, idx := range indices {
+		acc := toolCallAccums[idx]
+		tc := StreamToolCall{
+			Index:            idx,
+			ID:               acc.id,
+			Type:             acc.typ,
+			FunctionName:    acc.name,
+			FunctionArgsStr: acc.args.String(),
+		}
+		toolCalls = append(toolCalls, tc)
+	}
+
+	c.logger.Debug("received OpenAI stream completion (tool_calls)",
+		zap.Duration("duration", time.Since(requestStart)),
+		zap.Int("contentLen", full.Len()),
+		zap.Int("toolCalls", len(toolCalls)),
+		zap.String("finishReason", finishReason),
+	)
+
+	if strings.TrimSpace(finishReason) == "" {
+		finishReason = "stop"
+	}
+
+	return full.String(), toolCalls, finishReason, nil
 }

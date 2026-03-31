@@ -11,7 +11,7 @@ import (
 	"github.com/creack/pty"
 )
 
-const ptyCols = 120
+const ptyCols = 256
 const ptyRows = 40
 
 // runCommandStreamImpl executes using PTY on Unix, so commands like ping format output by terminal width (isatty is true).

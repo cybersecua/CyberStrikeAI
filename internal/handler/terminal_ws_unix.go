@@ -50,7 +50,7 @@ func (h *TerminalHandler) RunCommandWS(c *gin.Context) {
 	}
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(),
-		"COLUMNS=120",
+		"COLUMNS=256",
 		"LINES=40",
 		"TERM=xterm-256color",
 	)
@@ -68,7 +68,7 @@ func (h *TerminalHandler) RunCommandWS(c *gin.Context) {
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
-				_ = conn.WriteMessage(websocket.TextMessage, buf[:n])
+				_ = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 			if err != nil {
 				break

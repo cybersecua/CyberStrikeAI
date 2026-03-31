@@ -1,20 +1,12 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"html"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +14,6 @@ import (
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
-	"cyberstrike-ai/internal/filemanager"
 	"cyberstrike-ai/internal/handler"
 	"cyberstrike-ai/internal/knowledge"
 	"cyberstrike-ai/internal/logger"
@@ -35,10 +26,11 @@ import (
 	"cyberstrike-ai/internal/storage"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-// App application
+// App 应用
 type App struct {
 	config             *config.Config
 	logger             *logger.Logger
@@ -48,70 +40,50 @@ type App struct {
 	agent              *agent.Agent
 	executor           *security.Executor
 	db                 *database.DB
-	knowledgeDB        *database.DB // knowledge base database connection (if using a separate database)
+	knowledgeDB        *database.DB // 知识库数据库连接（如果使用独立数据库）
 	auth               *security.AuthManager
-	timeAwareness      *agent.TimeAwareness
-	persistentMem      *agent.PersistentMemory
-	fileMgr            *filemanager.Manager
-	knowledgeManager   *knowledge.Manager          // knowledge base manager (for dynamic initialization)
-	knowledgeRetriever *knowledge.Retriever        // knowledge base retriever (for dynamic initialization)
-	knowledgeIndexer   *knowledge.Indexer          // knowledge base indexer (for dynamic initialization)
-	knowledgeHandler   *handler.KnowledgeHandler   // knowledge base handler (for dynamic initialization)
-	memoryHandler      *handler.MemoryHandler      // memory handler (nil when persistent memory is disabled)
-	fileManagerHandler *handler.FileManagerHandler // file manager handler
-	agentHandler       *handler.AgentHandler       // Agent handler (for updating knowledge base manager)
-	robotHandler       *handler.RobotHandler       // robot handler (Lark/Telegram)
-	robotMu            sync.Mutex                  // protects Lark/Telegram long connection cancel
-	larkCancel         context.CancelFunc          // Lark long connection cancel function, used to restart on config change
-	telegramCancel     context.CancelFunc          // Telegram polling cancel function, used to restart on config change
-	indexHTML          string                      // cached index.html content
+	knowledgeManager   *knowledge.Manager        // 知识库管理器（用于动态初始化）
+	knowledgeRetriever *knowledge.Retriever      // 知识库检索器（用于动态初始化）
+	knowledgeIndexer   *knowledge.Indexer        // 知识库索引器（用于动态初始化）
+	knowledgeHandler   *handler.KnowledgeHandler // 知识库处理器（用于动态初始化）
+	agentHandler       *handler.AgentHandler     // Agent处理器（用于更新知识库管理器）
+	robotHandler       *handler.RobotHandler     // 机器人处理器（钉钉/飞书/企业微信）
+	robotMu            sync.Mutex                // 保护钉钉/飞书长连接的 cancel
+	dingCancel         context.CancelFunc        // 钉钉 Stream 取消函数，用于配置变更时重启
+	larkCancel         context.CancelFunc        // 飞书长连接取消函数，用于配置变更时重启
 }
 
-// New creates a new application
+// New 创建新应用
 func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
-	// Export recon engine API keys as env vars for tool subprocesses
-	if k := strings.TrimSpace(cfg.ZoomEye.APIKey); k != "" {
-		os.Setenv("ZOOMEYE_API_KEY", k)
-	}
-	if k := strings.TrimSpace(cfg.Shodan.APIKey); k != "" {
-		os.Setenv("SHODAN_API_KEY", k)
-	}
-	if k := strings.TrimSpace(cfg.Censys.APIID); k != "" {
-		os.Setenv("CENSYS_API_ID", k)
-	}
-	if k := strings.TrimSpace(cfg.Censys.APISecret); k != "" {
-		os.Setenv("CENSYS_API_SECRET", k)
-	}
-
-	// CORS middleware
+	// CORS中间件
 	router.Use(corsMiddleware())
 
-	// authentication manager
+	// 认证管理器
 	authManager, err := security.NewAuthManager(cfg.Auth.Password, cfg.Auth.SessionDurationHours)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize authentication: %w", err)
+		return nil, fmt.Errorf("初始化认证失败: %w", err)
 	}
 
-	// initialize database
+	// 初始化数据库
 	dbPath := cfg.Database.Path
 	if dbPath == "" {
 		dbPath = "data/conversations.db"
 	}
 
-	// ensure directory exists
+	// 确保目录存在
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
 	}
 
 	db, err := database.NewDB(dbPath, log.Logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
+		return nil, fmt.Errorf("初始化数据库失败: %w", err)
 	}
 
-	// create MCP server (with database persistence)
+	// 创建MCP服务器（带数据库持久化）
 	mcpServer := mcp.NewServerWithStorage(log.Logger, db)
 
 	// create security tool executor
@@ -130,7 +102,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	// register tools
 	executor.RegisterTools(mcpServer)
 
-	// register vulnerability recording tool
+	// 注册漏洞记录工具
 	registerVulnerabilityTool(mcpServer, db, log.Logger)
 
 	if cfg.Auth.GeneratedPassword != "" {
@@ -140,165 +112,96 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		cfg.Auth.GeneratedPasswordPersistErr = ""
 	}
 
-	// create external MCP manager (using the same storage as the internal MCP server)
+	// 创建外部MCP管理器（使用与内部MCP服务器相同的存储）
 	externalMCPMgr := mcp.NewExternalMCPManagerWithStorage(log.Logger, db)
 	if cfg.ExternalMCP.Servers != nil {
 		externalMCPMgr.LoadConfigs(&cfg.ExternalMCP)
-		// start all enabled external MCP clients
+		// 启动所有启用的外部MCP客户端
 		externalMCPMgr.StartAllEnabled()
 	}
 
-	// initialize result storage
+	// 初始化结果存储
 	resultStorageDir := "tmp"
 	if cfg.Agent.ResultStorageDir != "" {
 		resultStorageDir = cfg.Agent.ResultStorageDir
 	}
 
-	// ensure storage directory exists
+	// 确保存储目录存在
 	if err := os.MkdirAll(resultStorageDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create result storage directory: %w", err)
+		return nil, fmt.Errorf("创建结果存储目录失败: %w", err)
 	}
 
-	// create result storage instance
+	// 创建结果存储实例
 	resultStorage, err := storage.NewFileResultStorage(resultStorageDir, log.Logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize result storage: %w", err)
+		return nil, fmt.Errorf("初始化结果存储失败: %w", err)
 	}
 
-	// initialize TimeAwareness before creating the agent variable to avoid
-	// package name shadowing.
-	taEnabled := cfg.Agent.TimeAwareness.Enabled
-	if !cfg.Agent.TimeAwareness.EnabledSet {
-		taEnabled = true
-	}
-	timeAwareness := agent.NewTimeAwareness(cfg.Agent.TimeAwareness.Timezone, taEnabled)
-	log.Logger.Info("time awareness initialized",
-		zap.Bool("enabled", taEnabled),
-		zap.String("timezone", cfg.Agent.TimeAwareness.Timezone),
-	)
-
-	// initialize PersistentMemory before creating the agent variable
-	var persistentMem *agent.PersistentMemory
-	memEnabled := cfg.Agent.Memory.Enabled
-	if !cfg.Agent.Memory.EnabledSet {
-		memEnabled = true
-	}
-	if memEnabled {
-		pm, pmErr := agent.NewPersistentMemory(db.DB, log.Logger)
-		if pmErr != nil {
-			log.Logger.Warn("failed to initialize persistent memory, continuing without it", zap.Error(pmErr))
-		} else {
-			pm.SetMaxEntries(cfg.Agent.Memory.MaxEntries)
-			persistentMem = pm
-			log.Logger.Info("persistent memory initialized")
-		}
-	}
-
-	// create Agent
+	// 创建Agent
 	maxIterations := cfg.Agent.MaxIterations
 	if maxIterations <= 0 {
-		maxIterations = 30 // default value
+		maxIterations = 30 // 默认值
 	}
-	agentInstance := agent.NewAgent(&cfg.OpenAI, &cfg.Agent, mcpServer, externalMCPMgr, log.Logger, maxIterations)
+	agent := agent.NewAgent(&cfg.OpenAI, &cfg.Agent, mcpServer, externalMCPMgr, log.Logger, maxIterations)
 
-	// set result storage on Agent
-	agentInstance.SetResultStorage(resultStorage)
+	// 设置结果存储到Agent
+	agent.SetResultStorage(resultStorage)
 
-	// set result storage on Executor (for query tools)
+	// 设置结果存储到Executor（用于查询工具）
 	executor.SetResultStorage(resultStorage)
 
-	// attach time awareness and memory to agent
-	agentInstance.SetTimeAwareness(timeAwareness)
-	registerTimeTools(mcpServer, timeAwareness, log.Logger)
-	registerToolDiscovery(mcpServer, log.Logger)
-	var memHandler *handler.MemoryHandler
-	if persistentMem != nil {
-		agentInstance.SetPersistentMemory(persistentMem)
-		registerMemoryTools(mcpServer, persistentMem, log.Logger)
-		memHandler = handler.NewMemoryHandler(persistentMem, log.Logger)
-	}
-
-	// initialize file manager
-	fmEnabled := cfg.Agent.FileManager.Enabled
-	if !cfg.Agent.FileManager.EnabledSet {
-		fmEnabled = true
-	}
-	var fileMgr *filemanager.Manager
-	if fmEnabled {
-		fileStorageDir := cfg.Agent.FileManager.StorageDir
-		if fileStorageDir == "" {
-			fileStorageDir = "managed_files"
-		}
-		var fmErr error
-		fileMgr, fmErr = filemanager.NewManager(db.DB, fileStorageDir, log.Logger)
-		if fmErr != nil {
-			log.Logger.Warn("failed to initialize file manager, continuing without it", zap.Error(fmErr))
-		} else {
-			registerFileManagerTools(mcpServer, fileMgr, log.Logger)
-			log.Logger.Info("file manager initialized", zap.String("storage_dir", fileStorageDir))
-		}
-	}
-
-	// ── Cuttlefish (Android VM) tools ──────────────────────────────────────
-	cvdCfg := cfg.Agent.Cuttlefish
-	if cvdCfg.Enabled {
-		cvdHome := cvdCfg.CvdHome
-		if cvdHome == "" {
-			cvdHome = os.Getenv("CVD_HOME")
-		}
-		if cvdHome == "" {
-			cvdHome = filepath.Join(os.Getenv("HOME"), "cuttlefish-workspace")
-		}
-		registerCuttlefishTools(mcpServer, cvdHome, &cvdCfg, log.Logger)
-	} else {
-		log.Logger.Info("cuttlefish tools disabled via config")
-	}
-
-	// initialize knowledge base module (if enabled)
+	// 初始化知识库模块（如果启用）
 	var knowledgeManager *knowledge.Manager
 	var knowledgeRetriever *knowledge.Retriever
 	var knowledgeIndexer *knowledge.Indexer
 	var knowledgeHandler *handler.KnowledgeHandler
 
 	var knowledgeDBConn *database.DB
-	log.Logger.Info("checking knowledge base configuration", zap.Bool("enabled", cfg.Knowledge.Enabled))
+	log.Logger.Info("检查知识库配置", zap.Bool("enabled", cfg.Knowledge.Enabled))
 	if cfg.Knowledge.Enabled {
-		// determine knowledge base database path
+		// 确定知识库数据库路径
 		knowledgeDBPath := cfg.Database.KnowledgeDBPath
 		var knowledgeDB *sql.DB
 
 		if knowledgeDBPath != "" {
-			// use a separate knowledge base database
-			// ensure directory exists
+			// 使用独立的知识库数据库
+			// 确保目录存在
 			if err := os.MkdirAll(filepath.Dir(knowledgeDBPath), 0755); err != nil {
-				return nil, fmt.Errorf("failed to create knowledge base database directory: %w", err)
+				return nil, fmt.Errorf("创建知识库数据库目录失败: %w", err)
 			}
 
 			var err error
 			knowledgeDBConn, err = database.NewKnowledgeDB(knowledgeDBPath, log.Logger)
 			if err != nil {
-				return nil, fmt.Errorf("failed to initialize knowledge base database: %w", err)
+				return nil, fmt.Errorf("初始化知识库数据库失败: %w", err)
 			}
 			knowledgeDB = knowledgeDBConn.DB
-			log.Logger.Info("using separate knowledge base database", zap.String("path", knowledgeDBPath))
+			log.Logger.Info("使用独立的知识库数据库", zap.String("path", knowledgeDBPath))
 		} else {
-			// backward compatibility: use the conversation database
+			// 向后兼容：使用会话数据库
 			knowledgeDB = db.DB
-			log.Logger.Info("using conversation database for knowledge base data (recommended to configure knowledge_db_path to separate data)")
+			log.Logger.Info("使用会话数据库存储知识库数据（建议配置knowledge_db_path以分离数据）")
 		}
 
-		// create knowledge base manager
+		// 创建知识库管理器
 		knowledgeManager = knowledge.NewManager(knowledgeDB, cfg.Knowledge.BasePath, log.Logger)
 
-		// create embedder (no implicit fallback to OpenAI endpoint for embeddings)
+		// 创建嵌入器
+		// 使用OpenAI配置的API Key（如果知识库配置中没有指定）
+		if cfg.Knowledge.Embedding.APIKey == "" {
+			cfg.Knowledge.Embedding.APIKey = cfg.OpenAI.APIKey
+		}
+		if cfg.Knowledge.Embedding.BaseURL == "" {
+			cfg.Knowledge.Embedding.BaseURL = cfg.OpenAI.BaseURL
+		}
+
 		httpClient := &http.Client{
 			Timeout: 30 * time.Minute,
 		}
 		openAIClient := openai.NewClient(&cfg.OpenAI, httpClient, log.Logger)
-		embedder := knowledge.NewEmbedder(&cfg.Knowledge, openAIClient, log.Logger)
-		embeddingEnabled := embedder.Enabled()
+		embedder := knowledge.NewEmbedder(&cfg.Knowledge, &cfg.OpenAI, openAIClient, log.Logger)
 
-		// create retriever
+		// 创建检索器
 		retrievalConfig := &knowledge.RetrievalConfig{
 			TopK:                cfg.Knowledge.Retrieval.TopK,
 			SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
@@ -306,214 +209,202 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		}
 		knowledgeRetriever = knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, log.Logger)
 
-		// create indexer
-		knowledgeIndexer = knowledge.NewIndexer(knowledgeDB, embedder, log.Logger, cfg.Knowledge.Embedding.MaxTokens)
+		// 创建索引器
+		knowledgeIndexer = knowledge.NewIndexer(knowledgeDB, embedder, log.Logger, &cfg.Knowledge.Indexing)
 
-		// register knowledge retrieval tool to MCP server
+		// 注册知识检索工具到MCP服务器
 		knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, log.Logger)
 
-		// create knowledge base API handler
+		// 创建知识库API处理器
 		knowledgeHandler = handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, log.Logger)
-		log.Logger.Info("knowledge base module initialization complete", zap.Bool("handler_created", knowledgeHandler != nil))
+		log.Logger.Info("知识库模块初始化完成", zap.Bool("handler_created", knowledgeHandler != nil))
 
-		if embeddingEnabled {
-			// attach proactive RAG context injector to the agent so that relevant
-			// knowledge is automatically embedded in the system prompt at the start
-			// of every agent loop run.
-			ragInjector := agent.NewRAGContextInjector(
-				knowledgeRetriever,
-				log.Logger,
-				agent.RAGContextConfig{}, // use library defaults
-			)
-			agentInstance.SetRAGInjector(ragInjector)
-			log.Logger.Info("RAG context injector attached to agent")
-		} else {
-			log.Logger.Warn("knowledge embedding disabled: missing embedding base_url/model/api_key; skipping RAG injector and index build")
-		}
+		// 扫描知识库并建立索引（异步）
+		go func() {
+			itemsToIndex, err := knowledgeManager.ScanKnowledgeBase()
+			if err != nil {
+				log.Logger.Warn("扫描知识库失败", zap.Error(err))
+				return
+			}
 
-		// scan knowledge base and build index (async)
-		if embeddingEnabled {
-			go func() {
-				itemsToIndex, err := knowledgeManager.ScanKnowledgeBase()
-				if err != nil {
-					log.Logger.Warn("failed to scan knowledge base", zap.Error(err))
-					return
-				}
+			// 检查是否已有索引
+			hasIndex, err := knowledgeIndexer.HasIndex()
+			if err != nil {
+				log.Logger.Warn("检查索引状态失败", zap.Error(err))
+				return
+			}
 
-				// check if index already exists
-				hasIndex, err := knowledgeIndexer.HasIndex()
-				if err != nil {
-					log.Logger.Warn("failed to check index status", zap.Error(err))
-					return
-				}
+			if hasIndex {
+				// 如果已有索引，只索引新添加或更新的项
+				if len(itemsToIndex) > 0 {
+					log.Logger.Info("检测到已有知识库索引，开始增量索引", zap.Int("count", len(itemsToIndex)))
+					ctx := context.Background()
+					consecutiveFailures := 0
+					var firstFailureItemID string
+					var firstFailureError error
+					failedCount := 0
 
-				if hasIndex {
-					// if index exists, only index newly added or updated items
-					if len(itemsToIndex) > 0 {
-						log.Logger.Info("existing knowledge base index detected, starting incremental indexing", zap.Int("count", len(itemsToIndex)))
-						ctx := context.Background()
-						consecutiveFailures := 0
-						var firstFailureItemID string
-						var firstFailureError error
-						failedCount := 0
+					for _, itemID := range itemsToIndex {
+						if err := knowledgeIndexer.IndexItem(ctx, itemID); err != nil {
+							failedCount++
+							consecutiveFailures++
 
-						for _, itemID := range itemsToIndex {
-							if err := knowledgeIndexer.IndexItem(ctx, itemID); err != nil {
-								failedCount++
-								consecutiveFailures++
-
-								if consecutiveFailures == 1 {
-									firstFailureItemID = itemID
-									firstFailureError = err
-									log.Logger.Warn("failed to index knowledge item", zap.String("itemId", itemID), zap.Error(err))
-								}
-
-								// if 2 consecutive failures, immediately stop incremental indexing
-								if consecutiveFailures >= 2 {
-									log.Logger.Error("too many consecutive index failures, stopping incremental indexing immediately",
-										zap.Int("consecutiveFailures", consecutiveFailures),
-										zap.Int("totalItems", len(itemsToIndex)),
-										zap.String("firstFailureItemId", firstFailureItemID),
-										zap.Error(firstFailureError),
-									)
-									break
-								}
-								continue
+							if consecutiveFailures == 1 {
+								firstFailureItemID = itemID
+								firstFailureError = err
+								log.Logger.Warn("索引知识项失败", zap.String("itemId", itemID), zap.Error(err))
 							}
 
-							// reset consecutive failure count on success
-							if consecutiveFailures > 0 {
-								consecutiveFailures = 0
-								firstFailureItemID = ""
-								firstFailureError = nil
+							// 如果连续失败2次，立即停止增量索引
+							if consecutiveFailures >= 2 {
+								log.Logger.Error("连续索引失败次数过多，立即停止增量索引",
+									zap.Int("consecutiveFailures", consecutiveFailures),
+									zap.Int("totalItems", len(itemsToIndex)),
+									zap.String("firstFailureItemId", firstFailureItemID),
+									zap.Error(firstFailureError),
+								)
+								break
 							}
+							continue
 						}
-						log.Logger.Info("incremental indexing complete", zap.Int("totalItems", len(itemsToIndex)), zap.Int("failedCount", failedCount))
-					} else {
-						log.Logger.Info("existing knowledge base index detected, no new or updated items to index")
-					}
-					return
-				}
 
-				// only auto-rebuild when no index exists
-				log.Logger.Info("no knowledge base index detected, starting automatic index build")
-				ctx := context.Background()
-				if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {
-					log.Logger.Warn("failed to rebuild knowledge base index", zap.Error(err))
+						// 成功时重置连续失败计数
+						if consecutiveFailures > 0 {
+							consecutiveFailures = 0
+							firstFailureItemID = ""
+							firstFailureError = nil
+						}
+					}
+					log.Logger.Info("增量索引完成", zap.Int("totalItems", len(itemsToIndex)), zap.Int("failedCount", failedCount))
+				} else {
+					log.Logger.Info("检测到已有知识库索引，没有需要索引的新项或更新项")
 				}
-			}()
-		}
+				return
+			}
+
+			// 只有在没有索引时才自动重建
+			log.Logger.Info("未检测到知识库索引，开始自动构建索引")
+			ctx := context.Background()
+			if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {
+				log.Logger.Warn("重建知识库索引失败", zap.Error(err))
+			}
+		}()
 	}
 
-	// Resolve the effective config path from CLI args; required for settings/auth persistence.
-	configPath := resolveConfigPathFromArgs(os.Args, "config.yaml")
+	// 获取配置文件路径
+	configPath := "config.yaml"
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
+	}
 
-	// initialize Skills manager
+	// 初始化Skills管理器
 	skillsDir := cfg.SkillsDir
 	if skillsDir == "" {
-		skillsDir = "skills" // default directory
+		skillsDir = "skills" // 默认目录
 	}
-	// if relative path, relative to the config file directory
+	// 如果是相对路径，相对于配置文件所在目录
 	configDir := filepath.Dir(configPath)
 	if !filepath.IsAbs(skillsDir) {
 		skillsDir = filepath.Join(configDir, skillsDir)
 	}
 	skillsManager := skills.NewManager(skillsDir, log.Logger)
-	log.Logger.Info("Skills manager initialized", zap.String("skillsDir", skillsDir))
+	log.Logger.Info("Skills管理器已初始化", zap.String("skillsDir", skillsDir))
 
-	// register Skills tool to MCP server (allowing AI to call on demand, with database storage for statistics)
-	// create an adapter to adapt database.DB to the SkillStatsStorage interface
+	agentsDir := cfg.AgentsDir
+	if agentsDir == "" {
+		agentsDir = "agents"
+	}
+	if !filepath.IsAbs(agentsDir) {
+		agentsDir = filepath.Join(configDir, agentsDir)
+	}
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		log.Logger.Warn("创建 agents 目录失败", zap.String("path", agentsDir), zap.Error(err))
+	}
+	markdownAgentsHandler := handler.NewMarkdownAgentsHandler(agentsDir)
+	log.Logger.Info("多代理 Markdown 子 Agent 目录", zap.String("agentsDir", agentsDir))
+
+	// 注册Skills工具到MCP服务器（让AI可以按需调用，带数据库存储支持统计）
+	// 创建一个适配器，将database.DB适配为SkillStatsStorage接口
 	var skillStatsStorage skills.SkillStatsStorage
 	if db != nil {
 		skillStatsStorage = &skillStatsDBAdapter{db: db}
 	}
 	skills.RegisterSkillsToolWithStorage(mcpServer, skillsManager, skillStatsStorage, log.Logger)
 
-	// create handlers
-	agentHandler := handler.NewAgentHandler(agentInstance, db, cfg, log.Logger)
-	agentHandler.SetSkillsManager(skillsManager) // set Skills manager
-	// set file manager on AgentHandler for auto-registering chat uploads
-	if fileMgr != nil {
-		agentHandler.SetFileManager(fileMgr)
-	}
-	// if knowledge base is enabled, set knowledge base manager on AgentHandler for retrieval log recording
+	// 创建处理器
+	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
+	agentHandler.SetSkillsManager(skillsManager) // 设置Skills管理器
+	agentHandler.SetAgentsMarkdownDir(agentsDir)
+	// 如果知识库已启用，设置知识库管理器到AgentHandler以便记录检索日志
 	if knowledgeManager != nil {
 		agentHandler.SetKnowledgeManager(knowledgeManager)
 	}
 	monitorHandler := handler.NewMonitorHandler(mcpServer, executor, db, log.Logger)
-	monitorHandler.SetExternalMCPManager(externalMCPMgr) // set external MCP manager to get external MCP execution records
+	monitorHandler.SetExternalMCPManager(externalMCPMgr) // 设置外部MCP管理器，以便获取外部MCP执行记录
 	groupHandler := handler.NewGroupHandler(db, log.Logger)
 	authHandler := handler.NewAuthHandler(authManager, cfg, configPath, log.Logger)
 	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
 	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
-	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agentInstance, attackChainHandler, externalMCPMgr, log.Logger)
+	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
+	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
+	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
+	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
+	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
-	roleHandler.SetSkillsManager(skillsManager) // set Skills manager on RoleHandler
+	roleHandler.SetSkillsManager(skillsManager) // 设置Skills管理器到RoleHandler
 	skillsHandler := handler.NewSkillsHandler(skillsManager, cfg, configPath, log.Logger)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)
-	reconHandler := handler.NewReconHandler(cfg, log.Logger)
 	terminalHandler := handler.NewTerminalHandler(log.Logger)
-	dockerHandler := handler.NewDockerHandler(filepath.Dir(configPath), log.Logger)
 	if db != nil {
-		skillsHandler.SetDB(db) // set database connection for fetching call statistics
+		skillsHandler.SetDB(db) // 设置数据库连接以便获取调用统计
 	}
 
-	// create file manager handler
-	var fileManagerHandler *handler.FileManagerHandler
-	if fileMgr != nil {
-		fileManagerHandler = handler.NewFileManagerHandler(fileMgr, log.Logger)
-	}
-
-	// create OpenAPI handler
+	// 创建OpenAPI处理器
 	conversationHandler := handler.NewConversationHandler(db, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, resultStorage, conversationHandler, agentHandler)
 
-	// create App instance (some fields filled in later)
+	// 创建 App 实例（部分字段稍后填充）
 	app := &App{
 		config:             cfg,
 		logger:             log,
 		router:             router,
 		mcpServer:          mcpServer,
 		externalMCPMgr:     externalMCPMgr,
-		agent:              agentInstance,
+		agent:              agent,
 		executor:           executor,
 		db:                 db,
 		knowledgeDB:        knowledgeDBConn,
 		auth:               authManager,
-		timeAwareness:      timeAwareness,
-		persistentMem:      persistentMem,
-		fileMgr:            fileMgr,
 		knowledgeManager:   knowledgeManager,
 		knowledgeRetriever: knowledgeRetriever,
 		knowledgeIndexer:   knowledgeIndexer,
 		knowledgeHandler:   knowledgeHandler,
-		memoryHandler:      memHandler,
-		fileManagerHandler: fileManagerHandler,
 		agentHandler:       agentHandler,
 		robotHandler:       robotHandler,
 	}
-	// cache index.html at startup to avoid per-request disk reads
-	indexHTMLBytes, err := os.ReadFile("web/templates/index.html")
-	if err != nil {
-		log.Logger.Fatal("failed to load index.html", zap.Error(err))
-	}
-	app.indexHTML = string(indexHTMLBytes)
-
-	// Lark long connections (no public network needed), start in background when enabled; will be restarted via RestartRobotConnections when frontend applies config
+	// 飞书/钉钉长连接（无需公网），启用时在后台启动；后续前端应用配置时会通过 RestartRobotConnections 重启
 	app.startRobotConnections()
 
-	// set vulnerability tool registrar (built-in tool, must be set)
+	// 设置漏洞工具注册器（内置工具，必须设置）
 	vulnerabilityRegistrar := func() error {
 		registerVulnerabilityTool(mcpServer, db, log.Logger)
 		return nil
 	}
 	configHandler.SetVulnerabilityToolRegistrar(vulnerabilityRegistrar)
 
-	// set Skills tool registrar (built-in tool, must be set)
+	// 设置 WebShell 工具注册器（ApplyConfig 时重新注册）
+	webshellRegistrar := func() error {
+		registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
+		registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
+		return nil
+	}
+	configHandler.SetWebshellToolRegistrar(webshellRegistrar)
+
+	// 设置Skills工具注册器（内置工具，必须设置）
 	skillsRegistrar := func() error {
-		// create an adapter to adapt database.DB to the SkillStatsStorage interface
+		// 创建一个适配器，将database.DB适配为SkillStatsStorage接口
 		var skillStatsStorage skills.SkillStatsStorage
 		if db != nil {
 			skillStatsStorage = &skillStatsDBAdapter{db: db}
@@ -523,85 +414,46 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	}
 	configHandler.SetSkillsToolRegistrar(skillsRegistrar)
 
-	// set memory tool registrar (so memory tools survive config re-apply)
-	memoryRegistrar := func() error {
-		if app.persistentMem == nil || !app.config.Agent.Memory.Enabled {
-			return nil
-		}
-		registerMemoryTools(mcpServer, app.persistentMem, log.Logger)
-		return nil
-	}
-	configHandler.SetMemoryToolRegistrar(memoryRegistrar)
-
-	// set time tool registrar (so time tools survive config re-apply)
-	timeRegistrar := func() error {
-		if app.timeAwareness == nil || !app.config.Agent.TimeAwareness.Enabled {
-			return nil
-		}
-		registerTimeTools(mcpServer, app.timeAwareness, log.Logger)
-		return nil
-	}
-	configHandler.SetTimeToolRegistrar(timeRegistrar)
-
-	fileManagerRegistrar := func() error {
-		if app.fileMgr == nil || !app.config.Agent.FileManager.Enabled {
-			return nil
-		}
-		registerFileManagerTools(mcpServer, app.fileMgr, log.Logger)
-		return nil
-	}
-	configHandler.SetFileManagerToolRegistrar(fileManagerRegistrar)
-
-	// set knowledge base initializer (for dynamic initialization, must be set after App is created)
+	// 设置知识库初始化器（用于动态初始化，需要在 App 创建后设置）
 	configHandler.SetKnowledgeInitializer(func() (*handler.KnowledgeHandler, error) {
 		knowledgeHandler, err := initializeKnowledge(cfg, db, knowledgeDBConn, mcpServer, agentHandler, app, log.Logger)
 		if err != nil {
 			return nil, err
 		}
 
-		// after dynamic initialization, set knowledge base tool registrar and retriever updater
-		// so that subsequent ApplyConfig calls can re-register tools
+		// 动态初始化后，设置知识库工具注册器和检索器更新器
+		// 这样后续 ApplyConfig 时就能重新注册工具了
 		if app.knowledgeRetriever != nil && app.knowledgeManager != nil {
-			// create closure, capturing references to knowledgeRetriever and knowledgeManager
+			// 创建闭包，捕获knowledgeRetriever和knowledgeManager的引用
 			registrar := func() error {
 				knowledge.RegisterKnowledgeTool(mcpServer, app.knowledgeRetriever, app.knowledgeManager, log.Logger)
 				return nil
 			}
 			configHandler.SetKnowledgeToolRegistrar(registrar)
-			// set retriever updater so ApplyConfig can update retriever config
+			// 设置检索器更新器，以便在ApplyConfig时更新检索器配置
 			configHandler.SetRetrieverUpdater(app.knowledgeRetriever)
-			log.Logger.Info("knowledge base tool registrar and retriever updater set after dynamic initialization")
-
-			// attach RAG context injector to the agent when knowledge is dynamically enabled
-			ragInjector := agent.NewRAGContextInjector(
-				app.knowledgeRetriever,
-				log.Logger,
-				agent.RAGContextConfig{},
-			)
-			agentInstance.SetRAGInjector(ragInjector)
-			log.Logger.Info("RAG context injector attached to agent (dynamic init)")
+			log.Logger.Info("动态初始化后已设置知识库工具注册器和检索器更新器")
 		}
 
 		return knowledgeHandler, nil
 	})
 
-	// if knowledge base is enabled, set knowledge base tool registrar and retriever updater
+	// 如果知识库已启用，设置知识库工具注册器和检索器更新器
 	if cfg.Knowledge.Enabled && knowledgeRetriever != nil && knowledgeManager != nil {
-		// create closure, capturing references to knowledgeRetriever and knowledgeManager
+		// 创建闭包，捕获knowledgeRetriever和knowledgeManager的引用
 		registrar := func() error {
 			knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, log.Logger)
 			return nil
 		}
 		configHandler.SetKnowledgeToolRegistrar(registrar)
-		// set retriever updater so ApplyConfig can update retriever config
+		// 设置检索器更新器，以便在ApplyConfig时更新检索器配置
 		configHandler.SetRetrieverUpdater(knowledgeRetriever)
 	}
 
-	// set robot connection restarter, so new Lark config takes effect without restarting the service
+	// 设置机器人连接重启器，前端应用配置后无需重启服务即可使钉钉/飞书新配置生效
 	configHandler.SetRobotRestarter(app)
-	configHandler.SetAppUpdater(app)
 
-	// set up routes (using App instance for dynamic handler access)
+	// 设置路由（使用 App 实例以便动态获取 handler）
 	setupRoutes(
 		router,
 		authHandler,
@@ -613,14 +465,15 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		configHandler,
 		externalMCPHandler,
 		attackChainHandler,
-		app, // pass App instance for dynamic knowledgeHandler access
+		app, // 传递 App 实例以便动态获取 knowledgeHandler
 		vulnerabilityHandler,
+		webshellHandler,
+		chatUploadsHandler,
 		roleHandler,
 		skillsHandler,
+		markdownAgentsHandler,
 		fofaHandler,
-		reconHandler,
 		terminalHandler,
-		dockerHandler,
 		mcpServer,
 		authManager,
 		openAPIHandler,
@@ -630,175 +483,73 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 }
 
-// resolveConfigPathFromArgs extracts the config file path from common flag patterns:
-// --config /path/to/file, --config=/path/to/file, -config /path/to/file, -config=/path/to/file.
-func resolveConfigPathFromArgs(args []string, defaultPath string) string {
-	if len(args) == 0 {
-		return defaultPath
-	}
-	for i := 0; i < len(args); i++ {
-		arg := strings.TrimSpace(args[i])
-		if arg == "" {
-			continue
-		}
-		switch arg {
-		case "--config", "-config", "-c":
-			if i+1 < len(args) {
-				next := strings.TrimSpace(args[i+1])
-				if next != "" && !strings.HasPrefix(next, "-") {
-					return next
-				}
-			}
-		}
-		if strings.HasPrefix(arg, "--config=") {
-			v := strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
-			if v != "" {
-				return v
-			}
-		}
-		if strings.HasPrefix(arg, "-config=") {
-			v := strings.TrimSpace(strings.TrimPrefix(arg, "-config="))
-			if v != "" {
-				return v
-			}
+// mcpHandlerWithAuth 在鉴权通过后转发到 MCP 处理；若配置了 auth_header 则校验请求头，否则直接放行
+func (a *App) mcpHandlerWithAuth(w http.ResponseWriter, r *http.Request) {
+	cfg := a.config.MCP
+	if cfg.AuthHeader != "" {
+		if r.Header.Get(cfg.AuthHeader) != cfg.AuthHeaderValue {
+			a.logger.Logger.Debug("MCP 鉴权失败：header 缺失或值不匹配", zap.String("header", cfg.AuthHeader))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
 		}
 	}
-	return defaultPath
+	a.mcpServer.HandleHTTP(w, r)
 }
 
-// Run starts the application
+// Run 启动应用
 func (a *App) Run() error {
-	// start MCP server (if enabled)
+	// 启动MCP服务器（如果启用）
 	if a.config.MCP.Enabled {
 		go func() {
 			mcpAddr := fmt.Sprintf("%s:%d", a.config.MCP.Host, a.config.MCP.Port)
-			a.logger.Info("starting MCP server", zap.String("address", mcpAddr))
+			a.logger.Info("启动MCP服务器", zap.String("address", mcpAddr))
 
 			mux := http.NewServeMux()
-			mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
-				if !a.config.MCP.AllowRemote && !isLoopbackRequest(r.RemoteAddr) {
-					http.Error(w, "remote MCP access is disabled", http.StatusForbidden)
-					return
-				}
-				a.mcpServer.HandleHTTP(w, r)
-			})
-			// Backward-compatibility alias for legacy SSE endpoint configs.
-			mux.HandleFunc("/mcp/sse", func(w http.ResponseWriter, r *http.Request) {
-				if !a.config.MCP.AllowRemote && !isLoopbackRequest(r.RemoteAddr) {
-					http.Error(w, "remote MCP access is disabled", http.StatusForbidden)
-					return
-				}
-				a.mcpServer.HandleHTTP(w, r)
-			})
+			mux.HandleFunc("/mcp", a.mcpHandlerWithAuth)
 
 			if err := http.ListenAndServe(mcpAddr, mux); err != nil {
-				a.logger.Error("MCP server failed to start", zap.Error(err))
+				a.logger.Error("MCP服务器启动失败", zap.Error(err))
 			}
 		}()
 	}
 
-	// start main server
+	// 启动主服务器
 	addr := fmt.Sprintf("%s:%d", a.config.Server.Host, a.config.Server.Port)
-	a.logger.Info("starting HTTP server", zap.String("address", addr))
+	a.logger.Info("启动HTTP服务器", zap.String("address", addr))
 
 	return a.router.Run(addr)
 }
 
-// Shutdown shuts down the application
+// Shutdown 关闭应用
 func (a *App) Shutdown() {
-	// stop Lark/Telegram long connections
+	// 停止钉钉/飞书长连接
 	a.robotMu.Lock()
+	if a.dingCancel != nil {
+		a.dingCancel()
+		a.dingCancel = nil
+	}
 	if a.larkCancel != nil {
 		a.larkCancel()
 		a.larkCancel = nil
 	}
-	if a.telegramCancel != nil {
-		a.telegramCancel()
-		a.telegramCancel = nil
-	}
 	a.robotMu.Unlock()
 
-	// stop all external MCP clients
+	// 停止所有外部MCP客户端
 	if a.externalMCPMgr != nil {
 		a.externalMCPMgr.StopAll()
 	}
 
-	// close knowledge base database connection (if using separate database)
+	// 关闭知识库数据库连接（如果使用独立数据库）
 	if a.knowledgeDB != nil {
 		if err := a.knowledgeDB.Close(); err != nil {
-			a.logger.Logger.Warn("failed to close knowledge base database connection", zap.Error(err))
+			a.logger.Logger.Warn("关闭知识库数据库连接失败", zap.Error(err))
 		}
 	}
 }
 
-// ApplyAgentRuntimeConfig updates runtime-owned agent features so ApplyConfig can
-// change behavior without a process restart.
-func (a *App) ApplyAgentRuntimeConfig(cfg *config.AgentConfig) error {
-	if cfg == nil {
-		return nil
-	}
-
-	a.config.Agent = *cfg
-	if a.agent != nil {
-		a.agent.UpdateAgentSettings(cfg)
-	}
-
-	if a.timeAwareness == nil {
-		a.timeAwareness = agent.NewTimeAwareness(cfg.TimeAwareness.Timezone, cfg.TimeAwareness.Enabled)
-	} else {
-		a.timeAwareness.UpdateConfig(cfg.TimeAwareness.Timezone, cfg.TimeAwareness.Enabled)
-	}
-	if a.agent != nil {
-		a.agent.SetTimeAwareness(a.timeAwareness)
-	}
-
-	if cfg.Memory.Enabled {
-		if a.persistentMem == nil {
-			pm, err := agent.NewPersistentMemory(a.db.DB, a.logger.Logger)
-			if err != nil {
-				return fmt.Errorf("initialize persistent memory: %w", err)
-			}
-			a.persistentMem = pm
-		}
-		a.persistentMem.SetMaxEntries(cfg.Memory.MaxEntries)
-		if a.agent != nil {
-			a.agent.SetPersistentMemory(a.persistentMem)
-		}
-		a.memoryHandler = handler.NewMemoryHandler(a.persistentMem, a.logger.Logger)
-	} else {
-		if a.agent != nil {
-			a.agent.SetPersistentMemory(nil)
-		}
-		a.memoryHandler = nil
-	}
-
-	if cfg.FileManager.Enabled {
-		fileStorageDir := cfg.FileManager.StorageDir
-		if fileStorageDir == "" {
-			fileStorageDir = "managed_files"
-		}
-		if a.fileMgr == nil || a.fileMgr.StorageDir() != fileStorageDir {
-			fm, err := filemanager.NewManager(a.db.DB, fileStorageDir, a.logger.Logger)
-			if err != nil {
-				return fmt.Errorf("initialize file manager: %w", err)
-			}
-			a.fileMgr = fm
-		}
-		a.fileManagerHandler = handler.NewFileManagerHandler(a.fileMgr, a.logger.Logger)
-		if a.agentHandler != nil {
-			a.agentHandler.SetFileManager(a.fileMgr)
-		}
-	} else {
-		a.fileManagerHandler = nil
-		if a.agentHandler != nil {
-			a.agentHandler.SetFileManager(nil)
-		}
-	}
-
-	return nil
-}
-
-// startRobotConnections starts Lark/Telegram long connections based on current config (does not close existing connections, for initial startup only)
+// startRobotConnections 根据当前配置启动钉钉/飞书长连接（不先关闭已有连接，仅用于首次启动）
 func (a *App) startRobotConnections() {
 	a.robotMu.Lock()
 	defer a.robotMu.Unlock()
@@ -808,31 +559,31 @@ func (a *App) startRobotConnections() {
 		a.larkCancel = cancel
 		go robot.StartLark(ctx, cfg.Robots.Lark, a.robotHandler, a.logger.Logger)
 	}
-	if cfg.Robots.Telegram.Enabled && cfg.Robots.Telegram.BotToken != "" {
+	if cfg.Robots.Dingtalk.Enabled && cfg.Robots.Dingtalk.ClientID != "" && cfg.Robots.Dingtalk.ClientSecret != "" {
 		ctx, cancel := context.WithCancel(context.Background())
-		a.telegramCancel = cancel
-		go robot.StartTelegram(ctx, cfg.Robots.Telegram, a.robotHandler, a.logger.Logger)
+		a.dingCancel = cancel
+		go robot.StartDing(ctx, cfg.Robots.Dingtalk, a.robotHandler, a.logger.Logger)
 	}
 }
 
-// RestartRobotConnections restarts Lark/Telegram long connections so frontend config changes take effect immediately (implements handler.RobotRestarter)
+// RestartRobotConnections 重启钉钉/飞书长连接，使前端应用配置后立即生效（实现 handler.RobotRestarter）
 func (a *App) RestartRobotConnections() {
 	a.robotMu.Lock()
+	if a.dingCancel != nil {
+		a.dingCancel()
+		a.dingCancel = nil
+	}
 	if a.larkCancel != nil {
 		a.larkCancel()
 		a.larkCancel = nil
 	}
-	if a.telegramCancel != nil {
-		a.telegramCancel()
-		a.telegramCancel = nil
-	}
 	a.robotMu.Unlock()
-	// give old goroutines a moment to exit
+	// 给旧 goroutine 一点时间退出
 	time.Sleep(200 * time.Millisecond)
 	a.startRobotConnections()
 }
 
-// setupRoutes sets up routes
+// setupRoutes 设置路由
 func setupRoutes(
 	router *gin.Engine,
 	authHandler *handler.AuthHandler,
@@ -844,39 +595,23 @@ func setupRoutes(
 	configHandler *handler.ConfigHandler,
 	externalMCPHandler *handler.ExternalMCPHandler,
 	attackChainHandler *handler.AttackChainHandler,
-	app *App, // pass App instance for dynamic knowledgeHandler access
+	app *App, // 传递 App 实例以便动态获取 knowledgeHandler
 	vulnerabilityHandler *handler.VulnerabilityHandler,
+	webshellHandler *handler.WebShellHandler,
+	chatUploadsHandler *handler.ChatUploadsHandler,
 	roleHandler *handler.RoleHandler,
 	skillsHandler *handler.SkillsHandler,
+	markdownAgentsHandler *handler.MarkdownAgentsHandler,
 	fofaHandler *handler.FofaHandler,
-	reconHandler *handler.ReconHandler,
 	terminalHandler *handler.TerminalHandler,
-	dockerHandler *handler.DockerHandler,
 	mcpServer *mcp.Server,
 	authManager *security.AuthManager,
 	openAPIHandler *handler.OpenAPIHandler,
 ) {
-	// API routes
+	// API路由
 	api := router.Group("/api")
 
-	// Health endpoint (no auth required)
-	api.GET("/health", func(c *gin.Context) {
-		health := gin.H{
-			"status": "ok",
-			"time":   time.Now().UTC().Format(time.RFC3339),
-		}
-		// External MCP stats
-		if app.externalMCPMgr != nil {
-			health["external_mcp"] = app.externalMCPMgr.GetStats()
-		}
-		// Internal MCP tool count
-		if app.mcpServer != nil {
-			health["internal_tools"] = len(app.mcpServer.GetAllTools())
-		}
-		c.JSON(http.StatusOK, health)
-	})
-
-	// authentication routes
+	// 认证相关路由
 	authRoutes := api.Group("/auth")
 	{
 		authRoutes.POST("/login", authHandler.Login)
@@ -885,39 +620,43 @@ func setupRoutes(
 		authRoutes.GET("/validate", security.AuthMiddleware(authManager), authHandler.Validate)
 	}
 
-	// robot callbacks (no login required, called by Lark servers)
+	// 机器人回调（无需登录，供企业微信/钉钉/飞书服务器调用）
+	api.GET("/robot/wecom", robotHandler.HandleWecomGET)
+	api.POST("/robot/wecom", robotHandler.HandleWecomPOST)
+	api.POST("/robot/dingtalk", robotHandler.HandleDingtalkPOST)
 	api.POST("/robot/lark", robotHandler.HandleLarkPOST)
 
 	protected := api.Group("")
 	protected.Use(security.AuthMiddleware(authManager))
 	{
-		// robot test (login required): POST /api/robot/test, body: {"platform":"lark","user_id":"test","text":"help"}, used to verify robot logic
+		// 机器人测试（需登录）：POST /api/robot/test，body: {"platform":"dingtalk","user_id":"test","text":"帮助"}，用于验证机器人逻辑
 		protected.POST("/robot/test", robotHandler.HandleRobotTest)
 
 		// Agent Loop
 		protected.POST("/agent-loop", agentHandler.AgentLoop)
-		// Agent Loop streaming output
+		// Agent Loop 流式输出
 		protected.POST("/agent-loop/stream", agentHandler.AgentLoopStream)
-		// Agent Loop cancel and task list
+		// Agent Loop 取消与任务列表
 		protected.POST("/agent-loop/cancel", agentHandler.CancelAgentLoop)
 		protected.GET("/agent-loop/tasks", agentHandler.ListAgentTasks)
 		protected.GET("/agent-loop/tasks/completed", agentHandler.ListCompletedTasks)
 
-		// information gathering - FOFA query (backend proxy)
+		// Eino DeepAgent 多代理（与单 Agent 并存，需 config.multi_agent.enabled）
+		// 多代理路由常注册；是否可用由运行时 h.config.MultiAgent.Enabled 决定（应用配置后无需重启）
+		protected.POST("/multi-agent", agentHandler.MultiAgentLoop)
+		protected.POST("/multi-agent/stream", agentHandler.MultiAgentLoopStream)
+		protected.GET("/multi-agent/markdown-agents", markdownAgentsHandler.ListMarkdownAgents)
+		protected.GET("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.GetMarkdownAgent)
+		protected.POST("/multi-agent/markdown-agents", markdownAgentsHandler.CreateMarkdownAgent)
+		protected.PUT("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.UpdateMarkdownAgent)
+		protected.DELETE("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.DeleteMarkdownAgent)
+
+		// 信息收集 - FOFA 查询（后端代理）
 		protected.POST("/fofa/search", fofaHandler.Search)
-		// information gathering - parse natural language to FOFA syntax (requires manual confirmation before querying)
+		// 信息收集 - 自然语言解析为 FOFA 语法（需人工确认后再查询）
 		protected.POST("/fofa/parse", fofaHandler.ParseNaturalLanguage)
 
-		// Multi-engine recon: search proxies and API key validation
-		protected.POST("/recon/fofa/validate", reconHandler.ValidateFofaKey)
-		protected.POST("/recon/zoomeye/search", reconHandler.ZoomEyeSearch)
-		protected.POST("/recon/zoomeye/validate", reconHandler.ValidateZoomEyeKey)
-		protected.POST("/recon/shodan/search", reconHandler.ShodanSearch)
-		protected.POST("/recon/shodan/validate", reconHandler.ValidateShodanKey)
-		protected.POST("/recon/censys/search", reconHandler.CensysSearch)
-		protected.POST("/recon/censys/validate", reconHandler.ValidateCensysKey)
-
-		// batch task management
+		// 批量任务管理
 		protected.POST("/batch-tasks", agentHandler.CreateBatchQueue)
 		protected.GET("/batch-tasks", agentHandler.ListBatchQueues)
 		protected.GET("/batch-tasks/:queueId", agentHandler.GetBatchQueue)
@@ -928,15 +667,16 @@ func setupRoutes(
 		protected.POST("/batch-tasks/:queueId/tasks", agentHandler.AddBatchTask)
 		protected.DELETE("/batch-tasks/:queueId/tasks/:taskId", agentHandler.DeleteBatchTask)
 
-		// conversation history
+		// 对话历史
 		protected.POST("/conversations", conversationHandler.CreateConversation)
 		protected.GET("/conversations", conversationHandler.ListConversations)
 		protected.GET("/conversations/:id", conversationHandler.GetConversation)
+		protected.GET("/messages/:id/process-details", conversationHandler.GetMessageProcessDetails)
 		protected.PUT("/conversations/:id", conversationHandler.UpdateConversation)
 		protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
 		protected.PUT("/conversations/:id/pinned", groupHandler.UpdateConversationPinned)
 
-		// conversation groups
+		// 对话分组
 		protected.POST("/groups", groupHandler.CreateGroup)
 		protected.GET("/groups", groupHandler.ListGroups)
 		protected.GET("/groups/:id", groupHandler.GetGroup)
@@ -948,29 +688,25 @@ func setupRoutes(
 		protected.DELETE("/groups/:id/conversations/:conversationId", groupHandler.RemoveConversationFromGroup)
 		protected.PUT("/groups/:id/conversations/:conversationId/pinned", groupHandler.UpdateConversationPinnedInGroup)
 
-		// monitoring
+		// 监控
 		protected.GET("/monitor", monitorHandler.Monitor)
 		protected.GET("/monitor/execution/:id", monitorHandler.GetExecution)
 		protected.DELETE("/monitor/execution/:id", monitorHandler.DeleteExecution)
 		protected.DELETE("/monitor/executions", monitorHandler.DeleteExecutions)
 		protected.GET("/monitor/stats", monitorHandler.GetStats)
 
-		// configuration management
+		// 配置管理
 		protected.GET("/config", configHandler.GetConfig)
 		protected.GET("/config/tools", configHandler.GetTools)
-		protected.POST("/config/models", configHandler.DiscoverModels)
 		protected.PUT("/config", configHandler.UpdateConfig)
 		protected.POST("/config/apply", configHandler.ApplyConfig)
 
-		// system settings - terminal (execute commands to improve operations efficiency)
+		// 系统设置 - 终端（执行命令，提高运维效率）
 		protected.POST("/terminal/run", terminalHandler.RunCommand)
 		protected.POST("/terminal/run/stream", terminalHandler.RunCommandStream)
 		protected.GET("/terminal/ws", terminalHandler.RunCommandWS)
-		protected.GET("/docker/status", dockerHandler.GetStatus)
-		protected.GET("/docker/logs", dockerHandler.GetLogs)
-		protected.POST("/docker/action", dockerHandler.RunAction)
 
-		// external MCP management
+		// 外部MCP管理
 		protected.GET("/external-mcp", externalMCPHandler.GetExternalMCPs)
 		protected.GET("/external-mcp/stats", externalMCPHandler.GetExternalMCPStats)
 		protected.GET("/external-mcp/:name", externalMCPHandler.GetExternalMCP)
@@ -979,11 +715,11 @@ func setupRoutes(
 		protected.POST("/external-mcp/:name/start", externalMCPHandler.StartExternalMCP)
 		protected.POST("/external-mcp/:name/stop", externalMCPHandler.StopExternalMCP)
 
-		// attack chain visualization
+		// 攻击链可视化
 		protected.GET("/attack-chain/:conversationId", attackChainHandler.GetAttackChain)
 		protected.POST("/attack-chain/:conversationId/regenerate", attackChainHandler.RegenerateAttackChain)
 
-		// knowledge base management (always register routes, dynamically get handler via App instance)
+		// 知识库管理（始终注册路由，通过 App 实例动态获取 handler）
 		knowledgeRoutes := protected.Group("/knowledge")
 		{
 			knowledgeRoutes.GET("/categories", func(c *gin.Context) {
@@ -991,7 +727,7 @@ func setupRoutes(
 					c.JSON(http.StatusOK, gin.H{
 						"categories": []string{},
 						"enabled":    false,
-						"message":    "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message":    "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1002,7 +738,7 @@ func setupRoutes(
 					c.JSON(http.StatusOK, gin.H{
 						"items":   []interface{}{},
 						"enabled": false,
-						"message": "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1012,7 +748,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"message": "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1022,7 +758,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1032,7 +768,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1042,7 +778,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1056,7 +792,7 @@ func setupRoutes(
 						"indexed_items":    0,
 						"progress_percent": 0,
 						"is_complete":      false,
-						"message":          "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message":          "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1066,7 +802,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1076,7 +812,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1087,7 +823,7 @@ func setupRoutes(
 					c.JSON(http.StatusOK, gin.H{
 						"logs":    []interface{}{},
 						"enabled": false,
-						"message": "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1097,7 +833,7 @@ func setupRoutes(
 				if app.knowledgeHandler == nil {
 					c.JSON(http.StatusOK, gin.H{
 						"enabled": false,
-						"error":   "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1108,7 +844,7 @@ func setupRoutes(
 					c.JSON(http.StatusOK, gin.H{
 						"results": []interface{}{},
 						"enabled": false,
-						"message": "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1120,7 +856,7 @@ func setupRoutes(
 						"enabled":          false,
 						"total_categories": 0,
 						"total_items":      0,
-						"message":          "Knowledge base feature is not enabled. Please go to system settings to enable knowledge retrieval.",
+						"message":          "知识库功能未启用，请前往系统设置启用知识检索功能",
 					})
 					return
 				}
@@ -1128,145 +864,7 @@ func setupRoutes(
 			})
 		}
 
-		// persistent memory management
-		memoryRoutes := protected.Group("/memories")
-		{
-			memoryRoutes.GET("", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"entries": []interface{}{},
-						"total":   0,
-						"enabled": false,
-						"message": "Persistent memory is not enabled. Set agent.memory.enabled: true in config.yaml.",
-					})
-					return
-				}
-				app.memoryHandler.ListMemories(c)
-			})
-			memoryRoutes.GET("/stats", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"total":   0,
-						"enabled": false,
-						"message": "Persistent memory is not enabled.",
-					})
-					return
-				}
-				app.memoryHandler.GetMemoryStats(c)
-			})
-			memoryRoutes.POST("", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
-					return
-				}
-				app.memoryHandler.CreateMemory(c)
-			})
-			memoryRoutes.PUT("/:id", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
-					return
-				}
-				app.memoryHandler.UpdateMemory(c)
-			})
-			memoryRoutes.DELETE("", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
-					return
-				}
-				app.memoryHandler.DeleteAllMemories(c)
-			})
-			memoryRoutes.DELETE("/:id", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
-					return
-				}
-				app.memoryHandler.DeleteMemory(c)
-			})
-			memoryRoutes.PATCH("/:id/status", func(c *gin.Context) {
-				if app.memoryHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Persistent memory is not enabled."})
-					return
-				}
-				app.memoryHandler.UpdateMemoryStatus(c)
-			})
-		}
-
-		// file manager
-		fileRoutes := protected.Group("/files")
-		{
-			fileRoutes.GET("", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusOK, gin.H{"files": []interface{}{}, "total": 0})
-					return
-				}
-				app.fileManagerHandler.ListFiles(c)
-			})
-			fileRoutes.GET("/stats", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusOK, gin.H{"total": 0, "total_size": 0, "by_type": map[string]int{}, "by_status": map[string]int{}})
-					return
-				}
-				app.fileManagerHandler.GetFileStats(c)
-			})
-			fileRoutes.GET("/:id", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusNotFound, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.GetFile(c)
-			})
-			fileRoutes.GET("/:id/content", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusNotFound, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.ReadFileContent(c)
-			})
-			fileRoutes.POST("/upload", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.UploadFile(c)
-			})
-			fileRoutes.POST("/register", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.RegisterFile(c)
-			})
-			fileRoutes.PUT("/:id", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.UpdateFile(c)
-			})
-			fileRoutes.POST("/:id/log", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.AppendLog(c)
-			})
-			fileRoutes.POST("/:id/findings", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.AppendFindings(c)
-			})
-			fileRoutes.DELETE("/:id", func(c *gin.Context) {
-				if app.fileManagerHandler == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "file manager not available"})
-					return
-				}
-				app.fileManagerHandler.DeleteFile(c)
-			})
-		}
-
-		// vulnerability management
+		// 漏洞管理
 		protected.GET("/vulnerabilities", vulnerabilityHandler.ListVulnerabilities)
 		protected.GET("/vulnerabilities/stats", vulnerabilityHandler.GetVulnerabilityStats)
 		protected.GET("/vulnerabilities/:id", vulnerabilityHandler.GetVulnerability)
@@ -1274,7 +872,29 @@ func setupRoutes(
 		protected.PUT("/vulnerabilities/:id", vulnerabilityHandler.UpdateVulnerability)
 		protected.DELETE("/vulnerabilities/:id", vulnerabilityHandler.DeleteVulnerability)
 
-		// role management
+		// WebShell 管理（代理执行 + 连接配置存 SQLite）
+		protected.GET("/webshell/connections", webshellHandler.ListConnections)
+		protected.POST("/webshell/connections", webshellHandler.CreateConnection)
+		protected.GET("/webshell/connections/:id/ai-history", webshellHandler.GetAIHistory)
+		protected.GET("/webshell/connections/:id/ai-conversations", webshellHandler.ListAIConversations)
+		protected.GET("/webshell/connections/:id/state", webshellHandler.GetConnectionState)
+		protected.PUT("/webshell/connections/:id", webshellHandler.UpdateConnection)
+		protected.PUT("/webshell/connections/:id/state", webshellHandler.SaveConnectionState)
+		protected.DELETE("/webshell/connections/:id", webshellHandler.DeleteConnection)
+		protected.POST("/webshell/exec", webshellHandler.Exec)
+		protected.POST("/webshell/file", webshellHandler.FileOp)
+
+		// 对话附件（chat_uploads）管理
+		protected.GET("/chat-uploads", chatUploadsHandler.List)
+		protected.GET("/chat-uploads/download", chatUploadsHandler.Download)
+		protected.GET("/chat-uploads/content", chatUploadsHandler.GetContent)
+		protected.POST("/chat-uploads", chatUploadsHandler.Upload)
+		protected.POST("/chat-uploads/mkdir", chatUploadsHandler.Mkdir)
+		protected.DELETE("/chat-uploads", chatUploadsHandler.Delete)
+		protected.PUT("/chat-uploads/rename", chatUploadsHandler.Rename)
+		protected.PUT("/chat-uploads/content", chatUploadsHandler.PutContent)
+
+		// 角色管理
 		protected.GET("/roles", roleHandler.GetRoles)
 		protected.GET("/roles/:name", roleHandler.GetRole)
 		protected.GET("/roles/skills/list", roleHandler.GetSkills)
@@ -1282,7 +902,7 @@ func setupRoutes(
 		protected.PUT("/roles/:name", roleHandler.UpdateRole)
 		protected.DELETE("/roles/:name", roleHandler.DeleteRole)
 
-		// Skills management
+		// Skills管理
 		protected.GET("/skills", skillsHandler.GetSkills)
 		protected.GET("/skills/stats", skillsHandler.GetSkillStats)
 		protected.DELETE("/skills/stats", skillsHandler.ClearSkillStats)
@@ -1293,103 +913,111 @@ func setupRoutes(
 		protected.DELETE("/skills/:name", skillsHandler.DeleteSkill)
 		protected.DELETE("/skills/:name/stats", skillsHandler.ClearSkillStatsByName)
 
-		// MCP endpoint
+		// MCP端点
 		protected.POST("/mcp", func(c *gin.Context) {
 			mcpServer.HandleHTTP(c.Writer, c.Request)
 		})
 
-		// OpenAPI result aggregation endpoint (optional, for fetching complete conversation results)
+		// OpenAPI结果聚合端点（可选，用于获取对话的完整结果）
 		protected.GET("/conversations/:id/results", openAPIHandler.GetConversationResults)
 	}
 
-	// OpenAPI spec (requires authentication to avoid exposing API structure)
+	// OpenAPI规范（需要认证，避免暴露API结构信息）
 	protected.GET("/openapi/spec", openAPIHandler.GetOpenAPISpec)
 
-	// API documentation page (publicly accessible, but login required to use the API)
+	// API文档页面（公开访问，但需要登录后才能使用API）
 	router.GET("/api-docs", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "api-docs.html", nil)
 	})
 
-	// static files
+	// 静态文件
 	router.Static("/static", "./web/static")
 	router.LoadHTMLGlob("web/templates/*")
 
-	// frontend page
+	// 前端页面
 	router.GET("/", func(c *gin.Context) {
 		version := app.config.Version
 		if version == "" {
 			version = "v1.0.0"
 		}
-		safeVersion := html.EscapeString(version)
-		body := strings.Replace(app.indexHTML, "{{.Version}}", safeVersion, 1)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(body))
+		c.HTML(http.StatusOK, "index.html", gin.H{"Version": version})
 	})
 }
 
-// registerVulnerabilityTool registers the vulnerability recording tool to the MCP server
+// registerVulnerabilityTool 注册漏洞记录工具到MCP服务器
 func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *zap.Logger) {
 	tool := mcp.Tool{
 		Name:             builtin.ToolRecordVulnerability,
-		Description:      "Record details of discovered vulnerabilities to the vulnerability management system. When a valid vulnerability is found, use this tool to record vulnerability information including title, description, severity, type, target, proof, impact, and recommendations.",
-		ShortDescription: "Record details of discovered vulnerabilities to the vulnerability management system",
+		Description:      "记录发现的漏洞详情到漏洞管理系统。当发现有效漏洞时，使用此工具记录漏洞信息，包括标题、描述、严重程度、类型、目标、证明、影响和建议等。",
+		ShortDescription: "记录发现的漏洞详情到漏洞管理系统",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"title": map[string]interface{}{
 					"type":        "string",
-					"description": "Vulnerability title (optional; auto-generated from description when omitted)",
+					"description": "漏洞标题（必需）",
 				},
 				"description": map[string]interface{}{
 					"type":        "string",
-					"description": "Detailed vulnerability description",
+					"description": "漏洞详细描述",
 				},
 				"severity": map[string]interface{}{
 					"type":        "string",
-					"description": "Vulnerability severity: critical, high, medium, low, info",
+					"description": "漏洞严重程度：critical（严重）、high（高）、medium（中）、low（低）、info（信息）",
 					"enum":        []string{"critical", "high", "medium", "low", "info"},
 				},
 				"vulnerability_type": map[string]interface{}{
 					"type":        "string",
-					"description": "Vulnerability type, e.g.: SQL Injection, XSS, CSRF, Command Injection, etc.",
+					"description": "漏洞类型，如：SQL注入、XSS、CSRF、命令注入等",
 				},
 				"target": map[string]interface{}{
 					"type":        "string",
-					"description": "Affected target (URL, IP address, service, etc.)",
+					"description": "受影响的目标（URL、IP地址、服务等）",
 				},
 				"proof": map[string]interface{}{
 					"type":        "string",
-					"description": "Vulnerability proof (POC, screenshots, request/response, etc.)",
+					"description": "漏洞证明（POC、截图、请求/响应等）",
 				},
 				"impact": map[string]interface{}{
 					"type":        "string",
-					"description": "Vulnerability impact description",
+					"description": "漏洞影响说明",
 				},
 				"recommendation": map[string]interface{}{
 					"type":        "string",
-					"description": "Remediation recommendations",
+					"description": "修复建议",
 				},
 			},
-			"required": []string{"severity"},
+			"required": []string{"title", "severity"},
 		},
 	}
 
 	handler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		// get conversation_id from args (automatically added by Agent)
+		// 从参数中获取conversation_id（由Agent自动添加）
 		conversationID, _ := args["conversation_id"].(string)
 		if conversationID == "" {
 			return &mcp.ToolResult{
 				Content: []mcp.Content{
 					{
 						Type: "text",
-						Text: "Error: conversation_id is not set. This is a system error, please retry.",
+						Text: "错误: conversation_id 未设置。这是系统错误，请重试。",
 					},
 				},
 				IsError: true,
 			}, nil
 		}
 
-		title, _ := args["title"].(string)
-		title = strings.TrimSpace(title)
+		title, ok := args["title"].(string)
+		if !ok || title == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{
+					{
+						Type: "text",
+						Text: "错误: title 参数必需且不能为空",
+					},
+				},
+				IsError: true,
+			}, nil
+		}
 
 		severity, ok := args["severity"].(string)
 		if !ok || severity == "" {
@@ -1397,14 +1025,14 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 				Content: []mcp.Content{
 					{
 						Type: "text",
-						Text: "Error: severity parameter is required and cannot be empty",
+						Text: "错误: severity 参数必需且不能为空",
 					},
 				},
 				IsError: true,
 			}, nil
 		}
 
-		// validate severity
+		// 验证严重程度
 		validSeverities := map[string]bool{
 			"critical": true,
 			"high":     true,
@@ -1417,14 +1045,14 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 				Content: []mcp.Content{
 					{
 						Type: "text",
-						Text: fmt.Sprintf("Error: severity must be one of critical, high, medium, low, or info. Current value: %s", severity),
+						Text: fmt.Sprintf("错误: severity 必须是 critical、high、medium、low 或 info 之一，当前值: %s", severity),
 					},
 				},
 				IsError: true,
 			}, nil
 		}
 
-		// get optional parameters
+		// 获取可选参数
 		description := ""
 		if d, ok := args["description"].(string); ok {
 			description = d
@@ -1455,11 +1083,7 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 			recommendation = r
 		}
 
-		if title == "" {
-			title = autoGenerateVulnerabilityTitle(description, vulnType, target, severity)
-		}
-
-		// create vulnerability record
+		// 创建漏洞记录
 		vuln := &database.Vulnerability{
 			ConversationID: conversationID,
 			Title:          title,
@@ -1475,19 +1099,19 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 
 		created, err := db.CreateVulnerability(vuln)
 		if err != nil {
-			logger.Error("failed to record vulnerability", zap.Error(err))
+			logger.Error("记录漏洞失败", zap.Error(err))
 			return &mcp.ToolResult{
 				Content: []mcp.Content{
 					{
 						Type: "text",
-						Text: fmt.Sprintf("Failed to record vulnerability: %v", err),
+						Text: fmt.Sprintf("记录漏洞失败: %v", err),
 					},
 				},
 				IsError: true,
 			}, nil
 		}
 
-		logger.Info("vulnerability recorded successfully",
+		logger.Info("漏洞记录成功",
 			zap.String("id", created.ID),
 			zap.String("title", created.Title),
 			zap.String("severity", created.Severity),
@@ -1498,7 +1122,7 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 			Content: []mcp.Content{
 				{
 					Type: "text",
-					Text: fmt.Sprintf("Vulnerability recorded successfully!\n\nVulnerability ID: %s\nTitle: %s\nSeverity: %s\nStatus: %s\n\nYou can view and manage this vulnerability on the vulnerability management page.", created.ID, created.Title, created.Severity, created.Status),
+					Text: fmt.Sprintf("漏洞已成功记录！\n\n漏洞ID: %s\n标题: %s\n严重程度: %s\n状态: %s\n\n你可以在漏洞管理页面查看和管理此漏洞。", created.ID, created.Title, created.Severity, created.Status),
 				},
 			},
 			IsError: false,
@@ -1506,96 +1130,575 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 	}
 
 	mcpServer.RegisterTool(tool, handler)
-	logger.Info("vulnerability recording tool registered successfully")
+	logger.Info("漏洞记录工具注册成功")
 }
 
-func autoGenerateVulnerabilityTitle(description, vulnType, target, severity string) string {
-	clean := func(s string) string {
-		return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
+// registerWebshellTools 注册 WebShell 相关 MCP 工具，供 AI 助手在指定连接上执行命令与文件操作
+func registerWebshellTools(mcpServer *mcp.Server, db *database.DB, webshellHandler *handler.WebShellHandler, logger *zap.Logger) {
+	if db == nil || webshellHandler == nil {
+		logger.Warn("跳过 WebShell 工具注册：db 或 webshellHandler 为空")
+		return
 	}
-	clip := func(s string, n int) string {
-		if n <= 0 {
-			return ""
+
+	// webshell_exec
+	execTool := mcp.Tool{
+		Name:             builtin.ToolWebshellExec,
+		Description:      "在指定的 WebShell 连接上执行一条系统命令，返回命令的标准输出。connection_id 由用户在 AI 助手上下文中选定。",
+		ShortDescription: "在 WebShell 连接上执行命令",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{
+					"type":        "string",
+					"description": "WebShell 连接 ID（如 ws_xxx）",
+				},
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "要执行的系统命令",
+				},
+			},
+			"required": []string{"connection_id", "command"},
+		},
+	}
+	execHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		cid, _ := args["connection_id"].(string)
+		cmd, _ := args["command"].(string)
+		if cid == "" || cmd == "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "connection_id 和 command 均为必填"}}, IsError: true}, nil
 		}
-		r := []rune(s)
-		if len(r) <= n {
-			return s
+		conn, err := db.GetWebshellConnection(cid)
+		if err != nil || conn == nil {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "未找到该 WebShell 连接或查询失败"}}, IsError: true}, nil
 		}
-		return string(r[:n]) + "..."
+		output, ok, errMsg := webshellHandler.ExecWithConnection(conn, cmd)
+		if errMsg != "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: errMsg}}, IsError: true}, nil
+		}
+		if !ok {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "HTTP 非 200，输出:\n" + output}}, IsError: false}, nil
+		}
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: output}}, IsError: false}, nil
 	}
+	mcpServer.RegisterTool(execTool, execHandler)
 
-	description = clean(description)
-	vulnType = clean(vulnType)
-	target = clean(target)
-	severity = strings.ToUpper(clean(severity))
+	// webshell_file_list
+	listTool := mcp.Tool{
+		Name:             builtin.ToolWebshellFileList,
+		Description:      "在指定 WebShell 连接上列出目录内容。path 默认为当前目录（.）。",
+		ShortDescription: "在 WebShell 上列出目录",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{"type": "string", "description": "WebShell 连接 ID"},
+				"path":          map[string]interface{}{"type": "string", "description": "目录路径，默认 ."},
+			},
+			"required": []string{"connection_id"},
+		},
+	}
+	listHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		cid, _ := args["connection_id"].(string)
+		path, _ := args["path"].(string)
+		if cid == "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "connection_id 必填"}}, IsError: true}, nil
+		}
+		conn, err := db.GetWebshellConnection(cid)
+		if err != nil || conn == nil {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "未找到该 WebShell 连接"}}, IsError: true}, nil
+		}
+		output, ok, errMsg := webshellHandler.FileOpWithConnection(conn, "list", path, "", "")
+		if errMsg != "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: errMsg}}, IsError: true}, nil
+		}
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: output}}, IsError: !ok}, nil
+	}
+	mcpServer.RegisterTool(listTool, listHandler)
 
-	if description != "" {
-		return clip(description, 96)
+	// webshell_file_read
+	readTool := mcp.Tool{
+		Name:             builtin.ToolWebshellFileRead,
+		Description:      "在指定 WebShell 连接上读取文件内容。",
+		ShortDescription: "在 WebShell 上读取文件",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{"type": "string", "description": "WebShell 连接 ID"},
+				"path":          map[string]interface{}{"type": "string", "description": "文件路径"},
+			},
+			"required": []string{"connection_id", "path"},
+		},
 	}
+	readHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		cid, _ := args["connection_id"].(string)
+		path, _ := args["path"].(string)
+		if cid == "" || path == "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "connection_id 和 path 必填"}}, IsError: true}, nil
+		}
+		conn, err := db.GetWebshellConnection(cid)
+		if err != nil || conn == nil {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "未找到该 WebShell 连接"}}, IsError: true}, nil
+		}
+		output, ok, errMsg := webshellHandler.FileOpWithConnection(conn, "read", path, "", "")
+		if errMsg != "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: errMsg}}, IsError: true}, nil
+		}
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: output}}, IsError: !ok}, nil
+	}
+	mcpServer.RegisterTool(readTool, readHandler)
 
-	parts := make([]string, 0, 3)
-	if severity != "" {
-		parts = append(parts, severity)
+	// webshell_file_write
+	writeTool := mcp.Tool{
+		Name:             builtin.ToolWebshellFileWrite,
+		Description:      "在指定 WebShell 连接上写入文件内容（会覆盖已有文件）。",
+		ShortDescription: "在 WebShell 上写入文件",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{"type": "string", "description": "WebShell 连接 ID"},
+				"path":          map[string]interface{}{"type": "string", "description": "文件路径"},
+				"content":       map[string]interface{}{"type": "string", "description": "要写入的内容"},
+			},
+			"required": []string{"connection_id", "path", "content"},
+		},
 	}
-	if vulnType != "" {
-		parts = append(parts, vulnType)
-	} else {
-		parts = append(parts, "Vulnerability")
+	writeHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		cid, _ := args["connection_id"].(string)
+		path, _ := args["path"].(string)
+		content, _ := args["content"].(string)
+		if cid == "" || path == "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "connection_id 和 path 必填"}}, IsError: true}, nil
+		}
+		conn, err := db.GetWebshellConnection(cid)
+		if err != nil || conn == nil {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "未找到该 WebShell 连接"}}, IsError: true}, nil
+		}
+		output, ok, errMsg := webshellHandler.FileOpWithConnection(conn, "write", path, content, "")
+		if errMsg != "" {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: errMsg}}, IsError: true}, nil
+		}
+		if !ok {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "写入可能失败，输出:\n" + output}}, IsError: false}, nil
+		}
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "写入成功\n" + output}}, IsError: false}, nil
 	}
+	mcpServer.RegisterTool(writeTool, writeHandler)
 
-	title := strings.Join(parts, " ")
-	if target != "" {
-		title += " on " + target
-	}
-	return clip(title, 96)
+	logger.Info("WebShell 工具注册成功")
 }
 
-// initializeKnowledge initializes knowledge base components (for dynamic initialization)
+// registerWebshellManagementTools 注册 WebShell 连接管理 MCP 工具
+func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, webshellHandler *handler.WebShellHandler, logger *zap.Logger) {
+	if db == nil {
+		logger.Warn("跳过 WebShell 管理工具注册：db 为空")
+		return
+	}
+
+	// manage_webshell_list - 列出所有 webshell 连接
+	listTool := mcp.Tool{
+		Name:             builtin.ToolManageWebshellList,
+		Description:      "列出所有已保存的 WebShell 连接，返回连接ID、URL、类型、备注等信息。",
+		ShortDescription: "列出所有 WebShell 连接",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}
+	listHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		connections, err := db.ListWebshellConnections()
+		if err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "获取连接列表失败: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+		if len(connections) == 0 {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "暂无 WebShell 连接"}},
+				IsError: false,
+			}, nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("找到 %d 个 WebShell 连接：\n\n", len(connections)))
+		for _, conn := range connections {
+			sb.WriteString(fmt.Sprintf("ID: %s\n", conn.ID))
+			sb.WriteString(fmt.Sprintf("  URL: %s\n", conn.URL))
+			sb.WriteString(fmt.Sprintf("  类型: %s\n", conn.Type))
+			sb.WriteString(fmt.Sprintf("  请求方式: %s\n", conn.Method))
+			sb.WriteString(fmt.Sprintf("  命令参数: %s\n", conn.CmdParam))
+			if conn.Remark != "" {
+				sb.WriteString(fmt.Sprintf("  备注: %s\n", conn.Remark))
+			}
+			sb.WriteString(fmt.Sprintf("  创建时间: %s\n", conn.CreatedAt.Format("2006-01-02 15:04:05")))
+			sb.WriteString("\n")
+		}
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
+			IsError: false,
+		}, nil
+	}
+	mcpServer.RegisterTool(listTool, listHandler)
+
+	// manage_webshell_add - 添加新的 webshell 连接
+	addTool := mcp.Tool{
+		Name:        builtin.ToolManageWebshellAdd,
+		Description: "添加新的 WebShell 连接到管理系统。支持 PHP、ASP、ASPX、JSP 等类型的一句话木马。",
+		ShortDescription: "添加 WebShell 连接",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"url": map[string]interface{}{
+					"type":        "string",
+					"description": "Shell 地址，如 http://target.com/shell.php（必填）",
+				},
+				"password": map[string]interface{}{
+					"type":        "string",
+					"description": "连接密码/密钥，如冰蝎/蚁剑的连接密码",
+				},
+				"type": map[string]interface{}{
+					"type":        "string",
+					"description": "Shell 类型：php、asp、aspx、jsp，默认为 php",
+					"enum":        []string{"php", "asp", "aspx", "jsp"},
+				},
+				"method": map[string]interface{}{
+					"type":        "string",
+					"description": "请求方式：GET 或 POST，默认为 POST",
+					"enum":        []string{"GET", "POST"},
+				},
+				"cmd_param": map[string]interface{}{
+					"type":        "string",
+					"description": "命令参数名，不填默认为 cmd",
+				},
+				"remark": map[string]interface{}{
+					"type":        "string",
+					"description": "备注，便于识别的备注名",
+				},
+			},
+			"required": []string{"url"},
+		},
+	}
+	addHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		urlStr, _ := args["url"].(string)
+		if urlStr == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "错误: url 参数必填"}},
+				IsError: true,
+			}, nil
+		}
+
+		password, _ := args["password"].(string)
+		shellType, _ := args["type"].(string)
+		if shellType == "" {
+			shellType = "php"
+		}
+		method, _ := args["method"].(string)
+		if method == "" {
+			method = "post"
+		}
+		cmdParam, _ := args["cmd_param"].(string)
+		if cmdParam == "" {
+			cmdParam = "cmd"
+		}
+		remark, _ := args["remark"].(string)
+
+		// 生成连接ID
+		connID := "ws_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
+		conn := &database.WebShellConnection{
+			ID:        connID,
+			URL:       urlStr,
+			Password:  password,
+			Type:      strings.ToLower(shellType),
+			Method:    strings.ToLower(method),
+			CmdParam:  cmdParam,
+			Remark:    remark,
+			CreatedAt: time.Now(),
+		}
+
+		if err := db.CreateWebshellConnection(conn); err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "添加 WebShell 连接失败: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{
+				Type: "text",
+				Text: fmt.Sprintf("WebShell 连接添加成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s", conn.ID, conn.URL, conn.Type, conn.Method, conn.CmdParam),
+			}},
+			IsError: false,
+		}, nil
+	}
+	mcpServer.RegisterTool(addTool, addHandler)
+
+	// manage_webshell_update - 更新 webshell 连接
+	updateTool := mcp.Tool{
+		Name:        builtin.ToolManageWebshellUpdate,
+		Description: "更新已存在的 WebShell 连接信息。",
+		ShortDescription: "更新 WebShell 连接",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{
+					"type":        "string",
+					"description": "要更新的 WebShell 连接 ID（必填）",
+				},
+				"url": map[string]interface{}{
+					"type":        "string",
+					"description": "新的 Shell 地址",
+				},
+				"password": map[string]interface{}{
+					"type":        "string",
+					"description": "新的连接密码/密钥",
+				},
+				"type": map[string]interface{}{
+					"type":        "string",
+					"description": "新的 Shell 类型：php、asp、aspx、jsp",
+					"enum":        []string{"php", "asp", "aspx", "jsp"},
+				},
+				"method": map[string]interface{}{
+					"type":        "string",
+					"description": "新的请求方式：GET 或 POST",
+					"enum":        []string{"GET", "POST"},
+				},
+				"cmd_param": map[string]interface{}{
+					"type":        "string",
+					"description": "新的命令参数名",
+				},
+				"remark": map[string]interface{}{
+					"type":        "string",
+					"description": "新的备注",
+				},
+			},
+			"required": []string{"connection_id"},
+		},
+	}
+	updateHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		connID, _ := args["connection_id"].(string)
+		if connID == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "错误: connection_id 参数必填"}},
+				IsError: true,
+			}, nil
+		}
+
+		// 获取现有连接
+		existing, err := db.GetWebshellConnection(connID)
+		if err != nil || existing == nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "未找到指定的 WebShell 连接: " + connID}},
+				IsError: true,
+			}, nil
+		}
+
+		// 更新字段（如果提供了新值）
+		if urlStr, ok := args["url"].(string); ok && urlStr != "" {
+			existing.URL = urlStr
+		}
+		if password, ok := args["password"].(string); ok {
+			existing.Password = password
+		}
+		if shellType, ok := args["type"].(string); ok && shellType != "" {
+			existing.Type = strings.ToLower(shellType)
+		}
+		if method, ok := args["method"].(string); ok && method != "" {
+			existing.Method = strings.ToLower(method)
+		}
+		if cmdParam, ok := args["cmd_param"].(string); ok && cmdParam != "" {
+			existing.CmdParam = cmdParam
+		}
+		if remark, ok := args["remark"].(string); ok {
+			existing.Remark = remark
+		}
+
+		if err := db.UpdateWebshellConnection(existing); err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "更新 WebShell 连接失败: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{
+				Type: "text",
+				Text: fmt.Sprintf("WebShell 连接更新成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s\n备注: %s", existing.ID, existing.URL, existing.Type, existing.Method, existing.CmdParam, existing.Remark),
+			}},
+			IsError: false,
+		}, nil
+	}
+	mcpServer.RegisterTool(updateTool, updateHandler)
+
+	// manage_webshell_delete - 删除 webshell 连接
+	deleteTool := mcp.Tool{
+		Name:        builtin.ToolManageWebshellDelete,
+		Description: "删除指定的 WebShell 连接。",
+		ShortDescription: "删除 WebShell 连接",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{
+					"type":        "string",
+					"description": "要删除的 WebShell 连接 ID（必填）",
+				},
+			},
+			"required": []string{"connection_id"},
+		},
+	}
+	deleteHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		connID, _ := args["connection_id"].(string)
+		if connID == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "错误: connection_id 参数必填"}},
+				IsError: true,
+			}, nil
+		}
+
+		if err := db.DeleteWebshellConnection(connID); err != nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "删除 WebShell 连接失败: " + err.Error()}},
+				IsError: true,
+			}, nil
+		}
+
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{
+				Type: "text",
+				Text: fmt.Sprintf("WebShell 连接 %s 已成功删除", connID),
+			}},
+			IsError: false,
+		}, nil
+	}
+	mcpServer.RegisterTool(deleteTool, deleteHandler)
+
+	// manage_webshell_test - 测试 webshell 连接
+	testTool := mcp.Tool{
+		Name:        builtin.ToolManageWebshellTest,
+		Description: "测试指定的 WebShell 连接是否可用，会尝试执行一个简单的命令（如 whoami 或 dir）。",
+		ShortDescription: "测试 WebShell 连接",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"connection_id": map[string]interface{}{
+					"type":        "string",
+					"description": "要测试的 WebShell 连接 ID（必填）",
+				},
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "测试命令，默认为 whoami（Linux）或 dir（Windows）",
+				},
+			},
+			"required": []string{"connection_id"},
+		},
+	}
+	testHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		connID, _ := args["connection_id"].(string)
+		if connID == "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "错误: connection_id 参数必填"}},
+				IsError: true,
+			}, nil
+		}
+
+		// 获取连接
+		conn, err := db.GetWebshellConnection(connID)
+		if err != nil || conn == nil {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "未找到指定的 WebShell 连接: " + connID}},
+				IsError: true,
+			}, nil
+		}
+
+		// 确定测试命令
+		testCmd, _ := args["command"].(string)
+		if testCmd == "" {
+			// 根据 shell 类型选择默认命令
+			if conn.Type == "asp" || conn.Type == "aspx" {
+				testCmd = "dir"
+			} else {
+				testCmd = "whoami"
+			}
+		}
+
+		// 执行测试命令
+		output, ok, errMsg := webshellHandler.ExecWithConnection(conn, testCmd)
+		if errMsg != "" {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("连接测试失败！\n\n连接ID: %s\nURL: %s\n错误: %s", connID, conn.URL, errMsg)}},
+				IsError: true,
+			}, nil
+		}
+
+		if !ok {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("连接测试失败！HTTP 非 200\n\n连接ID: %s\nURL: %s\n输出: %s", connID, conn.URL, output)}},
+				IsError: true,
+			}, nil
+		}
+
+		return &mcp.ToolResult{
+			Content: []mcp.Content{{
+				Type: "text",
+				Text: fmt.Sprintf("连接测试成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n\n测试命令: %s\n输出结果:\n%s", connID, conn.URL, conn.Type, testCmd, output),
+			}},
+			IsError: false,
+		}, nil
+	}
+	mcpServer.RegisterTool(testTool, testHandler)
+
+	logger.Info("WebShell 管理工具注册成功")
+}
+
+// initializeKnowledge 初始化知识库组件（用于动态初始化）
 func initializeKnowledge(
 	cfg *config.Config,
 	db *database.DB,
 	knowledgeDBConn *database.DB,
 	mcpServer *mcp.Server,
 	agentHandler *handler.AgentHandler,
-	app *App, // pass App reference to update knowledge base components
+	app *App, // 传递 App 引用以便更新知识库组件
 	logger *zap.Logger,
 ) (*handler.KnowledgeHandler, error) {
-	// determine knowledge base database path
+	// 确定知识库数据库路径
 	knowledgeDBPath := cfg.Database.KnowledgeDBPath
 	var knowledgeDB *sql.DB
 
 	if knowledgeDBPath != "" {
-		// use a separate knowledge base database
-		// ensure directory exists
+		// 使用独立的知识库数据库
+		// 确保目录存在
 		if err := os.MkdirAll(filepath.Dir(knowledgeDBPath), 0755); err != nil {
-			return nil, fmt.Errorf("failed to create knowledge base database directory: %w", err)
+			return nil, fmt.Errorf("创建知识库数据库目录失败: %w", err)
 		}
 
 		var err error
 		knowledgeDBConn, err = database.NewKnowledgeDB(knowledgeDBPath, logger)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize knowledge base database: %w", err)
+			return nil, fmt.Errorf("初始化知识库数据库失败: %w", err)
 		}
 		knowledgeDB = knowledgeDBConn.DB
-		logger.Info("using separate knowledge base database", zap.String("path", knowledgeDBPath))
+		logger.Info("使用独立的知识库数据库", zap.String("path", knowledgeDBPath))
 	} else {
-		// backward compatibility: use the conversation database
+		// 向后兼容：使用会话数据库
 		knowledgeDB = db.DB
-		logger.Info("using conversation database for knowledge base data (recommended to configure knowledge_db_path to separate data)")
+		logger.Info("使用会话数据库存储知识库数据（建议配置knowledge_db_path以分离数据）")
 	}
 
-	// create knowledge base manager
+	// 创建知识库管理器
 	knowledgeManager := knowledge.NewManager(knowledgeDB, cfg.Knowledge.BasePath, logger)
 
-	// create embedder (no implicit fallback to OpenAI endpoint for embeddings)
+	// 创建嵌入器
+	// 使用OpenAI配置的API Key（如果知识库配置中没有指定）
+	if cfg.Knowledge.Embedding.APIKey == "" {
+		cfg.Knowledge.Embedding.APIKey = cfg.OpenAI.APIKey
+	}
+	if cfg.Knowledge.Embedding.BaseURL == "" {
+		cfg.Knowledge.Embedding.BaseURL = cfg.OpenAI.BaseURL
+	}
+
 	httpClient := &http.Client{
 		Timeout: 30 * time.Minute,
 	}
 	openAIClient := openai.NewClient(&cfg.OpenAI, httpClient, logger)
-	embedder := knowledge.NewEmbedder(&cfg.Knowledge, openAIClient, logger)
-	embeddingEnabled := embedder.Enabled()
+	embedder := knowledge.NewEmbedder(&cfg.Knowledge, &cfg.OpenAI, openAIClient, logger)
 
-	// create retriever
+	// 创建检索器
 	retrievalConfig := &knowledge.RetrievalConfig{
 		TopK:                cfg.Knowledge.Retrieval.TopK,
 		SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
@@ -1603,2141 +1706,119 @@ func initializeKnowledge(
 	}
 	knowledgeRetriever := knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, logger)
 
-	// create indexer
-	knowledgeIndexer := knowledge.NewIndexer(knowledgeDB, embedder, logger, cfg.Knowledge.Embedding.MaxTokens)
+	// 创建索引器
+	knowledgeIndexer := knowledge.NewIndexer(knowledgeDB, embedder, logger, &cfg.Knowledge.Indexing)
 
-	// register knowledge retrieval tool to MCP server
+	// 注册知识检索工具到MCP服务器
 	knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, logger)
 
-	// create knowledge base API handler
+	// 创建知识库API处理器
 	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, logger)
-	logger.Info("knowledge base module initialization complete", zap.Bool("handler_created", knowledgeHandler != nil))
+	logger.Info("知识库模块初始化完成", zap.Bool("handler_created", knowledgeHandler != nil))
 
-	// set knowledge base manager on AgentHandler for retrieval log recording
+	// 设置知识库管理器到AgentHandler以便记录检索日志
 	agentHandler.SetKnowledgeManager(knowledgeManager)
 
-	// update knowledge base components in App (if App is not nil, this is a dynamic initialization)
+	// 更新 App 中的知识库组件（如果 App 不为 nil，说明是动态初始化）
 	if app != nil {
 		app.knowledgeManager = knowledgeManager
 		app.knowledgeRetriever = knowledgeRetriever
 		app.knowledgeIndexer = knowledgeIndexer
 		app.knowledgeHandler = knowledgeHandler
-		// if using separate database, update knowledgeDB
+		// 如果使用独立数据库，更新 knowledgeDB
 		if knowledgeDBPath != "" {
 			app.knowledgeDB = knowledgeDBConn
 		}
-		logger.Info("knowledge base components in App have been updated")
+		logger.Info("App 中的知识库组件已更新")
 	}
 
-	// scan knowledge base and build index (async)
-	if embeddingEnabled {
-		go func() {
-			itemsToIndex, err := knowledgeManager.ScanKnowledgeBase()
-			if err != nil {
-				logger.Warn("failed to scan knowledge base", zap.Error(err))
-				return
-			}
+	// 扫描知识库并建立索引（异步）
+	go func() {
+		itemsToIndex, err := knowledgeManager.ScanKnowledgeBase()
+		if err != nil {
+			logger.Warn("扫描知识库失败", zap.Error(err))
+			return
+		}
 
-			// check if index already exists
-			hasIndex, err := knowledgeIndexer.HasIndex()
-			if err != nil {
-				logger.Warn("failed to check index status", zap.Error(err))
-				return
-			}
+		// 检查是否已有索引
+		hasIndex, err := knowledgeIndexer.HasIndex()
+		if err != nil {
+			logger.Warn("检查索引状态失败", zap.Error(err))
+			return
+		}
 
-			if hasIndex {
-				// if index exists, only index newly added or updated items
-				if len(itemsToIndex) > 0 {
-					logger.Info("existing knowledge base index detected, starting incremental indexing", zap.Int("count", len(itemsToIndex)))
-					ctx := context.Background()
-					consecutiveFailures := 0
-					var firstFailureItemID string
-					var firstFailureError error
-					failedCount := 0
+		if hasIndex {
+			// 如果已有索引，只索引新添加或更新的项
+			if len(itemsToIndex) > 0 {
+				logger.Info("检测到已有知识库索引，开始增量索引", zap.Int("count", len(itemsToIndex)))
+				ctx := context.Background()
+				consecutiveFailures := 0
+				var firstFailureItemID string
+				var firstFailureError error
+				failedCount := 0
 
-					for _, itemID := range itemsToIndex {
-						if err := knowledgeIndexer.IndexItem(ctx, itemID); err != nil {
-							failedCount++
-							consecutiveFailures++
+				for _, itemID := range itemsToIndex {
+					if err := knowledgeIndexer.IndexItem(ctx, itemID); err != nil {
+						failedCount++
+						consecutiveFailures++
 
-							if consecutiveFailures == 1 {
-								firstFailureItemID = itemID
-								firstFailureError = err
-								logger.Warn("failed to index knowledge item", zap.String("itemId", itemID), zap.Error(err))
-							}
-
-							// if 2 consecutive failures, immediately stop incremental indexing
-							if consecutiveFailures >= 2 {
-								logger.Error("too many consecutive index failures, stopping incremental indexing immediately",
-									zap.Int("consecutiveFailures", consecutiveFailures),
-									zap.Int("totalItems", len(itemsToIndex)),
-									zap.String("firstFailureItemId", firstFailureItemID),
-									zap.Error(firstFailureError),
-								)
-								break
-							}
-							continue
+						if consecutiveFailures == 1 {
+							firstFailureItemID = itemID
+							firstFailureError = err
+							logger.Warn("索引知识项失败", zap.String("itemId", itemID), zap.Error(err))
 						}
 
-						// reset consecutive failure count on success
-						if consecutiveFailures > 0 {
-							consecutiveFailures = 0
-							firstFailureItemID = ""
-							firstFailureError = nil
+						// 如果连续失败2次，立即停止增量索引
+						if consecutiveFailures >= 2 {
+							logger.Error("连续索引失败次数过多，立即停止增量索引",
+								zap.Int("consecutiveFailures", consecutiveFailures),
+								zap.Int("totalItems", len(itemsToIndex)),
+								zap.String("firstFailureItemId", firstFailureItemID),
+								zap.Error(firstFailureError),
+							)
+							break
 						}
+						continue
 					}
-					logger.Info("incremental indexing complete", zap.Int("totalItems", len(itemsToIndex)), zap.Int("failedCount", failedCount))
-				} else {
-					logger.Info("existing knowledge base index detected, no new or updated items to index")
-				}
-				return
-			}
 
-			// only auto-rebuild when no index exists
-			logger.Info("no knowledge base index detected, starting automatic index build")
-			ctx := context.Background()
-			if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {
-				logger.Warn("failed to rebuild knowledge base index", zap.Error(err))
+					// 成功时重置连续失败计数
+					if consecutiveFailures > 0 {
+						consecutiveFailures = 0
+						firstFailureItemID = ""
+						firstFailureError = nil
+					}
+				}
+				logger.Info("增量索引完成", zap.Int("totalItems", len(itemsToIndex)), zap.Int("failedCount", failedCount))
+			} else {
+				logger.Info("检测到已有知识库索引，没有需要索引的新项或更新项")
 			}
-		}()
-	} else {
-		logger.Warn("knowledge embedding disabled: missing embedding base_url/model/api_key; skipping index build")
-	}
+			return
+		}
+
+		// 只有在没有索引时才自动重建
+		logger.Info("未检测到知识库索引，开始自动构建索引")
+		ctx := context.Background()
+		if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {
+			logger.Warn("重建知识库索引失败", zap.Error(err))
+		}
+	}()
 
 	return knowledgeHandler, nil
 }
 
-// registerTimeTools registers the get_current_time tool on the MCP server.
-func registerTimeTools(mcpServer *mcp.Server, ta *agent.TimeAwareness, logger *zap.Logger) {
-	tool := mcp.Tool{
-		Name:             builtin.ToolGetCurrentTime,
-		Description:      "Get the current date and time, including timezone, Unix timestamp, and session uptime. Use this tool whenever you need to know the exact current time or when building time-relative plans (e.g. scheduling scans, calculating elapsed time).",
-		ShortDescription: "Get current date, time, timezone, and session uptime",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}
-	handler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: ta.FormatCurrentTime()}},
-		}, nil
-	}
-	mcpServer.RegisterTool(tool, handler)
-	logger.Info("time tool registered successfully")
-}
-
-// registerToolDiscovery registers the get_tool_details meta-tool that lets the
-// model request full descriptions for specific tools on demand. This enables a
-// compact tool catalog approach: tool definitions are sent with minimal
-// descriptions to save tokens, and the model calls this tool when it needs
-// detailed usage information for a specific tool.
-func registerToolDiscovery(mcpServer *mcp.Server, logger *zap.Logger) {
-	tool := mcp.Tool{
-		Name: builtin.ToolGetToolDetails,
-		Description: "Get full detailed descriptions and usage instructions for one or more tools by name. " +
-			"Use this when you need to understand how to use a specific tool, what parameters it accepts, " +
-			"or what it does in detail. Pass a comma-separated list of tool names.",
-		ShortDescription: "Get full descriptions for tools by name (comma-separated)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"tool_names": map[string]interface{}{
-					"type":        "string",
-					"description": "Comma-separated list of tool names to get details for, e.g. 'nmap,sqlmap,dirsearch'",
-				},
-			},
-			"required": []interface{}{"tool_names"},
-		},
-	}
-	toolHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		namesRaw, _ := args["tool_names"].(string)
-		if strings.TrimSpace(namesRaw) == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: tool_names is required (comma-separated list)"}},
-				IsError: true,
-			}, nil
-		}
-
-		allTools := mcpServer.GetAllTools()
-		toolMap := make(map[string]mcp.Tool, len(allTools))
-		for _, t := range allTools {
-			toolMap[t.Name] = t
-		}
-
-		names := strings.Split(namesRaw, ",")
-		var sb strings.Builder
-		found := 0
-		for _, raw := range names {
-			name := strings.TrimSpace(raw)
-			if name == "" {
-				continue
-			}
-			t, ok := toolMap[name]
-			if !ok {
-				sb.WriteString(fmt.Sprintf("## %s\nNot found. Check tool name spelling.\n\n", name))
-				continue
-			}
-			found++
-			desc := t.Description
-			if desc == "" {
-				desc = t.ShortDescription
-			}
-			sb.WriteString(fmt.Sprintf("## %s\n%s\n", name, desc))
-			// Include parameter schema if available
-			if len(t.InputSchema) > 0 {
-				if props, ok := t.InputSchema["properties"]; ok {
-					if propsJSON, err := json.MarshalIndent(props, "", "  "); err == nil {
-						sb.WriteString(fmt.Sprintf("\nParameters:\n```json\n%s\n```\n", string(propsJSON)))
-					}
-				}
-			}
-			sb.WriteString("\n")
-		}
-		if found == 0 {
-			sb.WriteString("No matching tools found. Use tool names exactly as they appear in the tool list.")
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
-		}, nil
-	}
-	mcpServer.RegisterTool(tool, toolHandler)
-	logger.Info("tool discovery (get_tool_details) registered successfully")
-}
-
-// allMemoryCategories is the complete list of memory category values used in tool schemas.
-var allMemoryCategories = []string{
-	"credential", "target", "vulnerability", "fact", "note",
-	"tool_run", "discovery", "plan",
-}
-
-var allowedMemoryCategories = map[agent.MemoryCategory]struct{}{
-	agent.MemoryCategoryCredential:    {},
-	agent.MemoryCategoryTarget:        {},
-	agent.MemoryCategoryVulnerability: {},
-	agent.MemoryCategoryFact:          {},
-	agent.MemoryCategoryNote:          {},
-	agent.MemoryCategoryToolRun:       {},
-	agent.MemoryCategoryDiscovery:     {},
-	agent.MemoryCategoryPlan:          {},
-}
-
-var allowedMemoryConfidence = map[agent.MemoryConfidence]struct{}{
-	agent.MemoryConfidenceHigh:   {},
-	agent.MemoryConfidenceMedium: {},
-	agent.MemoryConfidenceLow:    {},
-}
-
-func normalizeMemoryCategory(raw string) (agent.MemoryCategory, bool) {
-	cat := agent.MemoryCategory(strings.TrimSpace(raw))
-	if cat == "" {
-		return agent.MemoryCategoryFact, true
-	}
-	_, ok := allowedMemoryCategories[cat]
-	return cat, ok
-}
-
-func normalizeMemoryConfidence(raw string) (agent.MemoryConfidence, bool) {
-	conf := agent.MemoryConfidence(strings.TrimSpace(raw))
-	if conf == "" {
-		return agent.MemoryConfidenceMedium, true
-	}
-	_, ok := allowedMemoryConfidence[conf]
-	return conf, ok
-}
-
-// registerMemoryTools registers all persistent-memory tools on the MCP server.
-func registerMemoryTools(mcpServer *mcp.Server, pm *agent.PersistentMemory, logger *zap.Logger) {
-	// ── store_memory ──────────────────────────────────────────────────────────
-	storeMemTool := mcp.Tool{
-		Name: builtin.ToolStoreMemory,
-		Description: `Persist an important fact to long-term memory so it is available across conversation compressions and future sessions.
-
-Categories:
-  credential  - Discovered passwords, tokens, API keys, SSH keys
-  target      - IP addresses, hostnames, domains, open ports, services
-  vulnerability - Confirmed or suspected vulnerabilities (use record_vulnerability for formal tracking)
-  fact        - General observations, version numbers, technology stack details
-  note        - Operational notes, testing strategy, reminders
-  tool_run    - Record of a completed tool execution (prevents duplicate scans)
-  discovery   - New findings that need further investigation or classification
-  plan        - Testing plan with steps; prefix completed steps with [DONE]
-
-Optional fields:
-  entity      - The target this memory belongs to (e.g. "192.168.1.1", "api.example.com")
-  confidence  - high | medium | low (default: medium)
-
-Always set entity when the memory is specific to a particular target or host.`,
-		ShortDescription: "Store a key fact to persistent long-term memory",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"key": map[string]interface{}{
-					"type":        "string",
-					"description": "A short, unique label for the fact (e.g. 'admin_password', 'target_ip', 'nmap_scan_192.168.1.1')",
-				},
-				"value": map[string]interface{}{
-					"type":        "string",
-					"description": "The fact or value to remember",
-				},
-				"category": map[string]interface{}{
-					"type":        "string",
-					"description": "Memory category: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
-					"enum":        allMemoryCategories,
-				},
-				"entity": map[string]interface{}{
-					"type":        "string",
-					"description": "The target entity this memory belongs to (IP, hostname, URL). Enables entity-based grouping and lookup.",
-				},
-				"confidence": map[string]interface{}{
-					"type":        "string",
-					"description": "Confidence level: high, medium, low (default: medium)",
-					"enum":        []string{"high", "medium", "low"},
-				},
-			},
-			"required": []string{"key", "value"},
-		},
-	}
-	mcpServer.RegisterTool(storeMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		key, _ := args["key"].(string)
-		value, _ := args["value"].(string)
-		if key == "" || value == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: key and value are required"}},
-				IsError: true,
-			}, nil
-		}
-		categoryRaw, _ := args["category"].(string)
-		cat, ok := normalizeMemoryCategory(categoryRaw)
-		if !ok {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: invalid category. Must be one of: credential, target, vulnerability, fact, note, tool_run, discovery, plan"}},
-				IsError: true,
-			}, nil
-		}
-		convID, _ := args["conversation_id"].(string)
-		entity, _ := args["entity"].(string)
-		confidenceRaw, _ := args["confidence"].(string)
-		confidence, ok := normalizeMemoryConfidence(confidenceRaw)
-		if !ok {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: invalid confidence. Must be: high, medium, or low"}},
-				IsError: true,
-			}, nil
-		}
-		entry, err := pm.StoreFull(key, value, cat, convID, entity, confidence, agent.MemoryStatusActive)
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error storing memory: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		entityInfo := ""
-		if entry.Entity != "" {
-			entityInfo = fmt.Sprintf(" entity=%s", entry.Entity)
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory stored: [%s] %s = %s%s (id: %s)", entry.Category, entry.Key, entry.Value, entityInfo, entry.ID)}},
-		}, nil
-	})
-
-	// ── retrieve_memory ───────────────────────────────────────────────────────
-	retrieveMemTool := mcp.Tool{
-		Name:             builtin.ToolRetrieveMemory,
-		Description:      "Search persistent memory for facts matching a query. Returns active entries ordered by recency (disproven/false-positive entries are hidden unless include_dismissed=true). Use this to recall credentials, targets, or findings from previous sessions.",
-		ShortDescription: "Search persistent memory for matching facts",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Search query matched against memory keys and values",
-				},
-				"category": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter by category (optional). Options: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
-					"enum":        allMemoryCategories,
-				},
-				"entity": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter to a specific entity (IP, hostname, URL) to see all memories about that target",
-				},
-				"include_dismissed": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, also return false_positive and disproven entries (default: false)",
-				},
-				"limit": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of results to return (default 20)",
-				},
-			},
-			"required": []string{},
-		},
-	}
-	mcpServer.RegisterTool(retrieveMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		query, _ := args["query"].(string)
-		cat := agent.MemoryCategory("")
-		if cv, ok := args["category"].(string); ok {
-			cat = agent.MemoryCategory(cv)
-		}
-		entity, _ := args["entity"].(string)
-		includeDismissed, _ := args["include_dismissed"].(bool)
-		limit := 20
-		if lv, ok := args["limit"].(float64); ok {
-			limit = int(lv)
-		}
-
-		var entries []*agent.MemoryEntry
-		var err error
-
-		// If entity is specified, apply entity filter while respecting
-		// category/include_dismissed semantics (consistent with HTTP API).
-		if entity != "" {
-			entity = strings.TrimSpace(entity)
-			queryLower := strings.ToLower(strings.TrimSpace(query))
-			if includeDismissed {
-				entries, err = pm.ListAll(cat, 5000)
-			} else {
-				entries, err = pm.List(cat, 5000)
-			}
-			if err == nil {
-				filtered := make([]*agent.MemoryEntry, 0, len(entries))
-				for _, entry := range entries {
-					if !strings.EqualFold(strings.TrimSpace(entry.Entity), entity) {
-						continue
-					}
-					if queryLower != "" {
-						keyLower := strings.ToLower(entry.Key)
-						valueLower := strings.ToLower(entry.Value)
-						if !strings.Contains(keyLower, queryLower) && !strings.Contains(valueLower, queryLower) {
-							continue
-						}
-					}
-					filtered = append(filtered, entry)
-					if len(filtered) >= limit {
-						break
-					}
-				}
-				entries = filtered
-			}
-		} else if includeDismissed {
-			entries, err = pm.RetrieveAll(query, cat, limit)
-		} else {
-			entries, err = pm.Retrieve(query, cat, limit)
-		}
-
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error retrieving memory: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		if len(entries) == 0 {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "No matching memories found."}},
-			}, nil
-		}
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d memory entries:\n", len(entries)))
-		for _, e := range entries {
-			statusTag := ""
-			if e.Status != agent.MemoryStatusActive {
-				statusTag = fmt.Sprintf(" [%s]", string(e.Status))
-			}
-			entityTag := ""
-			if e.Entity != "" {
-				entityTag = fmt.Sprintf(" entity=%s", e.Entity)
-			}
-			sb.WriteString(fmt.Sprintf("  [%s]%s %s: %s%s  (id: %s, updated: %s)\n",
-				e.Category, statusTag, e.Key, e.Value, entityTag, e.ID, e.UpdatedAt.Format("2006-01-02 15:04")))
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
-		}, nil
-	})
-
-	// ── list_memories ─────────────────────────────────────────────────────────
-	listMemTool := mcp.Tool{
-		Name:             builtin.ToolListMemories,
-		Description:      "List all active entries in persistent memory, optionally filtered by category or entity. Disproven and false-positive entries are excluded by default.",
-		ShortDescription: "List all persistent memory entries",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"category": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter by category (optional, empty = all). Options: credential, target, vulnerability, fact, note, tool_run, discovery, plan",
-					"enum":        allMemoryCategories,
-				},
-				"entity": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter to a specific entity (IP, hostname, URL) to see all memories about that target",
-				},
-				"include_dismissed": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, also show false_positive and disproven entries (default: false)",
-				},
-			},
-			"required": []string{},
-		},
-	}
-	mcpServer.RegisterTool(listMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		cat := agent.MemoryCategory("")
-		if cv, ok := args["category"].(string); ok {
-			cat = agent.MemoryCategory(cv)
-		}
-		entity, _ := args["entity"].(string)
-		includeDismissed, _ := args["include_dismissed"].(bool)
-
-		var entries []*agent.MemoryEntry
-		var err error
-
-		if entity != "" {
-			entity = strings.TrimSpace(entity)
-			if includeDismissed {
-				entries, err = pm.ListAll(cat, 5000)
-			} else {
-				entries, err = pm.List(cat, 5000)
-			}
-			if err == nil {
-				filtered := make([]*agent.MemoryEntry, 0, len(entries))
-				for _, entry := range entries {
-					if strings.EqualFold(strings.TrimSpace(entry.Entity), entity) {
-						filtered = append(filtered, entry)
-						if len(filtered) >= 100 {
-							break
-						}
-					}
-				}
-				entries = filtered
-			}
-		} else if includeDismissed {
-			entries, err = pm.ListAll(cat, 100)
-		} else {
-			entries, err = pm.List(cat, 100)
-		}
-
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error listing memories: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		if len(entries) == 0 {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "No memories stored yet."}},
-			}, nil
-		}
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Persistent memory (%d entries):\n", len(entries)))
-		for _, e := range entries {
-			statusTag := ""
-			if e.Status != agent.MemoryStatusActive {
-				statusTag = fmt.Sprintf(" [%s]", string(e.Status))
-			}
-			entityTag := ""
-			if e.Entity != "" {
-				entityTag = fmt.Sprintf(" entity=%s", e.Entity)
-			}
-			sb.WriteString(fmt.Sprintf("  [%s]%s %s: %s%s  (id: %s)\n", e.Category, statusTag, e.Key, e.Value, entityTag, e.ID))
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
-		}, nil
-	})
-
-	// ── delete_memory ─────────────────────────────────────────────────────────
-	deleteMemTool := mcp.Tool{
-		Name:             builtin.ToolDeleteMemory,
-		Description:      "Delete a specific memory entry by ID. Use this to remove stale, incorrect, or no-longer-relevant facts. Prefer update_memory_status for false positives and disproven findings.",
-		ShortDescription: "Delete a persistent memory entry by ID",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The UUID of the memory entry to delete (obtain from list_memories or retrieve_memory)",
-				},
-			},
-			"required": []string{"id"},
-		},
-	}
-	mcpServer.RegisterTool(deleteMemTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		if id == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id parameter is required"}},
-				IsError: true,
-			}, nil
-		}
-		if err := pm.Delete(id); err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error deleting memory: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory entry %s deleted.", id)}},
-		}, nil
-	})
-
-	// ── update_memory_status ──────────────────────────────────────────────────
-	updateStatusTool := mcp.Tool{
-		Name: builtin.ToolUpdateMemoryStatus,
-		Description: `Update the status of a memory entry to reflect its current validity.
-
-Statuses:
-  active        - Default; the finding is currently relevant and under investigation
-  confirmed     - The finding has been validated and reproduced with evidence
-  false_positive - The finding was investigated and ruled out (not a real issue)
-  disproven     - The fact was found to be incorrect after further investigation
-
-Use this instead of deleting when:
-  - A vulnerability turns out to be a false positive after manual verification
-  - A credential or fact was found to be wrong
-  - A finding is confirmed with solid proof
-  - You want to prevent re-investigation of ruled-out paths
-
-Dismissed entries (false_positive, disproven) are shown in a separate section
-in the memory context block so the model knows NOT to re-investigate them.`,
-		ShortDescription: "Update the validation status of a memory entry",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The UUID of the memory entry to update (obtain from list_memories or retrieve_memory)",
-				},
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "New status: active, confirmed, false_positive, or disproven",
-					"enum":        []string{"active", "confirmed", "false_positive", "disproven"},
-				},
-			},
-			"required": []string{"id", "status"},
-		},
-	}
-	mcpServer.RegisterTool(updateStatusTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		statusStr, _ := args["status"].(string)
-		if id == "" || statusStr == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id and status are required"}},
-				IsError: true,
-			}, nil
-		}
-		status := agent.MemoryStatus(statusStr)
-		switch status {
-		case agent.MemoryStatusActive, agent.MemoryStatusConfirmed, agent.MemoryStatusFalsePositive, agent.MemoryStatusDisproven:
-			// valid
-		default:
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Error: invalid status '%s'. Must be: active, confirmed, false_positive, or disproven", statusStr)}},
-				IsError: true,
-			}, nil
-		}
-		if err := pm.SetStatus(id, status); err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error updating memory status: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Memory entry %s status updated to '%s'.", id, statusStr)}},
-		}, nil
-	})
-
-	logger.Info("persistent memory tools registered successfully")
-}
-
-// corsMiddleware CORS middleware
+// corsMiddleware CORS中间件
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		origin := strings.TrimSpace(c.Request.Header.Get("Origin"))
-		if origin != "" && sameOrigin(origin, c.Request.Host) {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Vary", "Origin")
-		}
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
 		if c.Request.Method == "OPTIONS" {
-			if origin != "" && !sameOrigin(origin, c.Request.Host) {
-				c.AbortWithStatus(http.StatusForbidden)
-				return
-			}
-			c.AbortWithStatus(http.StatusNoContent)
+			c.AbortWithStatus(204)
 			return
 		}
 
 		c.Next()
 	}
-}
-
-func sameOrigin(origin, host string) bool {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(u.Host, host)
-}
-
-func isLoopbackRequest(remoteAddr string) bool {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
-	if err != nil {
-		host = strings.TrimSpace(remoteAddr)
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-// registerFileManagerTools registers MCP tools for the file manager so the agent
-// can register, update, and query managed files during conversations.
-func registerFileManagerTools(mcpServer *mcp.Server, fm *filemanager.Manager, logger *zap.Logger) {
-	allFileTypes := []string{"report", "api_docs", "project_file", "target_file", "reversing", "exfiltrated", "other"}
-	allFileStatuses := []string{"pending", "processing", "analyzed", "in_progress", "completed", "archived"}
-
-	// ── register_file ─────────────────────────────────────────────────────────
-	registerTool := mcp.Tool{
-		Name:             builtin.ToolRegisterFile,
-		Description:      "Register a file in the file manager. Use this whenever you encounter, create, download, or receive a file that should be tracked. The file manager maintains metadata, processing status, summaries, findings, and logs for each file.",
-		ShortDescription: "Register a file for tracking in file manager",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the file",
-				},
-				"file_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Absolute path to the file on disk",
-				},
-				"file_size": map[string]interface{}{
-					"type":        "integer",
-					"description": "File size in bytes",
-				},
-				"file_type": map[string]interface{}{
-					"type":        "string",
-					"description": "Type classification of the file",
-					"enum":        allFileTypes,
-				},
-				"summary": map[string]interface{}{
-					"type":        "string",
-					"description": "Brief summary: what is this file, where it came from, what it contains",
-				},
-				"handle_plan": map[string]interface{}{
-					"type":        "string",
-					"description": "How you plan to handle/process this file",
-				},
-				"conversation_id": map[string]interface{}{
-					"type":        "string",
-					"description": "ID of the conversation this file is associated with",
-				},
-			},
-			"required": []string{"file_name", "file_path", "file_type"},
-		},
-	}
-	mcpServer.RegisterTool(registerTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		fileName, _ := args["file_name"].(string)
-		filePath, _ := args["file_path"].(string)
-		fileSize := int64(0)
-		if v, ok := args["file_size"].(float64); ok {
-			fileSize = int64(v)
-		}
-		ft, _ := args["file_type"].(string)
-		convID, _ := args["conversation_id"].(string)
-
-		f, err := fm.Register(fileName, filePath, fileSize, "", filemanager.FileType(ft), convID)
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error registering file: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-
-		// Apply summary and handle_plan if provided
-		updates := make(map[string]interface{})
-		if summary, ok := args["summary"].(string); ok && summary != "" {
-			updates["summary"] = summary
-		}
-		if plan, ok := args["handle_plan"].(string); ok && plan != "" {
-			updates["handle_plan"] = plan
-		}
-		if len(updates) > 0 {
-			updates["status"] = string(filemanager.FileStatusAnalyzed)
-			fm.Update(f.ID, updates)
-		}
-
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("File registered: %s (id: %s, type: %s, path: %s)", fileName, f.ID, ft, filePath)}},
-		}, nil
-	})
-
-	// ── update_file ───────────────────────────────────────────────────────────
-	updateTool := mcp.Tool{
-		Name:             builtin.ToolUpdateFile,
-		Description:      "Update a managed file's metadata. Use this to update summary, progress, findings, status, handle_plan, or tags as you work on a file.",
-		ShortDescription: "Update file metadata in file manager",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The file ID to update",
-				},
-				"summary": map[string]interface{}{
-					"type":        "string",
-					"description": "Updated summary of the file",
-				},
-				"handle_plan": map[string]interface{}{
-					"type":        "string",
-					"description": "Updated plan for handling the file",
-				},
-				"progress": map[string]interface{}{
-					"type":        "string",
-					"description": "Current progress notes",
-				},
-				"findings": map[string]interface{}{
-					"type":        "string",
-					"description": "Replace all findings with this text",
-				},
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "New status",
-					"enum":        allFileStatuses,
-				},
-				"tags": map[string]interface{}{
-					"type":        "string",
-					"description": "Comma-separated tags",
-				},
-			},
-			"required": []string{"id"},
-		},
-	}
-	mcpServer.RegisterTool(updateTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		if id == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id is required"}},
-				IsError: true,
-			}, nil
-		}
-
-		updates := make(map[string]interface{})
-		for _, field := range []string{"summary", "handle_plan", "progress", "findings", "status", "tags"} {
-			if v, ok := args[field].(string); ok && v != "" {
-				updates[field] = v
-			}
-		}
-
-		f, err := fm.Update(id, updates)
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error updating file: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("File updated: %s (status: %s)", f.FileName, f.Status)}},
-		}, nil
-	})
-
-	// ── list_files ────────────────────────────────────────────────────────────
-	listTool := mcp.Tool{
-		Name:             builtin.ToolListFiles,
-		Description:      "List all managed files with optional filtering by type, status, or search query.",
-		ShortDescription: "List managed files",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file_type": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter by file type",
-					"enum":        allFileTypes,
-				},
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "Filter by status",
-					"enum":        allFileStatuses,
-				},
-				"search": map[string]interface{}{
-					"type":        "string",
-					"description": "Search in file names, summaries, findings, and tags",
-				},
-			},
-			"required": []string{},
-		},
-	}
-	mcpServer.RegisterTool(listTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		ft := filemanager.FileType("")
-		if v, ok := args["file_type"].(string); ok {
-			ft = filemanager.FileType(v)
-		}
-		status := filemanager.FileStatus("")
-		if v, ok := args["status"].(string); ok {
-			status = filemanager.FileStatus(v)
-		}
-		search, _ := args["search"].(string)
-
-		files, total, err := fm.List(ft, status, search, 50, 0)
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error listing files: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		if total == 0 {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "No managed files found."}},
-			}, nil
-		}
-
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d managed files:\n", total))
-		for _, f := range files {
-			tags := ""
-			if f.Tags != "" {
-				tags = fmt.Sprintf(" [%s]", f.Tags)
-			}
-			sb.WriteString(fmt.Sprintf("  - %s (id: %s, type: %s, status: %s, size: %d)%s\n    Summary: %s\n    Path: %s\n",
-				f.FileName, f.ID, f.FileType, f.Status, f.FileSize, tags,
-				truncate(f.Summary, 200), f.FilePath))
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
-		}, nil
-	})
-
-	// ── get_file ──────────────────────────────────────────────────────────────
-	getTool := mcp.Tool{
-		Name:             builtin.ToolGetFile,
-		Description:      "Get full details of a managed file including summary, progress, findings, logs, and handle plan.",
-		ShortDescription: "Get managed file details",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The file ID",
-				},
-			},
-			"required": []string{"id"},
-		},
-	}
-	mcpServer.RegisterTool(getTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		if id == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id is required"}},
-				IsError: true,
-			}, nil
-		}
-
-		f, err := fm.Get(id)
-		if err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("File: %s\n", f.FileName))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", f.ID))
-		sb.WriteString(fmt.Sprintf("Type: %s | Status: %s | Size: %d bytes\n", f.FileType, f.Status, f.FileSize))
-		sb.WriteString(fmt.Sprintf("Path: %s\n", f.FilePath))
-		if f.Tags != "" {
-			sb.WriteString(fmt.Sprintf("Tags: %s\n", f.Tags))
-		}
-		sb.WriteString(fmt.Sprintf("Created: %s | Updated: %s\n", f.CreatedAt.Format("2006-01-02 15:04"), f.UpdatedAt.Format("2006-01-02 15:04")))
-		if f.Summary != "" {
-			sb.WriteString(fmt.Sprintf("\nSummary:\n%s\n", f.Summary))
-		}
-		if f.HandlePlan != "" {
-			sb.WriteString(fmt.Sprintf("\nHandle Plan:\n%s\n", f.HandlePlan))
-		}
-		if f.Progress != "" {
-			sb.WriteString(fmt.Sprintf("\nProgress:\n%s\n", f.Progress))
-		}
-		if f.Findings != "" {
-			sb.WriteString(fmt.Sprintf("\nFindings:\n%s\n", f.Findings))
-		}
-		if f.Logs != "" {
-			sb.WriteString(fmt.Sprintf("\nLogs:\n%s\n", f.Logs))
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: sb.String()}},
-		}, nil
-	})
-
-	// ── append_file_log ───────────────────────────────────────────────────────
-	logTool := mcp.Tool{
-		Name:             builtin.ToolAppendFileLog,
-		Description:      "Append a timestamped log entry to a managed file's processing log.",
-		ShortDescription: "Append log entry to managed file",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The file ID",
-				},
-				"entry": map[string]interface{}{
-					"type":        "string",
-					"description": "Log entry text",
-				},
-			},
-			"required": []string{"id", "entry"},
-		},
-	}
-	mcpServer.RegisterTool(logTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		entry, _ := args["entry"].(string)
-		if id == "" || entry == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id and entry are required"}},
-				IsError: true,
-			}, nil
-		}
-		if err := fm.AppendLog(id, entry); err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: "Log entry appended."}},
-		}, nil
-	})
-
-	// ── append_file_findings ──────────────────────────────────────────────────
-	findingsTool := mcp.Tool{
-		Name:             builtin.ToolAppendFindings,
-		Description:      "Append a finding or discovery to a managed file's findings section.",
-		ShortDescription: "Append finding to managed file",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The file ID",
-				},
-				"finding": map[string]interface{}{
-					"type":        "string",
-					"description": "Finding or discovery text",
-				},
-			},
-			"required": []string{"id", "finding"},
-		},
-	}
-	mcpServer.RegisterTool(findingsTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		id, _ := args["id"].(string)
-		finding, _ := args["finding"].(string)
-		if id == "" || finding == "" {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: id and finding are required"}},
-				IsError: true,
-			}, nil
-		}
-		if err := fm.AppendFindings(id, finding); err != nil {
-			return &mcp.ToolResult{
-				Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}},
-				IsError: true,
-			}, nil
-		}
-		return &mcp.ToolResult{
-			Content: []mcp.Content{{Type: "text", Text: "Finding appended."}},
-		}, nil
-	})
-
-	logger.Info("file manager MCP tools registered")
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cuttlefish (Android VM) MCP Tools
-// ─────────────────────────────────────────────────────────────────────────────
-
-// cvdExec runs a command in the Cuttlefish workspace and returns combined output.
-func cvdExec(ctx context.Context, cvdHome string, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = cvdHome
-	cmd.Env = append(os.Environ(), "CVD_HOME="+cvdHome)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	out := stdout.String()
-	if stderr.Len() > 0 {
-		out += "\n" + stderr.String()
-	}
-	if len(out) > 100000 {
-		out = out[:100000] + "\n... (truncated)"
-	}
-	return out, err
-}
-
-// cvdADB returns the path to the Cuttlefish-bundled adb, falling back to system adb.
-func cvdADB(cvdHome string) string {
-	p := filepath.Join(cvdHome, "bin", "adb")
-	if _, err := os.Stat(p); err == nil {
-		return p
-	}
-	return "adb"
-}
-
-func registerCuttlefishTools(mcpServer *mcp.Server, cvdHome string, cvdCfg *config.CuttlefishConfig, logger *zap.Logger) {
-	adb := cvdADB(cvdHome)
-
-	// Resolve DroidRun bridge script path from config or auto-detect
-	bridgeScript := cvdCfg.BridgeScript
-	if bridgeScript == "" {
-		bridgeScript = filepath.Join(cvdHome, "..", "CyberStrikeAI", "scripts", "cuttlefish", "droidrun-bridge.py")
-		if _, err := os.Stat(bridgeScript); err != nil {
-			bridgeScript = filepath.Join(os.Getenv("HOME"), "CyberStrikeAI", "scripts", "cuttlefish", "droidrun-bridge.py")
-		}
-	}
-
-	// Resolve DroidRun config path
-	droidrunCfgPath := cvdCfg.DroidRunConfig
-	if droidrunCfgPath == "" {
-		droidrunCfgPath = filepath.Join(cvdHome, "droidrun", "config.yaml")
-	}
-
-	logger.Info("registering Cuttlefish (Android VM) MCP tools",
-		zap.String("cvd_home", cvdHome),
-		zap.String("adb", adb),
-		zap.Int("memory_mb", cvdCfg.MemoryMB),
-		zap.Int("cpus", cvdCfg.CPUs),
-		zap.String("gpu_mode", cvdCfg.GPUMode),
-		zap.Bool("russian_identity", cvdCfg.RussianIdentity),
-		zap.String("bridge_script", bridgeScript),
-	)
-
-	// ── cuttlefish_launch ────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishLaunch,
-		Description:      "Launch the Cuttlefish Android virtual device. Starts an AOSP VM with QEMU/KVM preconfigured as a Russian-owned Xiaomi Redmi Note 12 Pro (MTS carrier, Moscow timezone, ru-RU locale). The device becomes available via ADB and WebRTC (https://localhost:8443). Takes 2-4 minutes for first boot.",
-		ShortDescription: "Launch Cuttlefish Android VM",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"fresh": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, create a fresh data partition (factory reset). Default false.",
-				},
-				"memory_mb": map[string]interface{}{
-					"type":        "integer",
-					"description": "RAM in MB (default 8192)",
-				},
-				"cpus": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of virtual CPUs (default 4)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		env := os.Environ()
-		env = append(env, "CVD_HOME="+cvdHome)
-		if fresh, ok := args["fresh"].(bool); ok && fresh {
-			env = append(env, "FRESH=1")
-		}
-		// Use config defaults, allow per-call override
-		mem := cvdCfg.MemoryMB
-		if mem == 0 {
-			mem = 8192
-		}
-		if m, ok := args["memory_mb"].(float64); ok && int(m) > 0 {
-			mem = int(m)
-		}
-		env = append(env, "CVD_MEMORY="+strconv.Itoa(mem))
-
-		cpus := cvdCfg.CPUs
-		if cpus == 0 {
-			cpus = 4
-		}
-		if c, ok := args["cpus"].(float64); ok && int(c) > 0 {
-			cpus = int(c)
-		}
-		env = append(env, "CVD_CPUS="+strconv.Itoa(cpus))
-
-		gpuMode := cvdCfg.GPUMode
-		if gpuMode == "" {
-			gpuMode = "guest_swiftshader"
-		}
-		env = append(env, "CVD_GPU="+gpuMode)
-
-		if cvdCfg.DiskMB > 0 {
-			env = append(env, "CVD_DISK_MB="+strconv.Itoa(cvdCfg.DiskMB))
-		}
-
-		webrtcPort := cvdCfg.WebRTCPort
-		if webrtcPort == 0 {
-			webrtcPort = 8443
-		}
-		env = append(env, "CVD_WEBRTC_PORT="+strconv.Itoa(webrtcPort))
-
-		launchScript := filepath.Join(cvdHome, "cvd-launch.sh")
-		cmd := exec.CommandContext(ctx, launchScript)
-		cmd.Dir = cvdHome
-		cmd.Env = env
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		cmd.Stderr = &buf
-		err := cmd.Run()
-		out := buf.String()
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Launch failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-
-		// Auto-open WebRTC viewer in browser so user can see and interact with the device
-		webrtcURL := "https://localhost:" + strconv.Itoa(webrtcPort)
-		go func() {
-			// Try xdg-open (Linux), then sensible-browser, then direct browsers
-			for _, opener := range []string{"xdg-open", "sensible-browser", "google-chrome", "firefox", "chromium-browser"} {
-				if path, err := exec.LookPath(opener); err == nil {
-					_ = exec.Command(path, webrtcURL).Start()
-					logger.Info("Opened Cuttlefish WebRTC viewer", zap.String("url", webrtcURL), zap.String("opener", opener))
-					return
-				}
-			}
-			logger.Warn("Could not auto-open browser for Cuttlefish WebRTC viewer — open manually", zap.String("url", webrtcURL))
-		}()
-
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out + "\nWebRTC viewer: " + webrtcURL + " (opening in browser...)"}}}, nil
-	})
-
-	// ── cuttlefish_stop ─────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishStop,
-		Description:      "Stop the running Cuttlefish Android virtual device.",
-		ShortDescription: "Stop Cuttlefish Android VM",
-		InputSchema:      map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		out, err := cvdExec(ctx, cvdHome, filepath.Join(cvdHome, "cvd-stop.sh"))
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Stop failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_status ───────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishStatus,
-		Description:      "Check if Cuttlefish is running, get ADB device serial, and current device properties (locale, carrier, model).",
-		ShortDescription: "Check Cuttlefish device status",
-		InputSchema:      map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		// Check ADB devices
-		devOut, _ := cvdExec(ctx, cvdHome, adb, "devices", "-l")
-		// Get key properties if device is connected
-		propsOut, _ := cvdExec(ctx, cvdHome, adb, "shell",
-			"echo 'boot_completed='$(getprop sys.boot_completed)"+
-				" && echo 'locale='$(getprop persist.sys.locale)"+
-				" && echo 'timezone='$(getprop persist.sys.timezone)"+
-				" && echo 'carrier='$(getprop gsm.sim.operator.alpha)"+
-				" && echo 'model='$(getprop ro.product.model)"+
-				" && echo 'manufacturer='$(getprop ro.product.manufacturer)"+
-				" && echo 'sdk='$(getprop ro.build.version.sdk)"+
-				" && echo 'android='$(getprop ro.build.version.release)")
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "ADB Devices:\n" + devOut + "\nProperties:\n" + propsOut}}}, nil
-	})
-
-	// ── cuttlefish_install_apk ──────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishInstall,
-		Description:      "Install an APK on the Cuttlefish Android device. Supports debug (-t), downgrade (-d), and replace (-r) flags.",
-		ShortDescription: "Install APK on Cuttlefish",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"apk_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Absolute path to the APK file",
-				},
-				"replace": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Replace existing app (default true)",
-				},
-				"downgrade": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Allow version downgrade",
-				},
-				"debug": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Allow test-only APKs",
-				},
-			},
-			"required": []string{"apk_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		apkPath, _ := args["apk_path"].(string)
-		installArgs := []string{"install"}
-		if r, ok := args["replace"].(bool); !ok || r {
-			installArgs = append(installArgs, "-r")
-		}
-		if d, ok := args["downgrade"].(bool); ok && d {
-			installArgs = append(installArgs, "-d")
-		}
-		if t, ok := args["debug"].(bool); ok && t {
-			installArgs = append(installArgs, "-t")
-		}
-		installArgs = append(installArgs, apkPath)
-		out, err := cvdExec(ctx, cvdHome, adb, installArgs...)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Install failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_hotswap ──────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishHotswap,
-		Description:      "Hot-swap reinstall an APK: force-stops the running app, reinstalls with -r -d -t flags, and relaunches. Use for rapid iteration during testing/reversing.",
-		ShortDescription: "Hot-swap APK on Cuttlefish",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"apk_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to the APK file",
-				},
-				"package_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Package name (e.g. com.example.app). Auto-detected if omitted.",
-				},
-			},
-			"required": []string{"apk_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		apkPath, _ := args["apk_path"].(string)
-		cmdArgs := []string{apkPath}
-		if pkg, ok := args["package_name"].(string); ok && pkg != "" {
-			cmdArgs = append(cmdArgs, pkg)
-		}
-		out, err := cvdExec(ctx, cvdHome, filepath.Join(cvdHome, "cvd-hotswap.sh"), cmdArgs...)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Hotswap failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_shell ────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishShell,
-		Description:      "Execute a shell command on the Cuttlefish Android device via ADB. Returns stdout/stderr. Use for any direct device interaction: file browsing, process listing, property queries, app management, etc.",
-		ShortDescription: "Run shell command on Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"command": map[string]interface{}{
-					"type":        "string",
-					"description": "Shell command to execute on device (e.g. 'ls /data/local/tmp', 'pm list packages -3', 'getprop ro.product.model')",
-				},
-			},
-			"required": []string{"command"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		command, _ := args["command"].(string)
-		out, err := cvdExec(ctx, cvdHome, adb, "shell", command)
-		if err != nil {
-			// ADB shell returns the device command's exit code, which may be non-zero
-			// but still have useful output
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_push ─────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishPush,
-		Description:      "Push a file from host to the Cuttlefish Android device via ADB.",
-		ShortDescription: "Push file to Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"local_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to the file on the host",
-				},
-				"device_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Destination path on the device (e.g. /data/local/tmp/file)",
-				},
-			},
-			"required": []string{"local_path", "device_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		localPath, _ := args["local_path"].(string)
-		devicePath, _ := args["device_path"].(string)
-		out, err := cvdExec(ctx, cvdHome, adb, "push", localPath, devicePath)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Push failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_pull ─────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishPull,
-		Description:      "Pull a file from the Cuttlefish Android device to the host via ADB.",
-		ShortDescription: "Pull file from Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"device_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path on the device to pull (e.g. /data/data/com.app/databases/db.sqlite)",
-				},
-				"local_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Destination path on the host",
-				},
-			},
-			"required": []string{"device_path", "local_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		devicePath, _ := args["device_path"].(string)
-		localPath, _ := args["local_path"].(string)
-		out, err := cvdExec(ctx, cvdHome, adb, "pull", devicePath, localPath)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Pull failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_screenshot ───────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishScreenshot,
-		Description:      "Take a screenshot of the Cuttlefish Android device. Returns the path to the saved PNG file.",
-		ShortDescription: "Screenshot Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"output_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Where to save the screenshot (default: /tmp/cvd_screenshot.png)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		outPath := "/tmp/cvd_screenshot.png"
-		if p, ok := args["output_path"].(string); ok && p != "" {
-			outPath = p
-		}
-		cmd := exec.CommandContext(ctx, adb, "exec-out", "screencap", "-p")
-		cmd.Dir = cvdHome
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		if err := cmd.Run(); err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Screenshot failed: " + err.Error()}}, IsError: true}, nil
-		}
-		if err := os.WriteFile(outPath, buf.Bytes(), 0644); err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Failed to write screenshot: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Screenshot saved to %s (%d bytes)", outPath, buf.Len())}}}, nil
-	})
-
-	// ── cuttlefish_logcat ───────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishLogcat,
-		Description:      "Read Android logcat output from the Cuttlefish device. Supports filtering by tag, priority, and line count.",
-		ShortDescription: "Read Android logcat",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"filter": map[string]interface{}{
-					"type":        "string",
-					"description": "Logcat filter expression (e.g. 'ActivityManager:I *:S' or tag name)",
-				},
-				"lines": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of recent lines to return (default 100)",
-				},
-				"grep": map[string]interface{}{
-					"type":        "string",
-					"description": "Grep pattern to filter output",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		lines := 100
-		if n, ok := args["lines"].(float64); ok && n > 0 {
-			lines = int(n)
-		}
-		logArgs := []string{"logcat", "-d", "-t", strconv.Itoa(lines)}
-		if filter, ok := args["filter"].(string); ok && filter != "" {
-			logArgs = append(logArgs, filter)
-		}
-		out, _ := cvdExec(ctx, cvdHome, adb, logArgs...)
-		if grepPat, ok := args["grep"].(string); ok && grepPat != "" {
-			var filtered []string
-			for _, line := range strings.Split(out, "\n") {
-				if strings.Contains(line, grepPat) {
-					filtered = append(filtered, line)
-				}
-			}
-			out = strings.Join(filtered, "\n")
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_frida_setup ──────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishFrida,
-		Description:      "Set up Frida server on the Cuttlefish device for dynamic instrumentation. Downloads the matching frida-server binary, pushes it to the device, and starts it. After setup, use frida/frida-tools from the host to attach to processes.",
-		ShortDescription: "Setup Frida on Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"version": map[string]interface{}{
-					"type":        "string",
-					"description": "Frida version (default: 16.6.6)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		out, err := cvdExec(ctx, cvdHome, filepath.Join(cvdHome, "cvd-api.sh"), "frida-setup")
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Frida setup failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_proxy ────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishProxy,
-		Description:      "Set or clear HTTP proxy on the Cuttlefish device. Useful for traffic interception with Burp Suite, mitmproxy, etc.",
-		ShortDescription: "Set/clear proxy on Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"enum":        []string{"set", "clear"},
-					"description": "set or clear the proxy",
-				},
-				"host": map[string]interface{}{
-					"type":        "string",
-					"description": "Proxy host (required for 'set')",
-				},
-				"port": map[string]interface{}{
-					"type":        "string",
-					"description": "Proxy port (required for 'set')",
-				},
-			},
-			"required": []string{"action"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		action, _ := args["action"].(string)
-		if action == "clear" {
-			out, _ := cvdExec(ctx, cvdHome, adb, "shell", "settings put global http_proxy :0")
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Proxy cleared.\n" + out}}}, nil
-		}
-		host, _ := args["host"].(string)
-		port, _ := args["port"].(string)
-		if host == "" || port == "" {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "host and port required for set action"}}, IsError: true}, nil
-		}
-		out, _ := cvdExec(ctx, cvdHome, adb, "shell", "settings put global http_proxy "+host+":"+port)
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: fmt.Sprintf("Proxy set to %s:%s\n%s", host, port, out)}}}, nil
-	})
-
-	// ── cuttlefish_install_cert ─────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishCert,
-		Description:      "Install a CA certificate into the Android system trust store on the Cuttlefish device. Required for HTTPS traffic interception. The device must have root access (Cuttlefish userdebug builds support this).",
-		ShortDescription: "Install CA cert on Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"cert_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to the PEM-encoded CA certificate file on the host",
-				},
-			},
-			"required": []string{"cert_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		certPath, _ := args["cert_path"].(string)
-		out, err := cvdExec(ctx, cvdHome, filepath.Join(cvdHome, "cvd-api.sh"), "install-cert", certPath)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Cert install failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_snapshot ─────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishSnapshot,
-		Description:      "Save, restore, or list device state snapshots. Use 'save' before destructive testing, 'restore' to revert to a known-good state.",
-		ShortDescription: "Manage Cuttlefish device snapshots",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"enum":        []string{"save", "restore", "list"},
-					"description": "Snapshot action",
-				},
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "Snapshot name (default: 'default')",
-				},
-			},
-			"required": []string{"action"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		action, _ := args["action"].(string)
-		cmdArgs := []string{action}
-		if name, ok := args["name"].(string); ok && name != "" {
-			cmdArgs = append(cmdArgs, name)
-		}
-		out, err := cvdExec(ctx, cvdHome, filepath.Join(cvdHome, "cvd-snapshot.sh"), cmdArgs...)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Snapshot failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_packages ─────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishPackages,
-		Description:      "List, inspect, or manage packages on the Cuttlefish device. Actions: list (all/third-party), info (package details), permissions, activities, clear-data, force-stop, enable, disable.",
-		ShortDescription: "Manage packages on Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"enum":        []string{"list", "list-third-party", "info", "permissions", "activities", "clear-data", "force-stop", "enable", "disable", "uninstall"},
-					"description": "Package management action",
-				},
-				"package": map[string]interface{}{
-					"type":        "string",
-					"description": "Package name (required for info/permissions/activities/clear-data/force-stop/enable/disable/uninstall)",
-				},
-			},
-			"required": []string{"action"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		action, _ := args["action"].(string)
-		pkg, _ := args["package"].(string)
-		var out string
-		var err error
-		switch action {
-		case "list":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm list packages")
-		case "list-third-party":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm list packages -3")
-		case "info":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "dumpsys package "+pkg)
-		case "permissions":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "dumpsys package "+pkg+" | grep -A 100 'granted=true'")
-		case "activities":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "dumpsys package "+pkg+" | grep -A 5 'Activity'")
-		case "clear-data":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm clear "+pkg)
-		case "force-stop":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "am force-stop "+pkg)
-		case "enable":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm enable "+pkg)
-		case "disable":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm disable-user --user 0 "+pkg)
-		case "uninstall":
-			out, err = cvdExec(ctx, cvdHome, adb, "shell", "pm uninstall "+pkg)
-		default:
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Unknown action: " + action}}, IsError: true}, nil
-		}
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	// ── cuttlefish_droidrun ─────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolCuttlefishDroidRun,
-		Description:      "Run DroidRun AI agent on the Cuttlefish device. Give a natural language goal and the agent will autonomously interact with the Android UI to accomplish it (e.g. 'Open Settings and find device info', 'Install and test the login flow of the app'). Requires DroidRun and its dependencies to be installed (pip install droidrun).",
-		ShortDescription: "Run DroidRun AI agent on Cuttlefish",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"goal": map[string]interface{}{
-					"type":        "string",
-					"description": "Natural language goal for the DroidRun agent",
-				},
-				"install_apk": map[string]interface{}{
-					"type":        "string",
-					"description": "APK path to install before running the goal (optional)",
-				},
-				"config": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to custom DroidRun config YAML (optional)",
-				},
-			},
-			"required": []string{"goal"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		goal, _ := args["goal"].(string)
-		cmdArgs := []string{bridgeScript}
-		if apk, ok := args["install_apk"].(string); ok && apk != "" {
-			cmdArgs = append(cmdArgs, "--install", apk)
-		}
-		if cfgPath, ok := args["config"].(string); ok && cfgPath != "" {
-			cmdArgs = append(cmdArgs, "--config", cfgPath)
-		} else if droidrunCfgPath != "" {
-			cmdArgs = append(cmdArgs, "--config", droidrunCfgPath)
-		}
-		cmdArgs = append(cmdArgs, goal)
-		out, err := cvdExec(ctx, cvdHome, "python3", cmdArgs...)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "DroidRun failed: " + err.Error() + "\n" + out}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: out}}}, nil
-	})
-
-	logger.Info("registered Cuttlefish MCP tools", zap.Int("count", 16))
-
-	// ── DroidRun Proxy Tools ────────────────────────────────────────────
-	// High-level LLM-friendly device interaction via the DroidRun proxy service.
-	proxyPort := cvdCfg.ProxyPort
-	if proxyPort == 0 {
-		proxyPort = 18090
-	}
-	proxyBase := fmt.Sprintf("http://127.0.0.1:%d", proxyPort)
-	registerDroidRunProxyTools(mcpServer, proxyBase, logger)
-}
-
-// droidRunProxyCall makes a request to the DroidRun proxy HTTP service.
-func droidRunProxyCall(ctx context.Context, proxyBase, method, path string, body interface{}) (map[string]interface{}, error) {
-	var reqBody io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reqBody = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, proxyBase+path, reqBody)
-	if err != nil {
-		return nil, err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("proxy unavailable (is droidrun_proxy.py running on %s?): %w", proxyBase, err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if len(raw) > 200000 {
-		raw = raw[:200000]
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("invalid proxy response: %s", string(raw[:min(len(raw), 500)]))
-	}
-	return result, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// formatProxyResult formats a DroidRun proxy response as LLM-friendly text.
-func formatProxyResult(result map[string]interface{}) string {
-	// If there's an llm_text field, use it directly
-	if t, ok := result["llm_text"].(string); ok {
-		return t
-	}
-	// If there's state_after with llm_text, include it
-	parts := []string{}
-	if action, ok := result["action"].(string); ok {
-		success, _ := result["success"].(bool)
-		status := "OK"
-		if !success {
-			status = "FAILED"
-		}
-		summary, _ := result["summary"].(string)
-		parts = append(parts, fmt.Sprintf("[%s] %s: %s", status, action, summary))
-		if errMsg, ok := result["error"].(string); ok && errMsg != "" {
-			parts = append(parts, "Error: "+errMsg)
-		}
-	}
-	if stateAfter, ok := result["state_after"].(map[string]interface{}); ok {
-		if llm, ok := stateAfter["llm_text"].(string); ok {
-			parts = append(parts, "", llm)
-		}
-	}
-	if len(parts) > 0 {
-		return strings.Join(parts, "\n")
-	}
-	// Fallback: pretty JSON
-	b, _ := json.MarshalIndent(result, "", "  ")
-	return string(b)
-}
-
-func registerDroidRunProxyTools(mcpServer *mcp.Server, proxyBase string, logger *zap.Logger) {
-	logger.Info("registering DroidRun proxy MCP tools (LLM-friendly device interaction)", zap.String("proxy", proxyBase))
-
-	// ── droidrun_connect ────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name: builtin.ToolDroidRunConnect,
-		Description: `Connect the DroidRun proxy to the Cuttlefish Android device. Call this before using any droidrun_* tools. The proxy provides high-level, LLM-friendly device control — much easier than raw ADB commands:
-- UI elements are indexed (click by number instead of pixel coordinates)
-- State is formatted as readable text you can reason about
-- Screenshots are base64 PNG for vision analysis (Qwen3.5 VL)
-- Actions return success/failure with descriptions and updated state`,
-		ShortDescription: "Connect DroidRun proxy to Android device",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"serial": map[string]interface{}{
-					"type":        "string",
-					"description": "ADB device serial (auto-detect if empty)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		result, err := droidRunProxyCall(ctx, proxyBase, "GET", "/status", nil)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "DroidRun proxy not running. Start it with:\n  python3 ~/CyberStrikeAI/scripts/cuttlefish/droidrun_proxy.py\n\nError: " + err.Error()}}, IsError: true}, nil
-		}
-		connected, _ := result["connected"].(bool)
-		if connected {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "DroidRun proxy connected and ready. Use droidrun_state to see current screen."}}}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "DroidRun proxy running but not connected to device. Ensure Cuttlefish VM is running (cuttlefish_launch)."}}}, nil
-	})
-
-	// ── droidrun_state ──────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name: builtin.ToolDroidRunState,
-		Description: `Get the current Android device state in LLM-friendly format. Returns:
-- Current app and activity name
-- All visible UI elements with index numbers (for click/type by index)
-- Screen dimensions, keyboard visibility, focused element
-- Optional base64 PNG screenshot (for vision analysis with Qwen3.5 VL)
-
-The UI elements are indexed — use the index with droidrun_click or droidrun_type.
-Example output: "[3] Button 'Login' (200,400,500,460)" means element 3 is a Login button.
-
-This is the PRIMARY tool for understanding what's on screen. Call it before deciding what action to take.`,
-		ShortDescription: "Get LLM-friendly device state with indexed UI elements",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"include_screenshot": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Include base64 PNG screenshot for vision analysis (default true)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		query := "?screenshot=true"
-		if ss, ok := args["include_screenshot"].(bool); ok && !ss {
-			query = "?screenshot=false"
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "GET", "/state"+query, nil)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		text := formatProxyResult(result)
-		// If screenshot is present, include it as a separate content block for VL models
-		contents := []mcp.Content{{Type: "text", Text: text}}
-		if b64, ok := result["screenshot_b64"].(string); ok && b64 != "" && len(b64) < 500000 {
-			contents = append(contents, mcp.Content{Type: "text", Text: "\n[Screenshot: base64 PNG attached, " + strconv.Itoa(len(b64)) + " chars. Decode and analyze visually.]"})
-		}
-		return &mcp.ToolResult{Content: contents}, nil
-	})
-
-	// ── droidrun_screenshot ─────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunScreenshot,
-		Description:      "Take a screenshot of the Android device. Returns base64 PNG for visual analysis with Qwen3.5 VL, plus the saved file path. Use droidrun_state instead if you also need UI element indices.",
-		ShortDescription: "Take device screenshot (base64 PNG)",
-		InputSchema:      map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		result, err := droidRunProxyCall(ctx, proxyBase, "GET", "/screenshot", nil)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		path, _ := result["path"].(string)
-		b64, _ := result["base64"].(string)
-		text := fmt.Sprintf("Screenshot saved: %s (%d bytes base64)", path, len(b64))
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: text}}}, nil
-	})
-
-	// ── droidrun_click ──────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name: builtin.ToolDroidRunClick,
-		Description: `Click a UI element by its index number. Use droidrun_state first to see available elements and their indices.
-
-Example: if droidrun_state shows "[3] Button 'Login'" then call droidrun_click with index=3 to click it.
-
-Returns action result + updated device state so you can see what happened.`,
-		ShortDescription: "Click UI element by index",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"index": map[string]interface{}{
-					"type":        "integer",
-					"description": "Element index number from droidrun_state output",
-				},
-			},
-			"required": []string{"index"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		idx, _ := args["index"].(float64)
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/click", map[string]interface{}{"index": int(idx)})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_type ───────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name: builtin.ToolDroidRunType,
-		Description: `Type text into a UI element. If index is provided, clicks the element first then types. If index is -1 or omitted, types into the currently focused element.
-
-Example: droidrun_type with text="admin" index=5 clicks element 5 then types "admin".
-Use clear=true to clear existing text before typing.`,
-		ShortDescription: "Type text into UI element",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"text": map[string]interface{}{
-					"type":        "string",
-					"description": "Text to type",
-				},
-				"index": map[string]interface{}{
-					"type":        "integer",
-					"description": "Element index to click first (-1 = type into focused element)",
-				},
-				"clear": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Clear existing text before typing (default false)",
-				},
-			},
-			"required": []string{"text"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		body := map[string]interface{}{"text": args["text"]}
-		if idx, ok := args["index"].(float64); ok {
-			body["index"] = int(idx)
-		} else {
-			body["index"] = -1
-		}
-		if clr, ok := args["clear"].(bool); ok {
-			body["clear"] = clr
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/type", body)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_swipe ──────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunSwipe,
-		Description:      "Swipe gesture between two screen coordinates. Use for scrolling, dragging, or custom gestures. For simple scrolling prefer droidrun_scroll.",
-		ShortDescription: "Swipe between coordinates",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"x1":          map[string]interface{}{"type": "integer", "description": "Start X coordinate"},
-				"y1":          map[string]interface{}{"type": "integer", "description": "Start Y coordinate"},
-				"x2":          map[string]interface{}{"type": "integer", "description": "End X coordinate"},
-				"y2":          map[string]interface{}{"type": "integer", "description": "End Y coordinate"},
-				"duration_ms": map[string]interface{}{"type": "integer", "description": "Swipe duration in ms (default 500)"},
-			},
-			"required": []string{"x1", "y1", "x2", "y2"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		body := map[string]interface{}{
-			"x1": int(args["x1"].(float64)), "y1": int(args["y1"].(float64)),
-			"x2": int(args["x2"].(float64)), "y2": int(args["y2"].(float64)),
-		}
-		if d, ok := args["duration_ms"].(float64); ok {
-			body["duration_ms"] = int(d)
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/swipe", body)
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_scroll ─────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunScroll,
-		Description:      "Scroll the screen up or down. Easier than droidrun_swipe for simple scrolling — automatically calculates coordinates based on screen size.",
-		ShortDescription: "Scroll screen up or down",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"direction": map[string]interface{}{
-					"type":        "string",
-					"enum":        []string{"up", "down"},
-					"description": "Scroll direction",
-				},
-			},
-			"required": []string{"direction"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		dir, _ := args["direction"].(string)
-		action := "scroll_down"
-		if dir == "up" {
-			action = "scroll_up"
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": action, "params": map[string]interface{}{}})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_button ─────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunButton,
-		Description:      "Press a system button: back, home, or enter. Use 'back' to navigate back, 'home' to go to home screen, 'enter' to submit text input.",
-		ShortDescription: "Press system button (back/home/enter)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"button": map[string]interface{}{
-					"type":        "string",
-					"enum":        []string{"back", "home", "enter"},
-					"description": "Button to press",
-				},
-			},
-			"required": []string{"button"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		btn, _ := args["button"].(string)
-		action := "press_" + btn
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": action, "params": map[string]interface{}{}})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_open_app ───────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunOpenApp,
-		Description:      "Open an app by package name. Use droidrun_list_apps to find available packages. Returns updated device state showing the app's first screen.",
-		ShortDescription: "Open app by package name",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"package_name": map[string]interface{}{
-					"type":        "string",
-					"description": "App package name (e.g. com.android.settings, com.target.app)",
-				},
-			},
-			"required": []string{"package_name"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		pkg, _ := args["package_name"].(string)
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": "open_app", "params": map[string]interface{}{"package_name": pkg}})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_list_apps ──────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunListApps,
-		Description:      "List installed apps on the device. Returns package names and app labels. Use include_system=true to include system apps.",
-		ShortDescription: "List installed apps",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"include_system": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Include system apps (default false, only user-installed)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		params := map[string]interface{}{"include_system": false}
-		if sys, ok := args["include_system"].(bool); ok {
-			params["include_system"] = sys
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": "list_apps", "params": params})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_install ────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunInstall,
-		Description:      "Install an APK via DroidRun (higher-level than cuttlefish_install_apk — handles Portal APK setup automatically).",
-		ShortDescription: "Install APK via DroidRun",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"apk_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to APK file on host",
-				},
-			},
-			"required": []string{"apk_path"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		apk, _ := args["apk_path"].(string)
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": "install_apk", "params": map[string]interface{}{"apk_path": apk}})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	// ── droidrun_wait ───────────────────────────────────────────────────
-	mcpServer.RegisterTool(mcp.Tool{
-		Name:             builtin.ToolDroidRunWait,
-		Description:      "Wait for a specified duration, then return the updated device state. Useful after actions that trigger animations or loading screens.",
-		ShortDescription: "Wait and refresh state",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"seconds": map[string]interface{}{
-					"type":        "number",
-					"description": "Duration to wait in seconds (default 1.0)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		secs := 1.0
-		if s, ok := args["seconds"].(float64); ok && s > 0 {
-			secs = s
-		}
-		result, err := droidRunProxyCall(ctx, proxyBase, "POST", "/action", map[string]interface{}{"action": "wait", "params": map[string]interface{}{"seconds": secs}})
-		if err != nil {
-			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "Error: " + err.Error()}}, IsError: true}, nil
-		}
-		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: formatProxyResult(result)}}}, nil
-	})
-
-	logger.Info("registered DroidRun proxy MCP tools", zap.Int("count", 12))
 }

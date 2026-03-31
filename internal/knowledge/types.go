@@ -5,29 +5,37 @@ import (
 	"time"
 )
 
-// KnowledgeItem represents a knowledge base item
+// formatTime 格式化时间为 RFC3339 格式，零时间返回空字符串
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+// KnowledgeItem 知识库项
 type KnowledgeItem struct {
 	ID        string    `json:"id"`
-	Category  string    `json:"category"` // risk type (folder name)
-	Title     string    `json:"title"`    // title (file name)
-	FilePath  string    `json:"filePath"` // file path
-	Content   string    `json:"content"`  // file content
+	Category  string    `json:"category"` // 风险类型（文件夹名）
+	Title     string    `json:"title"`    // 标题（文件名）
+	FilePath  string    `json:"filePath"` // 文件路径
+	Content   string    `json:"content"`  // 文件内容
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// KnowledgeItemSummary is a knowledge base item summary (used for lists, does not include full content)
+// KnowledgeItemSummary 知识库项摘要（用于列表，不包含完整内容）
 type KnowledgeItemSummary struct {
 	ID        string    `json:"id"`
 	Category  string    `json:"category"`
 	Title     string    `json:"title"`
 	FilePath  string    `json:"filePath"`
-	Content   string    `json:"content,omitempty"` // optional: content preview (if provided, usually only the first 150 characters)
+	Content   string    `json:"content,omitempty"` // 可选：内容预览（如果提供，通常只包含前 150 字符）
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// MarshalJSON custom JSON serialization to ensure correct time format
+// MarshalJSON 自定义 JSON 序列化，确保时间格式正确
 func (k *KnowledgeItemSummary) MarshalJSON() ([]byte, error) {
 	type Alias KnowledgeItemSummary
 	aux := &struct {
@@ -37,25 +45,12 @@ func (k *KnowledgeItemSummary) MarshalJSON() ([]byte, error) {
 	}{
 		Alias: (*Alias)(k),
 	}
-
-	// format created time
-	if k.CreatedAt.IsZero() {
-		aux.CreatedAt = ""
-	} else {
-		aux.CreatedAt = k.CreatedAt.Format(time.RFC3339)
-	}
-
-	// format updated time
-	if k.UpdatedAt.IsZero() {
-		aux.UpdatedAt = ""
-	} else {
-		aux.UpdatedAt = k.UpdatedAt.Format(time.RFC3339)
-	}
-
+	aux.CreatedAt = formatTime(k.CreatedAt)
+	aux.UpdatedAt = formatTime(k.UpdatedAt)
 	return json.Marshal(aux)
 }
 
-// MarshalJSON custom JSON serialization to ensure correct time format
+// MarshalJSON 自定义 JSON 序列化，确保时间格式正确
 func (k *KnowledgeItem) MarshalJSON() ([]byte, error) {
 	type Alias KnowledgeItem
 	aux := &struct {
@@ -65,54 +60,41 @@ func (k *KnowledgeItem) MarshalJSON() ([]byte, error) {
 	}{
 		Alias: (*Alias)(k),
 	}
-
-	// format created time
-	if k.CreatedAt.IsZero() {
-		aux.CreatedAt = ""
-	} else {
-		aux.CreatedAt = k.CreatedAt.Format(time.RFC3339)
-	}
-
-	// format updated time
-	if k.UpdatedAt.IsZero() {
-		aux.UpdatedAt = ""
-	} else {
-		aux.UpdatedAt = k.UpdatedAt.Format(time.RFC3339)
-	}
-
+	aux.CreatedAt = formatTime(k.CreatedAt)
+	aux.UpdatedAt = formatTime(k.UpdatedAt)
 	return json.Marshal(aux)
 }
 
-// KnowledgeChunk is a knowledge chunk (used for vectorization)
+// KnowledgeChunk 知识块（用于向量化）
 type KnowledgeChunk struct {
 	ID         string    `json:"id"`
 	ItemID     string    `json:"itemId"`
 	ChunkIndex int       `json:"chunkIndex"`
 	ChunkText  string    `json:"chunkText"`
-	Embedding  []float32 `json:"-"` // vector embedding, not serialized to JSON
+	Embedding  []float32 `json:"-"` // 向量嵌入，不序列化到 JSON
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
-// RetrievalResult is a retrieval result
+// RetrievalResult 检索结果
 type RetrievalResult struct {
 	Chunk      *KnowledgeChunk `json:"chunk"`
 	Item       *KnowledgeItem  `json:"item"`
-	Similarity float64         `json:"similarity"` // similarity score
-	Score      float64         `json:"score"`      // composite score (hybrid retrieval)
+	Similarity float64         `json:"similarity"` // 相似度分数
+	Score      float64         `json:"score"`      // 综合分数（混合检索）
 }
 
-// RetrievalLog is a retrieval log
+// RetrievalLog 检索日志
 type RetrievalLog struct {
 	ID             string    `json:"id"`
 	ConversationID string    `json:"conversationId,omitempty"`
 	MessageID      string    `json:"messageId,omitempty"`
 	Query          string    `json:"query"`
 	RiskType       string    `json:"riskType,omitempty"`
-	RetrievedItems []string  `json:"retrievedItems"` // list of retrieved knowledge item IDs
+	RetrievedItems []string  `json:"retrievedItems"` // 检索到的知识项 ID 列表
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
-// MarshalJSON custom JSON serialization to ensure correct time format
+// MarshalJSON 自定义 JSON 序列化，确保时间格式正确
 func (r *RetrievalLog) MarshalJSON() ([]byte, error) {
 	type Alias RetrievalLog
 	return json.Marshal(&struct {
@@ -120,21 +102,21 @@ func (r *RetrievalLog) MarshalJSON() ([]byte, error) {
 		CreatedAt string `json:"createdAt"`
 	}{
 		Alias:     (*Alias)(r),
-		CreatedAt: r.CreatedAt.Format(time.RFC3339),
+		CreatedAt: formatTime(r.CreatedAt),
 	})
 }
 
-// CategoryWithItems represents a category and its knowledge items (used for category-based pagination)
+// CategoryWithItems 分类及其下的知识项（用于按分类分页）
 type CategoryWithItems struct {
-	Category  string                `json:"category"`  // category name
-	ItemCount int                   `json:"itemCount"` // total knowledge items in this category
-	Items     []*KnowledgeItemSummary `json:"items"`   // knowledge items in this category
+	Category  string                `json:"category"`           // 分类名称
+	ItemCount int                   `json:"itemCount"`          // 该分类下的知识项总数
+	Items     []*KnowledgeItemSummary `json:"items"`            // 该分类下的知识项列表
 }
 
-// SearchRequest is the search request
+// SearchRequest 搜索请求
 type SearchRequest struct {
 	Query     string  `json:"query"`
-	RiskType  string  `json:"riskType,omitempty"`  // optional: specify risk type
-	TopK      int     `json:"topK,omitempty"`      // return top-K results, default 5
-	Threshold float64 `json:"threshold,omitempty"` // similarity threshold, default 0.7
+	RiskType  string  `json:"riskType,omitempty"`  // 可选：指定风险类型
+	TopK      int     `json:"topK,omitempty"`      // 返回 Top-K 结果，默认 5
+	Threshold float64 `json:"threshold,omitempty"` // 相似度阈值，默认 0.7
 }

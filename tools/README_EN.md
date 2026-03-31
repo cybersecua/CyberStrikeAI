@@ -2,121 +2,168 @@
 
 ## Overview
 
-Each tool ships with its own YAML configuration placed in the `tools/` directory. This keeps definitions modular, easier to review, and simple to extend. The runtime automatically loads every `.yaml` / `.yml` file in that directory.
+Each tool has its own configuration file under the `tools/` directory. This keeps tool definitions clear, easy to maintain, and manageable. The system automatically loads all `.yaml` and `.yml` files in `tools/`.
 
-## File Structure
+## Configuration File Format
 
-The table below enumerates every supported top-level field. Double-check each entry before adding a new tool:
+Each tool configuration file is a YAML file. The table below lists supported top-level fields and whether they are required. Check each item before submitting:
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `name` | ✅ | string | Unique identifier. Prefer lowercase letters, digits, and hyphens. |
-| `command` | ✅ | string | Executable or script name. Must exist in `$PATH` or be an absolute path. |
-| `enabled` | ✅ | bool | Controls MCP registration. Disabled tools are ignored by the loader. |
-| `description` | ✅ | string | Full Markdown description for MCP `resources/read` and AI comprehension. |
-| `short_description` | Optional | string | 20–50 character summary shown in tool lists. When omitted, the loader extracts the start of `description`. |
-| `args` | Optional | string[] | Static arguments prepended to every invocation—useful for default scan profiles. |
-| `parameters` | Optional | array | Runtime parameter definitions. See **Parameter Definition** for details. |
-| `arg_mapping` | Optional | string | Mapping strategy (`auto`/`manual`/`template`). Defaults to `auto`; override only for legacy tooling. |
+| `name` | ✅ | string | Unique tool identifier; use lowercase letters, digits, and hyphens. |
+| `command` | ✅ | string | Command or script to run; must be on system PATH or an absolute path. |
+| `enabled` | ✅ | bool | Whether to register with MCP; set to `false` to skip the tool. |
+| `description` | ✅ | string | Full description, multi-line Markdown, for AI and `resources/read` queries. |
+| `short_description` | Optional | string | 20–50 character summary for tool lists and lower token usage; defaults to start of `description` if omitted. |
+| `args` | Optional | string[] | Fixed arguments prepended to the command line; often used for default scan modes. |
+| `parameters` | Optional | array | Runtime parameter list; see **Parameter Definition** below. |
+| `arg_mapping` | Optional | string | Parameter mapping mode (`auto`/`manual`/`template`); default `auto`; only set if needed. |
 
-> If a required field is missing or malformed, the loader skips that tool and logs a warning without blocking the service.
+> If a field is wrong or a required field is missing, the loader skips that tool and logs a warning; other tools are unaffected.
 
 ## Tool Descriptions
 
 ### Short Description (`short_description`)
 
-- **Purpose**: compact summary for tool listings and to minimise language model context usage.  
-- **Guideline**: one concise sentence (20–50 Chinese characters or English equivalents).  
+- **Purpose**: Used in tool lists to reduce tokens sent to the model.
+- **Guideline**: One sentence (20–50 characters) describing the tool’s main use.
 - **Example**: `"Network scanner for discovering hosts, open ports, and services"`
 
 ### Detailed Description (`description`)
 
-Supports multi-line Markdown. Recommended contents:
+Use multi-line text and include:
 
-1. **Capabilities** – what the tool does.  
-2. **Usage scenarios** – when to prefer this tool.  
-3. **Warnings** – permissions, runtime risks, side-effects.  
-4. **Examples** – optional walkthroughs or sample commands.
+1. **Capabilities**: What the tool does.
+2. **Usage scenarios**: When to use it.
+3. **Warnings**: Caveats and safety notes.
+4. **Examples**: Optional usage examples.
 
-**Important**:
-- Tool menus and MCP summaries use `short_description` when available.  
-- Without `short_description`, the loader trims the first line or first 100 characters of `description`.  
-- Full descriptions are accessible through the MCP `resources/read` endpoint (`tool://<tool_name>`).
+**Notes**:
+- Tool lists use `short_description` when present.
+- If `short_description` is missing, the system uses the first line or first 100 characters of `description`.
+- Full descriptions are available via MCP `resources/read` (URI: `tool://tool_name`).
+
+This reduces token usage, especially with many tools (e.g. 100+).
 
 ## Parameter Definition
 
-Each parameter object accepts the fields below:
+Each parameter can include:
 
-- `name` *(required)* – parameter key used in CLI construction and MCP schema.  
-- `type` *(required)* – `string`, `int`/`integer`, `bool`/`boolean`, `array`, etc.  
-- `description` *(required)* – Markdown-friendly explanation including purpose, format rules, example values, and safety notes.  
-- `required` – boolean; when `true`, missing values cause the executor to return an error.  
-- `default` – fallback value applied if the caller omits the argument.  
-- `flag` – CLI switch such as `-u` or `--url`.  
-- `position` – zero-based index for positional arguments.  
-- `format` – rendering strategy:
-  - `flag` *(default)* → `--flag value` / `-f value`
-  - `combined` → `--flag=value`
-  - `positional` → appended according to `position`
-  - `template` → uses the `template` string
-- `template` – placeholder string (supports `{flag}`, `{value}`, `{name}`) when `format: "template"`.
-- `options` – array of allowed values; surfaced as `enum` entries in the MCP schema.
+- `name`: Parameter name.
+- `type`: One of string, int, bool, array.
+- `description`: Full description (multi-line supported).
+- `required`: Whether it is required (true/false).
+- `default`: Default value.
+- `flag`: CLI flag (e.g. `-u`, `--url`, `-p`).
+- `position`: Zero-based index for positional arguments.
+- `format`: One of `"flag"`, `"positional"`, `"combined"`, `"template"`.
+- `template`: Template string when `format` is `"template"`.
+- `options`: Allowed values for enums.
 
-### Format Reference
+### Parameter Formats
 
-- **`flag`**: pass the flag and the value separately.  
-  Example: `flag: "-u"` → `-u https://example.com`
+- **`flag`**: Flag plus value, e.g. `--flag value` or `-f value`
+  - Example: `flag: "-u"` → `-u http://example.com`
 
-- **`positional`**: insert according to `position`.  
-  Example: `position: 0` → becomes the first positional argument.
+- **`positional`**: Added in order by position.
+  - Example: `position: 0` → first positional argument.
 
-- **`combined`**: join flag and value in one token.  
-  Example: `flag: "--level"`, `format: "combined"` → `--level=3`
+- **`combined`**: Single token `--flag=value`.
+  - Example: `flag: "--level"`, `format: "combined"` → `--level=3`
 
-- **`template`**: custom rendering.  
-  Example: `template: "{flag} {value}"` → fully manual control.
+- **`template`**: Custom template.
+  - Example: `template: "{flag} {value}"` → custom format.
 
-### Reserved Parameters
+### Special Parameters
 
-- `additional_args` – allows users to append arbitrary CLI fragments. The executor tokenises the string (preserving quoted groups) and appends the resulting list to the command.  
-- `scan_type` – for scanners like `nmap`, replacing default scan switches (e.g., `-sV -sC`).  
-- `action` – consumed by server-side branching logic and intentionally not forwarded to the command line.
+#### `additional_args`
 
-## Parameter Description Checklist
+Used to pass extra CLI options not defined in the parameter list. The value is split on spaces into multiple arguments.
 
-When documenting a parameter, include:
+**Use cases:**
+- Advanced tool options.
+- Options not in the schema.
+- Complex argument combinations.
 
-1. **Purpose** – what the value controls.  
-2. **Format rules** – accepted patterns (URL, CIDR, path, etc.).  
-3. **Example values** – list several realistic samples.  
-4. **Notes** – permissions, performance impact, or other caveats.
+**Example:**
+```yaml
+- name: "additional_args"
+  type: "string"
+  description: "Extra CLI arguments; separate multiple options with spaces"
+  required: false
+  format: "positional"
+```
 
-Suggested style: Markdown lists, bold emphasis for key cautions, and code blocks for complex examples.
+**Usage:**
+- `additional_args: "--script vuln -O"` → `["--script", "vuln", "-O"]`
+- `additional_args: "-T4 --max-retries 3"` → `["-T4", "--max-retries", "3"]`
 
-### Example
+**Notes:**
+- Split by spaces; quoted parts are preserved.
+- Ensure valid syntax to avoid command injection.
+- Appended at the end of the command.
 
+#### `scan_type` (tool-specific)
+
+Some tools (e.g. `nmap`) support `scan_type` to override the default scan arguments.
+
+**Example (nmap):**
+```yaml
+- name: "scan_type"
+  type: "string"
+  description: "Scan type options; overrides default scan arguments"
+  required: false
+  format: "positional"
+```
+
+**Usage:**
+- `scan_type: "-sV -sC"` → version and script scan.
+- `scan_type: "-A"` → aggressive scan.
+
+**Notes:**
+- If set, it replaces the tool’s default scan arguments.
+- Multiple options separated by spaces.
+
+### Parameter Description Guidelines
+
+Parameter descriptions should include:
+
+1. **Purpose**: What the parameter does.
+2. **Format**: Expected format (e.g. URL, port range).
+3. **Example values**: Concrete examples (list if several).
+4. **Notes**: Permissions, performance, safety, etc.
+
+**Style:**
+- Use Markdown for readability.
+- Use **bold** for important points.
+- Use lists for multiple examples or options.
+- Use code blocks for complex formats.
+
+**Example:**
 ```yaml
 description: |
-  Target IP address or domain. Accepts single IPs, ranges, CIDR blocks, or hostnames.
+  Target IP or domain. Can be a single IP, range, CIDR, or hostname.
 
-  **Example values**
+  **Example values:**
   - Single IP: "192.168.1.1"
   - Range: "192.168.1.1-100"
   - CIDR: "192.168.1.0/24"
   - Domain: "example.com"
 
-  **Notes**
+  **Notes:**
+  - Format must be valid.
   - Required; cannot be empty.
-  - Validate address format before running to avoid false positives.
 ```
 
 ## Parameter Types
 
-### Boolean
-- `true` → adds only the flag (no value).  
-- `false` → suppresses the flag.  
-- Accepts `true`/`false`, `1`/`0`, and `"true"`/`"false"`.
+### Boolean (`bool`)
 
+- `true`: Add only the flag (e.g. `--flag`).
+- `false`: Do not add the argument.
+- Accepted: `true`/`false`, `1`/`0`, `"true"`/`"false"`.
+
+**Example:**
 ```yaml
 - name: "verbose"
   type: "bool"
@@ -127,91 +174,68 @@ description: |
   format: "flag"
 ```
 
-### String
-Most common parameter type; accepts any string value.
+### String (`string`)
 
-### Integer
-Use for numeric inputs (ports, levels, limits).
+General-purpose; any string value.
 
+### Integer (`int` / `integer`)
+
+For numbers (ports, levels, etc.).
+
+**Example:**
 ```yaml
 - name: "level"
   type: "int"
-  description: "Level of detail, 1-5"
+  description: "Test level, 1-5"
   required: false
   default: 3
   flag: "--level"
   format: "combined"  # --level=3
 ```
 
-### Array
-Automatically converted to a comma-separated string.
+### Array (`array`)
 
+Converted to a comma-separated string.
+
+**Example:**
 ```yaml
 - name: "ports"
   type: "array"
-  description: "List of ports to scan"
+  item_type: "number"
+  description: "Port list"
   required: false
   # Input: [80, 443, 8080]
   # Output: "80,443,8080"
 ```
 
-## Special Parameters
+## Examples
 
-### `additional_args`
+See existing configs under `tools/`:
 
-```yaml
-- name: "additional_args"
-  type: "string"
-  description: "Extra CLI arguments; separate multiple options with spaces"
-  required: false
-  format: "positional"
-```
+- `nmap.yaml`: Network scanner (`scan_type` and `additional_args`).
+- `sqlmap.yaml`: SQL injection (`additional_args`).
+- `nikto.yaml`: Web server scanner.
+- `dirb.yaml`: Directory scanner.
+- `exec.yaml`: System command execution.
 
-Examples:
-- `additional_args: "--script vuln -O"` → `["--script", "vuln", "-O"]`
-- `additional_args: "-T4 --max-retries 3"` → `["-T4", "--max-retries", "3"]`
-
-Notes:
-- Quoted strings are preserved.  
-- Validate user input to avoid command injection.  
-- Appended at the end of the final command.
-
-### `scan_type`
-
-```yaml
-- name: "scan_type"
-  type: "string"
-  description: "Overrides default scan switches"
-  required: false
-  format: "positional"
-```
-
-Examples:
-- `scan_type: "-sV -sC"`  
-- `scan_type: "-A"`
-
-Notes:
-- Replaces default entries in the tool’s `args` list.  
-- Separate multiple flags with spaces.
-
-## Complete Example (`nmap`)
+### Full Example: nmap
 
 ```yaml
 name: "nmap"
 command: "nmap"
-args: ["-sT", "-sV", "-sC"]
+args: ["-sT", "-sV", "-sC"]  # default scan type
 enabled: true
 
 short_description: "Network scanner for discovering hosts, open ports, and services"
 
 description: |
-  Network mapping and port scanning utility.
+  Network mapping and port scanning for hosts, services, and open ports.
 
-  **Highlights**
+  **Capabilities:**
   - Host discovery
   - Port scanning
-  - Service identification
-  - OS fingerprinting
+  - Service/version detection
+  - OS detection
   - NSE-based vulnerability checks
 
 parameters:
@@ -224,62 +248,80 @@ parameters:
 
   - name: "ports"
     type: "string"
-    description: "Port range, e.g., 1-1000"
+    description: "Port range, e.g. 1-1000"
     required: false
     flag: "-p"
     format: "flag"
 
   - name: "scan_type"
     type: "string"
-    description: "Override scan switches, e.g., '-sV -sC'"
+    description: "Scan type options, e.g. '-sV -sC'"
     required: false
     format: "positional"
 
   - name: "additional_args"
     type: "string"
-    description: "Extra nmap arguments, e.g., '--script vuln -O'"
+    description: "Extra nmap arguments, e.g. '--script vuln -O'"
     required: false
     format: "positional"
 ```
 
 ## Adding a New Tool
 
-1. Create a YAML file in `tools/` (e.g., `tools/mytool.yaml`).  
-2. Fill out the top-level fields and parameter list.  
-3. Provide defaults and rich descriptions wherever possible.  
-4. Run `go run cmd/test-config/main.go` to validate the configuration.  
-5. Restart the service (or trigger a reload) so the UI and MCP registry pick up the change.
-
-### Template
+Create a new YAML file under `tools/`, e.g. `my_tool.yaml`:
 
 ```yaml
-name: "tool_name"
-command: "command"
+name: "my_tool"
+command: "my-command"
+args: ["--default-arg"]  # optional fixed args
 enabled: true
 
-short_description: "One-line summary"
+# Short description (recommended) – for tool list, fewer tokens
+short_description: "One-line summary of what the tool does"
 
+# Full description – for docs and AI
 description: |
-  Detailed description with Markdown formatting.
+  Full description; multi-line and Markdown supported.
+
+  **Capabilities:**
+  - Feature 1
+  - Feature 2
+
+  **Usage:**
+  - Scenario 1
+  - Scenario 2
+
+  **Notes:**
+  - Caveats
+  - Permissions
+  - Performance
 
 parameters:
   - name: "target"
     type: "string"
-    description: "Explain the expected value, format, examples, and caveats"
+    description: |
+      Target parameter description.
+
+      **Example values:**
+      - "value1"
+      - "value2"
+
+      **Notes:**
+      - Format and limits
     required: true
     position: 0
     format: "positional"
 
   - name: "option"
     type: "string"
-    description: "Optional flag parameter"
+    description: "Option parameter"
     required: false
     flag: "--option"
     format: "flag"
 
   - name: "verbose"
     type: "bool"
-    description: "Enable verbose mode"
+    description: "Verbose mode"
     required: false
     default: false
     flag: "-v"
@@ -287,33 +329,170 @@ parameters:
 
   - name: "additional_args"
     type: "string"
-    description: "Extra CLI options separated by spaces"
+    description: "Extra arguments; separate with spaces"
     required: false
     format: "positional"
 ```
 
-## Validation & Troubleshooting
+Restart the service to load the new tool.
 
-- ✅ Verify required fields: `name`, `command`, `enabled`, `description`.  
-- ✅ Ensure parameter definitions use supported types and formats.  
-- ✅ Watch server logs for warnings when a tool fails to load.  
-- ✅ Use `go run cmd/test-config/main.go` to inspect parsed tool metadata.
+### Best Practices
 
-## Best Practices
+1. **Parameter design**
+   - Define common parameters explicitly so the AI can use them.
+   - Use `additional_args` for advanced cases.
+   - Provide clear descriptions and examples.
 
-1. **Parameter design** – expose common flags individually; leverage `additional_args` for advanced scenarios.  
-2. **Documentation** – combine `short_description` with thorough `description` to balance brevity and clarity.  
-3. **Defaults** – provide sensible `default` values, especially for frequently used options.  
-4. **Validation prompts** – describe expected formats and highlight constraints to help the AI and users avoid mistakes.  
-5. **Safety** – warn about privileged commands, destructive actions, or high-impact scans.
+2. **Descriptions**
+   - Use `short_description` to reduce tokens.
+   - Keep `description` detailed for AI and docs.
+   - Use Markdown for readability.
+
+3. **Defaults**
+   - Set sensible defaults for common parameters.
+   - Booleans often default to `false`.
+   - Numbers according to tool behavior.
+
+4. **Validation**
+   - Document format and constraints.
+   - Give several example values.
+   - Mention limits and caveats.
+
+5. **Safety**
+   - Add warnings for dangerous or privileged actions.
+   - Document permission requirements.
+   - Remind users to use only in authorized environments.
+
+6. **Execution duration and timeout**
+   - If a tool often runs very long (e.g. still “running” after 10–30 minutes), treat it as abnormal and:
+     - Set **config.yaml** → `agent.tool_timeout_minutes` (default 10) so long runs are stopped and resources freed.
+     - Increase it (e.g. 20, 30) only when longer runs are needed; avoid `0` (no limit).
+     - Use “Stop task” on the task monitor to cancel the whole run.
+     - Prefer tools that support cancellation or an internal timeout so they align with the global timeout.
 
 ## Disabling a Tool
 
-Set `enabled: false` or remove/rename the YAML file. Disabled tools disappear from the UI and MCP inventory.
+Set `enabled: false` in the tool’s config, or remove/rename the file. Disabled tools are not listed and cannot be called by the AI.
+
+## Tool Configuration Validation
+
+On load, the system checks:
+
+- ✅ Required fields: `name`, `command`, `enabled`.
+- ✅ Parameter structure and types.
+
+Invalid configs produce startup warnings but do not prevent the server from starting. Invalid tools are skipped; others still load.
+
+## FAQ
+
+### Q: How do I pass multiple parameter values?
+
+A: Array parameters are turned into comma-separated strings. For multiple separate arguments, use `additional_args`.
+
+### Q: How do I override a tool’s default arguments?
+
+A: Some tools (e.g. `nmap`) support a `scan_type` parameter. Otherwise use `additional_args`.
+
+### Q: A tool has been “running” for over 30 minutes. What should I do?
+
+A: That usually means it’s stuck. You can:
+1. Set `agent.tool_timeout_minutes` in **config.yaml** (default 10) so single tool runs are stopped after that many minutes.
+2. Use “Stop task” on the task monitor to stop the run immediately.
+3. If the tool legitimately needs more time, increase `tool_timeout_minutes` (avoid setting it to 0).
+
+### Q: What if tool execution fails?
+
+A: Check:
+1. The tool is installed and on PATH.
+2. The tool config is correct.
+3. Parameter formats match what the tool expects.
+4. Server logs for the exact error.
+
+### Q: How can I test a tool configuration?
+
+A: Use the config test utility:
+```bash
+go run cmd/test-config/main.go
+```
+
+### Q: How is parameter order controlled?
+
+A: Use the `position` field for positional arguments. **Position 0** (e.g. gobuster’s `dir` subcommand) is placed right after the command, before any flag arguments, so CLIs that expect “subcommand + options” work. Other flags are added in the order they appear in `parameters`, then position 1, 2, …; `additional_args` is appended last.
+
+## Tool Configuration Templates
+
+### Basic template
+
+```yaml
+name: "tool_name"
+command: "command"
+enabled: true
+
+short_description: "Short description (20–50 chars)"
+
+description: |
+  Full description: what it does, when to use it, and caveats.
+
+parameters:
+  - name: "target"
+    type: "string"
+    description: "Target parameter"
+    required: true
+    position: 0
+    format: "positional"
+
+  - name: "additional_args"
+    type: "string"
+    description: "Extra CLI arguments"
+    required: false
+    format: "positional"
+```
+
+### Template with flag parameters
+
+```yaml
+name: "tool_name"
+command: "command"
+enabled: true
+
+short_description: "Short description"
+
+description: |
+  Full description.
+
+parameters:
+  - name: "target"
+    type: "string"
+    description: "Target"
+    required: true
+    flag: "-t"
+    format: "flag"
+
+  - name: "option"
+    type: "bool"
+    description: "Option"
+    required: false
+    default: false
+    flag: "--option"
+    format: "flag"
+
+  - name: "level"
+    type: "int"
+    description: "Level"
+    required: false
+    default: 3
+    flag: "--level"
+    format: "combined"
+
+  - name: "additional_args"
+    type: "string"
+    description: "Extra arguments"
+    required: false
+    format: "positional"
+```
 
 ## Related Documents
 
-- Main project README: `../README.md`  
-- Tool list samples: `tools/*.yaml`  
-- API overview: see the main README
-
+- Main project README: see `README.md` in the project root.
+- Tool list: all YAML configs under `tools/`.
+- API: see the main README for API details.

@@ -1,5 +1,5 @@
 /**
- * System Settings - Terminal: multi-tab, streaming output, command history, Ctrl+L to clear, long-running task can be cancelled
+ * 系统设置 - 终端：多标签、流式输出、命令历史、Ctrl+L 清屏、长时间可取消
  */
 (function () {
     var getContext = HTMLCanvasElement.prototype.getContext;
@@ -15,7 +15,7 @@
     var currentTabId = 1;
     var inited = false;
     var tabIdCounter = 1;
-    var PROMPT = ''; // The real shell outputs its own prompt; no custom prompt here
+    var PROMPT = ''; // 真实 Shell 自己输出提示符，这里不再自定义
     var HISTORY_MAX = 100;
     var CANCEL_AFTER_MS = 125000;
 
@@ -26,16 +26,42 @@
         return terminals[0] || null;
     }
 
-    var WELCOME_LINE = 'CyberStrikeAI Terminal - Real shell session; type commands directly; Ctrl+L to clear\r\n';
+    function tr(key, opts) {
+        if (typeof window !== 'undefined' && typeof window.t === 'function') {
+            return window.t(key, opts);
+        }
+        // i18n 未就绪时的后备（与 zh-CN 一致）
+        var fallbacks = {
+            'settingsTerminal.welcomeLine': 'CyberStrikeAI 终端 - 真实 Shell 会话，直接输入命令；Ctrl+L 清屏',
+            'settingsTerminal.sessionClosed': '[会话已关闭]',
+            'settingsTerminal.connectionError': '[终端连接出错]',
+            'settingsTerminal.connectFailed': '[无法连接终端服务: {{msg}}]',
+            'settingsTerminal.closeTabTitle': '关闭',
+            'settingsTerminal.containerClickTitle': '点击此处后输入命令',
+            'settingsTerminal.xtermNotLoaded': '未加载 xterm.js，请刷新页面或检查网络。',
+            'settingsTerminal.terminalTab': '终端 {{n}}'
+        };
+        var s = fallbacks[key] || key;
+        if (opts && typeof opts === 'object') {
+            Object.keys(opts).forEach(function (k) {
+                s = s.split('{{' + k + '}}').join(String(opts[k]));
+            });
+        }
+        return s;
+    }
+
+    function getWelcomeLine() {
+        return tr('settingsTerminal.welcomeLine') + '\r\n';
+    }
 
     function writePrompt(tab) {
-        // The backend shell outputs its own prompt; keep this placeholder to avoid errors in old code
+        // 提示符交由后端 Shell 自行输出，这里仅保留占位函数，避免旧代码报错
     }
 
     function redrawTabDisplay(t) {
         if (!t || !t.term) return;
         t.term.clear();
-        t.term.write(WELCOME_LINE);
+        t.term.write(getWelcomeLine());
     }
 
     function writeln(tabOrS, s) {
@@ -61,11 +87,26 @@
         t.term.write(suffix);
     }
 
-    // Build WebSocket URL (supports http/https). Authentication uses the
-    // same-origin HttpOnly auth cookie set at login time.
+    // 从本地存储中获取当前登录 token（与 auth.js 使用的结构保持一致）
+    function getStoredAuthToken() {
+        try {
+            var raw = localStorage.getItem('cyberstrike-auth');
+            if (!raw) return null;
+            var o = JSON.parse(raw);
+            if (o && o.token) return o.token;
+        } catch (e) {}
+        return null;
+    }
+
+    // WebSocket 地址构造（兼容 http/https，并通过 query 传递 token 以通过后端鉴权）
     function buildTerminalWSURL() {
         var proto = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-        return proto + window.location.host + '/api/terminal/ws';
+        var url = proto + window.location.host + '/api/terminal/ws';
+        var token = getStoredAuthToken();
+        if (token) {
+            url += '?token=' + encodeURIComponent(token);
+        }
+        return url;
     }
 
     function ensureTerminalWS(tab) {
@@ -85,25 +126,40 @@
 
             ws.onmessage = function (ev) {
                 if (!tab.term) return;
-                tab.term.write(ev.data);
+                // 处理二进制消息和文本消息
+                if (ev.data instanceof ArrayBuffer) {
+                    var decoder = new TextDecoder('utf-8');
+                    tab.term.write(decoder.decode(ev.data));
+                } else if (ev.data instanceof Blob) {
+                    // Blob 类型，需要异步读取
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        var decoder = new TextDecoder('utf-8');
+                        tab.term.write(decoder.decode(reader.result));
+                    };
+                    reader.readAsArrayBuffer(ev.data);
+                } else {
+                    // 字符串类型
+                    tab.term.write(ev.data);
+                }
             };
 
             ws.onclose = function () {
                 tab.running = false;
                 if (tab.term) {
-                    tab.term.writeln('\r\n\x1b[2m[Session closed]\x1b[0m');
+                    tab.term.writeln('\r\n\x1b[2m' + tr('settingsTerminal.sessionClosed') + '\x1b[0m');
                 }
             };
 
             ws.onerror = function () {
                 tab.running = false;
                 if (tab.term) {
-                    tab.term.writeln('\r\n\x1b[31m[Terminal connection error]\x1b[0m');
+                    tab.term.writeln('\r\n\x1b[31m' + tr('settingsTerminal.connectionError') + '\x1b[0m');
                 }
             };
         } catch (e) {
             if (tab.term) {
-                tab.term.writeln('\r\n\x1b[31m[Unable to connect to terminal service: ' + String(e) + ']\x1b[0m');
+                tab.term.writeln('\r\n\x1b[31m' + tr('settingsTerminal.connectFailed', { msg: String(e) }) + '\x1b[0m');
             }
         }
     }
@@ -152,13 +208,13 @@
             term.loadAddon(fitAddon);
         }
         term.open(container);
-        term.write(WELCOME_LINE);
+        term.write(getWelcomeLine());
         container.addEventListener('click', function () {
             switchTerminalTab(tab.id);
             if (term) term.focus();
         });
         container.setAttribute('tabindex', '0');
-        container.title = 'Click here to enter commands';
+        container.title = tr('settingsTerminal.containerClickTitle');
 
         function sendToWS(data) {
             ensureTerminalWS(tab);
@@ -170,7 +226,7 @@
         }
 
         term.onData(function (data) {
-            // Ctrl+L: clear locally and also send ^L to the backend
+            // Ctrl+L：本地清屏，同时把 ^L 也发给后端
             if (data === '\x0c') {
                 term.clear();
                 sendToWS(data);
@@ -181,6 +237,9 @@
 
         tab.term = term;
         tab.fitAddon = fitAddon;
+        // 立即建立 WebSocket，让后端 PTY/Shell 马上启动并输出提示符；
+        // 若等到首次按键才 connect，用户会感觉必须先按回车才能输入（实为连接尚未建立）。
+        ensureTerminalWS(tab);
         return term;
     }
 
@@ -223,12 +282,12 @@
         tabDiv.setAttribute('data-tab-id', String(id));
         var label = document.createElement('span');
         label.className = 'terminal-tab-label';
-        label.textContent = 'Terminal ' + id;
+        label.textContent = tr('settingsTerminal.terminalTab', { n: id });
         label.onclick = function () { switchTerminalTab(id); };
         var closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'terminal-tab-close';
-        closeBtn.title = 'Close';
+        closeBtn.title = tr('settingsTerminal.closeTabTitle');
         closeBtn.textContent = '×';
         closeBtn.onclick = function (e) { e.stopPropagation(); removeTerminalTab(id); };
         tabDiv.appendChild(label);
@@ -310,7 +369,7 @@
                 var t = terminals[i];
                 tabDivs[i].setAttribute('data-tab-id', String(t.id));
                 var lbl = tabDivs[i].querySelector('.terminal-tab-label');
-                if (lbl) lbl.textContent = 'Terminal ' + t.id;
+                if (lbl) lbl.textContent = tr('settingsTerminal.terminalTab', { n: t.id });
                 if (lbl) lbl.onclick = (function (tid) { return function () { switchTerminalTab(tid); }; })(t.id);
                 var cb = tabDivs[i].querySelector('.terminal-tab-close');
                 if (cb) cb.onclick = (function (tid) { return function (e) { e.stopPropagation(); removeTerminalTab(tid); }; })(t.id);
@@ -334,6 +393,40 @@
         }
     }
 
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function refreshTerminalI18n() {
+        // 语言切换后更新标签与容器 title；已打开的终端内容不强制清屏，以免丢失会话输出
+        try {
+            var tabsEl = document.querySelector('.terminal-tabs');
+            if (tabsEl) {
+                var tabDivs = tabsEl.querySelectorAll('.terminal-tab');
+                for (var i = 0; i < tabDivs.length && i < terminals.length; i++) {
+                    var tid = terminals[i].id;
+                    var lbl = tabDivs[i].querySelector('.terminal-tab-label');
+                    if (lbl) lbl.textContent = tr('settingsTerminal.terminalTab', { n: tid });
+                    var cb = tabDivs[i].querySelector('.terminal-tab-close');
+                    if (cb) cb.title = tr('settingsTerminal.closeTabTitle');
+                }
+            }
+            terminals.forEach(function (tab) {
+                if (!tab || !tab.term) return;
+                var cont = document.getElementById(tab.containerId);
+                if (cont) cont.title = tr('settingsTerminal.containerClickTitle');
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    document.addEventListener('languagechange', function () {
+        refreshTerminalI18n();
+    });
+
     function initTerminal() {
         var pane1 = document.getElementById('terminal-pane-1');
         var container1 = document.getElementById('terminal-container-1');
@@ -347,7 +440,7 @@
         inited = true;
 
         if (typeof Terminal === 'undefined') {
-            container1.innerHTML = '<p class="terminal-error">xterm.js not loaded. Please refresh the page or check your network connection.</p>';
+            container1.innerHTML = '<p class="terminal-error">' + escapeHtml(tr('settingsTerminal.xtermNotLoaded')) + '</p>';
             return;
         }
 
@@ -357,6 +450,8 @@
         createTerminalInContainer(container1, tab);
 
         updateTerminalTabCloseVisibility();
+
+        refreshTerminalI18n();
 
         setTimeout(function () {
             try { if (tab.fitAddon) tab.fitAddon.fit(); if (tab.term) tab.term.focus(); } catch (e) {}

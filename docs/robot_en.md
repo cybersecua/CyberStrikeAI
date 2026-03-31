@@ -1,8 +1,8 @@
 # CyberStrikeAI Robot / Chatbot Guide
 
-[Chinese](robot.md)
+[中文](robot.md)
 
-This document explains how to chat with CyberStrikeAI from **Lark (Feishu)** and **Telegram** using long-lived connections—no need to open a browser on the server. Following the steps below helps avoid common mistakes.
+This document explains how to chat with CyberStrikeAI from **DingTalk**, **Lark (Feishu)**, and **WeCom (Enterprise WeChat)** using long-lived connections or HTTP callbacks—no need to open a browser on the server. Following the steps below helps avoid common mistakes.
 
 ---
 
@@ -11,20 +11,21 @@ This document explains how to chat with CyberStrikeAI from **Lark (Feishu)** and
 1. Log in to the CyberStrikeAI web UI.
 2. Open **System Settings** in the left sidebar.
 3. Click **Robot settings** (between “Basic” and “Security”).
-4. Enable the platform and fill in credentials (Lark: App ID / App Secret).
+4. Enable the platform and fill in credentials (DingTalk: Client ID / Client Secret; Lark: App ID / App Secret).
 5. Click **Apply configuration** to save.
 6. **Restart the CyberStrikeAI process** (saving alone does not establish the connection).
 
-Settings are written to the `robots` section of `config.yaml`; you can also edit the file directly. **After changing Lark config, you must restart for the long-lived connection to take effect.**
+Settings are written to the `robots` section of `config.yaml`; you can also edit the file directly. **After changing DingTalk or Lark config, you must restart for the long-lived connection to take effect.**
 
 ---
 
-## 2. Supported platforms (long-lived connection)
+## 2. Supported platforms (long-lived / callback)
 
-| Platform | Description |
-|----------|-------------|
-| Lark (Feishu) | Long-lived connection; the app connects to Lark to receive messages |
-| Telegram | Long-polling connection; the app polls Telegram's Bot API for messages |
+| Platform       | Description |
+|----------------|-------------|
+| DingTalk       | Stream long-lived connection; the app connects to DingTalk to receive messages |
+| Lark (Feishu)  | Long-lived connection; the app connects to Lark to receive messages |
+| WeCom (Qiye WX)| HTTP callback to receive messages; CyberStrikeAI replies via WeCom’s message sending API |
 
 Section 3 below describes, per platform, what to do in the developer console and which fields to copy into CyberStrikeAI.
 
@@ -32,7 +33,62 @@ Section 3 below describes, per platform, what to do in the developer console and
 
 ## 3. Configuration and step-by-step setup
 
-### 3.1 Lark (Feishu)
+### 3.1 DingTalk
+
+**Important: two types of DingTalk bots**
+
+| Type | Where it’s created | Can do “user sends message → bot replies”? | Supported here? |
+|------|-------------------|-------------------------------------------|------------------|
+| **Custom bot (Webhook)** | In a DingTalk group: Group settings → Add robot → Custom (Webhook) | No; you can only post to the group | No |
+| **Enterprise internal app bot** | [DingTalk Open Platform](https://open.dingtalk.com): create an app and enable the bot | Yes | Yes |
+
+If you only have a **custom bot** Webhook URL (`oapi.dingtalk.com/robot/send?access_token=...`) and sign secret (`SEC...`), **do not** put them into CyberStrikeAI. You must create an **enterprise internal app** in the open platform and obtain **Client ID** and **Client Secret** as below.
+
+---
+
+**DingTalk setup (in order)**
+
+1. **Open DingTalk Open Platform**  
+   Go to [https://open.dingtalk.com](https://open.dingtalk.com) and log in with an **enterprise admin** account.
+
+2. **Create or select an app**  
+   In the left menu: **Application development** → **Enterprise internal development** → **Create application** (or choose an existing app). Fill in the app name and create.
+
+3. **Get Client ID and Client Secret**  
+   - In the left menu open **Credentials and basic info** (under “Basic information”).  
+   - Copy **Client ID (formerly AppKey)** and **Client Secret (formerly AppSecret)**.  
+   - Use copy/paste; avoid typing by hand. Watch for **0** vs **o** and **1** vs **l** (e.g. `ding9gf9tiozuc504aer` has the digits **504**, not 5o4).
+
+4. **Enable the bot and choose Stream mode**  
+   - Left menu: **Application capabilities** → **Robot**.  
+   - Turn on “Robot configuration”.  
+   - Fill in robot name, description, etc. as required.  
+   - **Critical**: set message reception to **“Stream mode”** (流式接入). If you only enable “HTTP callback” or do not select Stream, CyberStrikeAI will not receive messages.  
+   - Save.
+
+5. **Permissions and release**  
+   - Left menu: **Permission management** — search for “robot”, “message”, etc., and enable **receive message**, **send message**, and other bot-related permissions; confirm.  
+   - Left menu: **Version management and release** — if there are unpublished changes, click **Release new version** / **Publish**; otherwise changes do not take effect.
+
+6. **Fill in CyberStrikeAI**  
+   - In CyberStrikeAI: System settings → Robot settings → DingTalk.  
+   - Enable “Enable DingTalk robot”.  
+   - Paste the Client ID and Client Secret from step 3.  
+   - Click **Apply configuration**, then **restart CyberStrikeAI**.
+
+---
+
+**Field mapping (DingTalk)**
+
+| Field in CyberStrikeAI | Source in DingTalk Open Platform |
+|------------------------|----------------------------------|
+| Enable DingTalk robot | Check to enable |
+| Client ID (AppKey) | Credentials and basic info → **Client ID (formerly AppKey)** |
+| Client Secret | Credentials and basic info → **Client Secret (formerly AppSecret)** |
+
+---
+
+### 3.2 Lark (Feishu)
 
 | Field | Description |
 |-------|-------------|
@@ -41,89 +97,74 @@ Section 3 below describes, per platform, what to do in the developer console and
 | App Secret | From Lark open platform app credentials |
 | Verify Token | Optional; for event subscription |
 
-**Lark setup in short**: Log in to [Lark Open Platform](https://open.feishu.cn) → Create an enterprise app → In “Credentials and basic info” get **App ID** and **App Secret** → In “Application capabilities” enable **Robot** and the right permissions → Publish the app → Enter App ID and App Secret in CyberStrikeAI robot settings → Save and **restart** the app.
+**Lark setup in short**: Log in to [Lark Open Platform](https://open.feishu.cn) → Create an enterprise app → In “Credentials and basic info” get **App ID** and **App Secret** → In “Application capabilities” enable **Robot** and the right permissions → Add **event subscription** and **permissions** below → Publish the app → Enter App ID and App Secret in CyberStrikeAI robot settings → Save and **restart** the app.
+
+**Event subscription**  
+The long-lived connection only receives message events if you subscribe to them. In the app’s **Events and callbacks** (事件与回调) → **Event subscription** (事件订阅), add the event **Receive message** (**im.message.receive_v1**). Without it, the connection succeeds but no message events are delivered (no logs when users send messages).
+
+**Lark permissions (required)**  
+In **Permission management** (权限管理), enable the following (names and identifiers match the Lark console). After changes, **publish a new version** in Version management and release so they take effect.
+
+| Permission name (as shown in console) | Identifier | Notes |
+|--------------------------------------|------------|-------|
+| 获取与发送单聊、群组消息 (Get and send direct & group messages) | `im:message` | Base permission for sending and receiving; **required**. |
+| 接收群聊中@机器人消息事件 (Receive @bot messages in group chat) | `im:message.group_at_msg:readonly` | Required for group chat when users @ the bot. |
+| 读取用户发给机器人的单聊消息 (Read direct messages from users to bot) | `im:message.p2p_msg:readonly` | **Required** for 1:1 chat; otherwise no response in private chat. |
+| 获取单聊、群组消息 (Get direct & group messages) | `im:message:readonly` | **Required** to read message content. |
+
+**Event subscription** (configured separately): In **Event subscription** (事件订阅), add **Receive message** (**im.message.receive_v1**). Without it, the long-lived connection will not receive message events.
+
+- **1:1 chat**: Open the bot’s private chat in Lark and send e.g. “帮助” or “help”; no @ needed.  
+- **Group chat**: Only messages that **@ the bot** are received and replied to.
 
 ---
 
-### 3.2 Telegram
+### 3.3 WeCom (Enterprise WeChat)
 
-| Field | Description |
-|-------|-------------|
-| Enable Telegram bot | Check to start the Telegram long-polling connection |
-| Bot Token | Token issued by @BotFather when you create a new bot |
-| Allowed User IDs | Comma-separated Telegram user IDs that may use the bot; leave empty to allow everyone |
+> WeCom uses a **“HTTP callback + active message send API”** model:  
+> - User sends a message → WeCom sends an **encrypted XML callback** to your server (CyberStrikeAI’s `/api/robot/wecom`).  
+> - CyberStrikeAI decrypts it, calls the AI, then uses WeCom’s `message/send` API to **actively push the reply** to the user.
 
-**How Telegram bots work in CyberStrikeAI**
+**Configuration overview:**
 
-CyberStrikeAI uses Telegram's **long-polling** mechanism (`getUpdates`): the app continuously polls Telegram's Bot API servers for new messages. No public IP address, no webhook URL, and no port-forwarding are required—the connection is outbound-only.
+- In the WeCom admin console, create or select a **custom app** (自建应用).
+- In that app’s settings, configure the message **callback URL**, **Token**, and **EncodingAESKey**.
+- In CyberStrikeAI’s `config.yaml`, fill in:
+  - `robots.wecom.corp_id`: your CorpID (企业 ID)
+  - `robots.wecom.agent_id`: the app’s AgentId
+  - `robots.wecom.token`: the Token used for message callbacks
+  - `robots.wecom.encoding_aes_key`: the EncodingAESKey used for callbacks
+  - `robots.wecom.secret`: the app’s Secret (used when calling WeCom APIs to send messages)
 
-**Telegram setup (step-by-step)**
-
-1. **Create a bot via @BotFather**
-   - Open Telegram and search for **@BotFather** (official, verified account).
-   - Send `/newbot` and follow the prompts (choose a name and username for your bot).
-   - BotFather will reply with a **token** that looks like `123456789:ABCDEFGHIJabcdefghij...`.
-   - Copy the full token; you will need it in the next step.
-
-2. **Enter the token in CyberStrikeAI**
-   - Log in to the CyberStrikeAI web UI.
-   - Go to **System Settings** → **Bot Settings** → **Telegram**.
-   - Enable the toggle and paste the bot token in the **Bot Token** field.
-   - Click **Apply configuration** and **restart CyberStrikeAI**.
-
-3. **Restrict access (recommended)**
-   - By default, *any* Telegram user who finds your bot can send messages to it.
-   - To restrict access, enter a comma-separated list of your Telegram user IDs in **Allowed User IDs**.
-   - Find your Telegram user ID by messaging [@userinfobot](https://t.me/userinfobot) on Telegram.
-   - Example: `123456789,987654321` — only those two users may use the bot.
-   - Leave the field empty to allow all users (not recommended for production).
-
-4. **Start chatting**
-   - In Telegram, search for your bot by its username and open a **direct chat**.
-   - Send `help` to see the available commands.
-   - In groups, the bot only responds to messages that **@ mention** it (e.g. `@YourBot scan this target`).
-
-**Field mapping (Telegram)**
-
-| Field in CyberStrikeAI | Source |
-|------------------------|--------|
-| Enable Telegram bot | Check to enable long-polling |
-| Bot Token | @BotFather → `/newbot` → copy the token |
-| Allowed User IDs | Your Telegram user ID from @userinfobot |
-
-**Progress streaming**
-
-Unlike Lark (which returns a single reply at the end), the Telegram bot provides **live progress updates**:
-
-1. When you send a message, the bot immediately replies with `⏳ Processing your request...`.
-2. As the AI agent works (calling tools, running scans, analyzing results), the message is periodically **edited in place** to show the current step — e.g. `⚙️ Working... (step 3) calling tool: nmap`.
-3. A “typing...” indicator is shown while the agent is thinking.
-4. When the agent finishes, the message is updated with the **complete final response**.
-5. Responses longer than Telegram's 4096-character limit are split into multiple messages automatically.
-
-**Multiple user support**
-
-Each Telegram user gets an independent conversation session. Session state (active conversation, selected role) is tracked per user ID, exactly like Lark. Multiple users can interact with the bot simultaneously without interfering with each other.
+> **Important: IP allowlist (errcode 60020)**  
+> CyberStrikeAI calls `https://qyapi.weixin.qq.com/cgi-bin/message/send` to actively send AI replies.  
+> If logs show `errcode 60020 not allow to access from your ip`:
+>
+> - Your server’s outbound IP is **not in WeCom’s IP allowlist**.  
+> - In the WeCom admin console, open the custom app’s **Security / IP allowlist** settings (name may vary slightly), and add the public IP of the machine running CyberStrikeAI (e.g. `110.xxx.xxx.xxx`).  
+> - Save and wait for it to take effect, then test again.
+>
+> If the IP is not whitelisted, WeCom will reject active message sending. You will see that `/api/robot/wecom` receives and processes callbacks, but users **never see AI replies**, and logs contain `not allow to access from your ip`.
 
 ---
 
 ## 4. Bot commands
 
-Send these **text commands** to the bot in Lark or Telegram (text only):
+Send these **text commands** to the bot in DingTalk or Lark (text only):
 
 | Command | Description |
 |---------|-------------|
-| **help** | Show command help |
-| **list** or **conversations** | List all conversation titles and IDs |
-| **switch \<conversationID\>** or **continue \<conversationID\>** | Continue in the given conversation |
-| **new** | Start a new conversation |
-| **clear** | Clear current context (same effect as new conversation) |
-| **current** | Show current conversation ID and title |
-| **stop** | Abort the currently running task |
-| **roles** or **role list** | List all available roles (penetration testing, CTF, Web scan, etc.) |
-| **role \<roleName\>** or **switch role \<roleName\>** | Switch to the specified role |
-| **delete \<conversationID\>** | Delete the specified conversation |
-| **version** | Show current CyberStrikeAI version |
+| **帮助** (help) | Show command help |
+| **列表** or **对话列表** (list) | List all conversation titles and IDs |
+| **切换 \<conversationID\>** or **继续 \<conversationID\>** | Continue in the given conversation |
+| **新对话** (new) | Start a new conversation |
+| **清空** (clear) | Clear current context (same effect as new conversation) |
+| **当前** (current) | Show current conversation ID and title |
+| **停止** (stop) | Abort the currently running task |
+| **角色** or **角色列表** (roles) | List all available roles (penetration testing, CTF, Web scan, etc.) |
+| **角色 \<roleName\>** or **切换角色 \<roleName\>** | Switch to the specified role |
+| **删除 \<conversationID\>** | Delete the specified conversation |
+| **版本** (version) | Show current CyberStrikeAI version |
 
 Any other text is sent to the AI as a user message, same as in the web UI (e.g. penetration testing, security analysis).
 
@@ -131,7 +172,7 @@ Any other text is sent to the AI as a user message, same as in the web UI (e.g. 
 
 ## 5. How to use (do I need to @ the bot?)
 
-- **Direct chat (recommended)**: In Lark or Telegram, **search for the bot and open a direct chat**. Type “help” or any message; **no @ needed**.
+- **Direct chat (recommended)**: In DingTalk or Lark, **search for the bot and open a direct chat**. Type “帮助” or any message; **no @ needed**.  
 - **Group chat**: If the bot is in a group, only messages that **@ the bot** are received and answered; other group messages are ignored.
 
 Summary: **Direct chat** — just send; **in a group** — @ the bot first, then send.
@@ -140,10 +181,10 @@ Summary: **Direct chat** — just send; **in a group** — @ the bot first, then
 
 ## 6. Recommended flow (so you don’t skip steps)
 
-1. **In the open platform**: Complete app creation, copy credentials, enable the bot, set permissions, and publish (Section 3).
-2. **In CyberStrikeAI**: System settings → Robot settings → Enable the platform, paste App ID and App Secret → **Apply configuration**.
-3. **Restart the CyberStrikeAI process** (otherwise the long-lived connection is not established).
-4. **On your phone**: Open Lark, find the bot (direct chat or @ in a group), send “help” or any message to test.
+1. **In the open platform**: Complete app creation, copy credentials, enable the bot (DingTalk: **Stream mode**), set permissions, and publish (Section 3).  
+2. **In CyberStrikeAI**: System settings → Robot settings → Enable the platform, paste Client ID/App ID and Client Secret/App Secret → **Apply configuration**.  
+3. **Restart the CyberStrikeAI process** (otherwise the long-lived connection is not established).  
+4. **On your phone**: Open DingTalk or Lark, find the bot (direct chat or @ in a group), send “帮助” or any message to test.
 
 If the bot does not respond, see **Section 9 (troubleshooting)** and **Section 10 (common pitfalls)**.
 
@@ -155,26 +196,24 @@ Example `robots` section in `config.yaml`:
 
 ```yaml
 robots:
+  dingtalk:
+    enabled: true
+    client_id: "your_dingtalk_app_key"
+    client_secret: "your_dingtalk_app_secret"
   lark:
     enabled: true
     app_id: "your_lark_app_id"
     app_secret: "your_lark_app_secret"
     verify_token: ""
-  telegram:
-    enabled: true
-    bot_token: "123456789:ABCDEFGHIJabcdefghij..."
-    allowed_user_ids:          # Leave empty to allow all users
-      - 123456789
-      - 987654321
 ```
 
 **Restart the app** after changes; the long-lived connection is created at startup.
 
 ---
 
-## 8. Testing without Lark/Telegram installed
+## 8. Testing without DingTalk/Lark installed
 
-You can verify bot logic with the **test API** (no messenger client needed):
+You can verify bot logic with the **test API** (no DingTalk/Lark client needed):
 
 1. Log in to the CyberStrikeAI web UI (so you have a session).
 2. Call the test endpoint with curl (include your session Cookie):
@@ -184,62 +223,50 @@ You can verify bot logic with the **test API** (no messenger client needed):
 curl -X POST "http://localhost:8080/api/robot/test" \
   -H "Content-Type: application/json" \
   -H "Cookie: YOUR_COOKIE" \
-  -d '{"platform":"telegram","user_id":"123456789","text":"help"}'
+  -d '{"platform":"dingtalk","user_id":"test_user","text":"帮助"}'
 ```
 
-If the JSON response contains `"reply":"[CyberStrikeAI Bot Commands]..."`, command handling works. You can also try `"text":"list"` or `"text":"current"`.
+If the JSON response contains `"reply":"【CyberStrikeAI 机器人命令】..."`, command handling works. You can also try `"text":"列表"` or `"text":"当前"`.
 
 API: `POST /api/robot/test` (requires login). Body: `{"platform":"optional","user_id":"optional","text":"required"}`. Response: `{"reply":"..."}`.
 
 ---
 
-## 9. Telegram: no response when sending messages
+## 9. DingTalk: no response when sending messages
 
 Check in this order:
 
-1. **Bot token is correct**
-   Check the `robots.telegram.bot_token` field in `config.yaml` — paste it directly from @BotFather without extra spaces. If the token is wrong, you will see `Telegram API error: Unauthorized` in the application logs.
+0. **After laptop sleep or network drop**  
+   DingTalk and Lark both use long-lived connections; they break when the machine sleeps or the network drops. The app **auto-reconnects** (retries within about 5–60 seconds). After wake or network recovery, wait a moment before sending; if there is still no response, restart the CyberStrikeAI process.
 
-2. **Did you restart after saving?**
-   Telegram long-polling starts at **startup**. "Apply configuration" only updates the config file; **restart CyberStrikeAI** for the connection to take effect.
+1. **Client ID / Client Secret match the open platform exactly**  
+   Copy from “Credentials and basic info”; avoid typing. Watch **0** vs **o** and **1** vs **l** (e.g. `ding9gf9tiozuc504aer` has **504**, not 5o4).
 
-3. **Application logs**
-   - On startup you should see: `Telegram bot connecting...` followed by `Telegram bot started username=@YourBot`.
-   - After sending a message, you should see `Telegram message received user_id=... content_preview=...` in the logs.
-   - `getMe failed: Unauthorized` → wrong token; re-copy it from @BotFather.
-   - `Telegram bot polling error, will reconnect` → network error; the bot will retry automatically.
+2. **Did you restart after saving?**  
+   The long-lived connection is created at **startup**. “Apply configuration” only updates the config file; you **must restart the CyberStrikeAI process** for the DingTalk connection to start.
 
-4. **User is not in the whitelist**
-   If `allowed_user_ids` is set and your user ID is not in the list, the bot replies `⛔ You are not authorized to use this bot.` — add your ID to the whitelist or leave the list empty.
+3. **Application logs**  
+   - On startup you should see: `钉钉 Stream 正在连接…`, `钉钉 Stream 已启动（无需公网），等待收消息`.  
+   - If you see `钉钉 Stream 长连接退出` with an error, it’s usually wrong **Client ID / Client Secret** or **Stream not enabled** in the open platform.  
+   - After sending a message in DingTalk, you should see `钉钉收到消息` in the logs; if not, the platform is not pushing to this app (check that the bot is enabled and **Stream mode** is selected).
 
-5. **Group chat: forgot to @ the bot**
-   In group chats, the bot ignores messages that do not mention it. Send `@YourBot help` to test.
-
-6. **Network connectivity**
-   The server running CyberStrikeAI must be able to reach `api.telegram.org` (port 443). If the server is behind a firewall or in a region where Telegram is blocked, set up a proxy or use a VPN.
+4. **Open platform**  
+   The app must be **published**. Under “Robot” you must enable **Stream** for receiving messages (HTTP callback only is not enough). Permission management must include robot receive/send message permissions.
 
 ---
 
 ## 10. Common pitfalls
 
-- **Saved but not restarted**: After changing robot settings in CyberStrikeAI you **must restart** the app, or the long-lived connection will not be established.
+- **Wrong bot type**: The “Custom” bot added in a DingTalk **group** (Webhook + sign secret) **cannot** be used for two-way chat. Only the **enterprise internal app** bot from the open platform is supported.  
+- **Saved but not restarted**: After changing robot settings in CyberStrikeAI you **must restart** the app, or the long-lived connection will not be established.  
+- **Client ID typo**: If the platform shows `504`, use `504` (not `5o4`); prefer copy/paste.  
+- **DingTalk: only HTTP callback, no Stream**: This app receives messages via **Stream**. In the open platform, message reception must be **Stream mode**.  
 - **App not published**: After changing the bot or permissions in the open platform, **publish a new version** under “Version management and release”, or changes won’t apply.
 
 ---
 
-## 11. Common pitfalls (Telegram-specific)
+## 11. Notes
 
-- **Wrong bot type**: Only bots created with **@BotFather** are supported. You cannot use a regular Telegram user account as a bot.
-- **Token leakage**: The bot token grants full control over the bot. Never commit it to version control; use `config.yaml` or environment variables, and restrict access with `allowed_user_ids`.
-- **No public IP needed**: Unlike some webhook-based bots, CyberStrikeAI uses long-polling. No port-forwarding or public IP is required — any machine with outbound HTTPS access to `api.telegram.org` works.
-- **Rate limits**: Telegram allows up to 30 messages/second globally and 1 message/second per chat. Progress edits are throttled internally (at most once every 3 seconds) to stay within limits.
-- **Message length**: Responses longer than 4096 characters are automatically split into multiple messages.
-
----
-
-## 12. Notes
-
-- All platforms: **text messages only**; other types (e.g. image, voice, sticker) are not supported and are ignored.
-- Conversations are shared with the web UI: conversations created from any bot appear in the web “Conversations” list and vice versa.
-- Bot execution uses the same logic as **`/api/agent-loop/stream`** (progress callbacks, process details stored in the DB).
-- Lark returns a single reply at the end of execution. Telegram additionally shows **live progress updates** by editing the placeholder message during execution.
+- DingTalk and Lark: **text messages only**; other types (e.g. image, voice) are not supported and may be ignored.  
+- Conversations are shared with the web UI: conversations created from the bot appear in the web “Conversations” list and vice versa.  
+- Bot execution uses the same logic as **`/api/agent-loop/stream`** (progress callbacks, process details stored in the DB); only the final reply is sent back to DingTalk/Lark in one message (no SSE to the client).

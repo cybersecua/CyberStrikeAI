@@ -1,18 +1,79 @@
-// API documentation page JavaScript
+// API文档页面JavaScript
 
 let apiSpec = null;
 let currentToken = null;
 
-// Initialize
+function _t(key, opts) {
+    return typeof window.t === 'function' ? window.t(key, opts) : key;
+}
+
+function waitForI18n() {
+    return new Promise(function (resolve) {
+        if (window.t) return resolve();
+        var n = 0;
+        var iv = setInterval(function () {
+            if (window.t) { clearInterval(iv); resolve(); return; }
+            n++;
+            if (n >= 100) { clearInterval(iv); resolve(); }
+        }, 50);
+    });
+}
+
+// 从 OpenAPI spec 的 x-i18n-tags 构建 tag -> i18n key 映射（方案 A：后端提供键）
+var apiSpecTagToKey = {};
+function buildApiSpecTagToKey() {
+    apiSpecTagToKey = {};
+    if (!apiSpec || !apiSpec.paths) return;
+    Object.keys(apiSpec.paths).forEach(function (path) {
+        var pathItem = apiSpec.paths[path];
+        if (!pathItem || typeof pathItem !== 'object') return;
+        ['get', 'post', 'put', 'delete', 'patch'].forEach(function (method) {
+            var op = pathItem[method];
+            if (!op || !op.tags || !op['x-i18n-tags']) return;
+            var tags = op.tags;
+            var keys = op['x-i18n-tags'];
+            for (var i = 0; i < tags.length && i < keys.length; i++) {
+                apiSpecTagToKey[tags[i]] = typeof keys[i] === 'string' ? keys[i] : keys[i];
+            }
+        });
+    });
+}
+function translateApiDocTag(tag) {
+    if (!tag) return tag;
+    var key = apiSpecTagToKey[tag];
+    return key ? _t('apiDocs.tags.' + key) : tag;
+}
+function translateApiDocSummaryFromOp(op) {
+    var key = op && op['x-i18n-summary'];
+    if (key) return _t('apiDocs.summary.' + key);
+    return op && op.summary ? op.summary : '';
+}
+function translateApiDocResponseDescFromResp(resp) {
+    if (!resp) return '';
+    var key = resp['x-i18n-description'];
+    if (key) return _t('apiDocs.response.' + key);
+    return resp.description || '';
+}
+
+// 初始化
 document.addEventListener('DOMContentLoaded', async () => {
+    await waitForI18n();
     await loadToken();
     await loadAPISpec();
     if (apiSpec) {
         renderAPIDocs();
     }
+    document.addEventListener('languagechange', function () {
+        if (typeof window.applyTranslations === 'function') {
+            window.applyTranslations(document);
+        }
+        if (apiSpec) {
+            renderAPIDocs();
+        }
+    });
 });
 
-// Load token
+// 加载token
 async function loadToken() {
     try {
         const authData = localStorage.getItem('cyberstrike-auth');
@@ -28,37 +89,40 @@ async function loadToken() {
         }
         currentToken = localStorage.getItem('swagger_auth_token');
     } catch (e) {
-        console.error('Failed to load token:', e);
+        console.error('加载token失败:', e);
     }
 }
 
-// Load OpenAPI specification
+// 加载OpenAPI规范
 async function loadAPISpec() {
     try {
-        const headers = new Headers();
+        let url = '/api/openapi/spec';
         if (currentToken) {
-            headers.set('Authorization', 'Bearer ' + currentToken);
+            url += '?token=' + encodeURIComponent(currentToken);
         }
-
-        const response = await fetch('/api/openapi/spec', { headers });
+        
+        const response = await fetch(url);
         if (!response.ok) {
             if (response.status === 401) {
-                showError('Login required to view API documentation. Please log in on the frontend page first, then refresh this page.');
+                showError(_t('apiDocs.errorLoginRequired'));
                 return;
             }
-            throw new Error('Failed to load API spec: ' + response.status);
+            throw new Error(_t('apiDocs.errorLoadSpec') + response.status);
         }
         
         apiSpec = await response.json();
+        buildApiSpecTagToKey();
     } catch (error) {
-        console.error('Failed to load API spec:', error);
-        showError('Failed to load API docs: ' + error.message);
+        console.error('加载API规范失败:', error);
+        showError(_t('apiDocs.errorLoadFailed') + error.message);
     }
 }
 
-// Show error
+// 显示错误
 function showError(message) {
     const main = document.getElementById('api-docs-main');
+    const loadFailed = _t('apiDocs.loadFailed');
+    const backToLogin = _t('apiDocs.backToLogin');
     main.innerHTML = `
         <div class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -66,54 +130,54 @@ function showError(message) {
                 <line x1="15" y1="9" x2="9" y2="15"/>
                 <line x1="9" y1="9" x2="15" y2="15"/>
             </svg>
-            <h3>Failed to load</h3>
-            <p>${message}</p>
+            <h3>${escapeHtml(loadFailed)}</h3>
+            <p>${escapeHtml(message)}</p>
             <div style="margin-top: 16px;">
-                <a href="/" style="color: var(--accent-color); text-decoration: none;">Back to Login</a>
+                <a href="/" style="color: var(--accent-color); text-decoration: none;">${escapeHtml(backToLogin)}</a>
             </div>
         </div>
     `;
 }
 
-// Render API documentation
+// 渲染API文档
 function renderAPIDocs() {
     if (!apiSpec || !apiSpec.paths) {
-        showError('API spec format error');
+        showError(_t('apiDocs.errorSpecInvalid'));
         return;
     }
     
-    // Show authentication info
+    // 显示认证说明
     renderAuthInfo();
     
-    // Render sidebar groups
+    // 渲染侧边栏分组
     renderSidebar();
     
-    // Render API endpoints
+    // 渲染API端点
     renderEndpoints();
 }
 
-// Render authentication info
+// 渲染认证说明
 function renderAuthInfo() {
     const authSection = document.getElementById('auth-info-section');
     if (!authSection) return;
     
-    // Show authentication section
+    // 显示认证说明部分
     authSection.style.display = 'block';
     
-    // Check if token exists
+    // 检查是否有token
     const tokenStatus = document.getElementById('token-status');
     if (currentToken && tokenStatus) {
         tokenStatus.style.display = 'block';
     } else if (tokenStatus) {
-        // If no token, show hint
+        // 如果没有token，显示提示
         tokenStatus.style.display = 'block';
         tokenStatus.style.background = 'rgba(255, 152, 0, 0.1)';
         tokenStatus.style.borderLeftColor = '#ff9800';
-        tokenStatus.innerHTML = '<p style="margin: 0; font-size: 0.8125rem; color: #ff9800;"><strong>⚠ Token not detected</strong> - Please log in on the frontend page first, then refresh this page. When testing, add Authorization: Bearer token</p>';
+        tokenStatus.innerHTML = '<p style="margin: 0; font-size: 0.8125rem; color: #ff9800;">' + escapeHtml(_t('apiDocs.tokenNotDetected')) + '</p>';
     }
 }
 
-// Render sidebar
+// 渲染侧边栏
 function renderSidebar() {
     const groups = new Set();
     Object.keys(apiSpec.paths).forEach(path => {
@@ -127,15 +191,18 @@ function renderSidebar() {
     
     const groupList = document.getElementById('api-group-list');
     const allGroups = Array.from(groups).sort();
-    
+    while (groupList.children.length > 1) {
+        groupList.removeChild(groupList.lastChild);
+    }
     allGroups.forEach(group => {
         const li = document.createElement('li');
         li.className = 'api-group-item';
-        li.innerHTML = `<a href="#" class="api-group-link" data-group="${group}">${group}</a>`;
+        const groupLabel = translateApiDocTag(group);
+        li.innerHTML = `<a href="#" class="api-group-link" data-group="${escapeHtml(group)}">${escapeHtml(groupLabel)}</a>`;
         groupList.appendChild(li);
     });
     
-    // Bind click events
+    // 绑定点击事件
     groupList.querySelectorAll('.api-group-link').forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
@@ -147,7 +214,7 @@ function renderSidebar() {
     });
 }
 
-// Render API endpoints
+// 渲染API端点
 function renderEndpoints(filterGroup = null) {
     const main = document.getElementById('api-docs-main');
     main.innerHTML = '';
@@ -167,7 +234,7 @@ function renderEndpoints(filterGroup = null) {
         });
     });
     
-    // Sort by group
+    // 按分组排序
     endpoints.sort((a, b) => {
         const tagA = a.tags && a.tags.length > 0 ? a.tags[0] : '';
         const tagB = b.tags && b.tags.length > 0 ? b.tags[0] : '';
@@ -176,7 +243,7 @@ function renderEndpoints(filterGroup = null) {
     });
     
     if (endpoints.length === 0) {
-        main.innerHTML = '<div class="empty-state"><h3>No API</h3><p>No API endpoints in this group</p></div>';
+        main.innerHTML = '<div class="empty-state"><h3>' + escapeHtml(_t('apiDocs.noApis')) + '</h3><p>' + escapeHtml(_t('apiDocs.noEndpointsInGroup')) + '</p></div>';
         return;
     }
     
@@ -185,15 +252,15 @@ function renderEndpoints(filterGroup = null) {
     });
 }
 
-// Create API endpoint card
+// 创建API端点卡片
 function createEndpointCard(endpoint) {
     const card = document.createElement('div');
     card.className = 'api-endpoint';
     
     const methodClass = endpoint.method.toLowerCase();
     const tags = endpoint.tags || [];
-    const tagHtml = tags.map(tag => `<span class="api-tag">${tag}</span>`).join('');
-    
+    const tagHtml = tags.map(tag => `<span class="api-tag">${escapeHtml(translateApiDocTag(tag))}</span>`).join('');
+    const summaryText = translateApiDocSummaryFromOp(endpoint);
     card.innerHTML = `
         <div class="api-endpoint-header">
             <div class="api-endpoint-title">
@@ -204,21 +271,21 @@ function createEndpointCard(endpoint) {
         </div>
         <div class="api-endpoint-body">
             <div class="api-section">
-                <div class="api-section-title">Description</div>
-                ${endpoint.summary ? `<div class="api-description" style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">${escapeHtml(endpoint.summary)}</div>` : ''}
+                <div class="api-section-title">${escapeHtml(_t('apiDocs.sectionDescription'))}</div>
+                ${summaryText ? `<div class="api-description" style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">${escapeHtml(summaryText)}</div>` : ''}
                 ${endpoint.description ? `
                     <div class="api-description-toggle">
                         <button class="description-toggle-btn" onclick="toggleDescription(this)">
                             <svg class="description-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="6 9 12 15 18 9"/>
                             </svg>
-                            <span>View details</span>
+                            <span>${escapeHtml(_t('apiDocs.viewDetailDesc'))}</span>
                         </button>
                         <div class="api-description-detail" style="display: none;">
                             ${formatDescription(endpoint.description)}
                         </div>
                     </div>
-                ` : endpoint.summary ? '' : '<div class="api-description">No description</div>'}
+                ` : endpoint.summary ? '' : '<div class="api-description">' + escapeHtml(_t('apiDocs.noDescription')) + '</div>'}
             </div>
             
             ${renderParameters(endpoint)}
@@ -231,14 +298,16 @@ function createEndpointCard(endpoint) {
     return card;
 }
 
-// Render parameters
+// 渲染参数
 function renderParameters(endpoint) {
     const params = endpoint.parameters || [];
     if (params.length === 0) return '';
     
+    const requiredLabel = escapeHtml(_t('apiDocs.required'));
+    const optionalLabel = escapeHtml(_t('apiDocs.optional'));
     const rows = params.map(param => {
-            const required = param.required ? '<span class="api-param-required">Required</span>' : '<span class="api-param-optional">Optional</span>';
-        // Process description text, convert newlines to <br>
+            const required = param.required ? '<span class="api-param-required">' + requiredLabel + '</span>' : '<span class="api-param-optional">' + optionalLabel + '</span>';
+        // 处理描述文本，将换行符转换为<br>
         let descriptionHtml = '-';
         if (param.description) {
             const escapedDesc = escapeHtml(param.description);
@@ -255,17 +324,20 @@ function renderParameters(endpoint) {
         `;
     }).join('');
     
+    const paramName = escapeHtml(_t('apiDocs.paramName'));
+    const typeLabel = escapeHtml(_t('apiDocs.type'));
+    const descLabel = escapeHtml(_t('apiDocs.description'));
     return `
         <div class="api-section">
-            <div class="api-section-title">Parameters</div>
+            <div class="api-section-title">${escapeHtml(_t('apiDocs.sectionParams'))}</div>
             <div class="api-table-wrapper">
                 <table class="api-params-table">
                     <thead>
                         <tr>
-                            <th>Parameter</th>
-                            <th>Type</th>
-                            <th>Description</th>
-                            <th>Required</th>
+                            <th>${paramName}</th>
+                            <th>${typeLabel}</th>
+                            <th>${descLabel}</th>
+                            <th>${requiredLabel}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -277,14 +349,14 @@ function renderParameters(endpoint) {
     `;
 }
 
-// Render request body
+// 渲染请求体
 function renderRequestBody(endpoint) {
     if (!endpoint.requestBody) return '';
     
     const content = endpoint.requestBody.content || {};
     let schema = content['application/json']?.schema || {};
     
-    // Handle $ref references
+    // 处理 $ref 引用
     if (schema.$ref) {
         const refPath = schema.$ref.split('/');
         const refName = refPath[refPath.length - 1];
@@ -293,17 +365,19 @@ function renderRequestBody(endpoint) {
         }
     }
     
-    // Render parameters table
+    // 渲染参数表格
     let paramsTable = '';
     if (schema.properties) {
         const requiredFields = schema.required || [];
+        const reqLabel = escapeHtml(_t('apiDocs.required'));
+        const optLabel = escapeHtml(_t('apiDocs.optional'));
         const rows = Object.keys(schema.properties).map(key => {
             const prop = schema.properties[key];
             const required = requiredFields.includes(key) 
-                ? '<span class="api-param-required">Required</span>' 
-                : '<span class="api-param-optional">Optional</span>';
+                ? '<span class="api-param-required">' + reqLabel + '</span>' 
+                : '<span class="api-param-optional">' + optLabel + '</span>';
             
-            // Handle nested types
+            // 处理嵌套类型
             let typeDisplay = prop.type || 'object';
             if (prop.type === 'array' && prop.items) {
                 typeDisplay = `array[${prop.items.type || 'object'}]`;
@@ -312,17 +386,17 @@ function renderRequestBody(endpoint) {
                 typeDisplay = refPath[refPath.length - 1];
             }
             
-            // Handle enums
+            // 处理枚举
             if (prop.enum) {
                 typeDisplay += ` (${prop.enum.join(', ')})`;
             }
             
-            // Process description text, convert newlines to <br>, preserving other formatting
+            // 处理描述文本，将换行符转换为<br>，但保持其他格式
             let descriptionHtml = '-';
             if (prop.description) {
-                // Escape HTML then handle newlines
+                // 转义HTML，然后处理换行
                 const escapedDesc = escapeHtml(prop.description);
-                // Convert \n to <br>, but don't convert already-escaped newlines
+                // 将 \n 转换为 <br>，但不要转换已经转义的换行
                 descriptionHtml = escapedDesc.replace(/\n/g, '<br>');
             }
             
@@ -338,16 +412,20 @@ function renderRequestBody(endpoint) {
         }).join('');
         
         if (rows) {
+            const pName = escapeHtml(_t('apiDocs.paramName'));
+            const tLabel = escapeHtml(_t('apiDocs.type'));
+            const dLabel = escapeHtml(_t('apiDocs.description'));
+            const exLabel = escapeHtml(_t('apiDocs.example'));
             paramsTable = `
                 <div class="api-table-wrapper" style="margin-top: 12px;">
                     <table class="api-params-table">
                         <thead>
                             <tr>
-                                <th>Parameter</th>
-                                <th>Type</th>
-                                <th>Description</th>
-                                <th>Required</th>
-                                <th>Example</th>
+                                <th>${pName}</th>
+                                <th>${tLabel}</th>
+                                <th>${dLabel}</th>
+                                <th>${reqLabel}</th>
+                                <th>${exLabel}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -359,7 +437,7 @@ function renderRequestBody(endpoint) {
         }
     }
     
-    // Generate example JSON
+    // 生成示例JSON
     let example = '';
     if (schema.example) {
         example = JSON.stringify(schema.example, null, 2);
@@ -370,7 +448,7 @@ function renderRequestBody(endpoint) {
             if (prop.example !== undefined) {
                 exampleObj[key] = prop.example;
             } else {
-                // Generate default example by type
+                // 根据类型生成默认示例
                 if (prop.type === 'string') {
                     exampleObj[key] = prop.description || 'string';
                 } else if (prop.type === 'number') {
@@ -389,12 +467,12 @@ function renderRequestBody(endpoint) {
     
     return `
         <div class="api-section">
-            <div class="api-section-title">Request Body</div>
+            <div class="api-section-title">${escapeHtml(_t('apiDocs.sectionRequestBody'))}</div>
             ${endpoint.requestBody.description ? `<div class="api-description">${endpoint.requestBody.description}</div>` : ''}
             ${paramsTable}
             ${example ? `
                 <div style="margin-top: 16px;">
-                    <div style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">Example JSON:</div>
+                    <div style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">${escapeHtml(_t('apiDocs.exampleJson'))}</div>
                     <div class="api-response-example">
                         <pre>${escapeHtml(example)}</pre>
                     </div>
@@ -404,7 +482,7 @@ function renderRequestBody(endpoint) {
     `;
 }
 
-// Render response
+// 渲染响应
 function renderResponses(endpoint) {
     const responses = endpoint.responses || {};
     const responseItems = Object.keys(responses).map(status => {
@@ -414,11 +492,11 @@ function renderResponses(endpoint) {
         if (schema.example) {
             example = JSON.stringify(schema.example, null, 2);
         }
-        
+        const descText = translateApiDocResponseDescFromResp(response);
         return `
             <div style="margin-bottom: 16px;">
                 <strong style="color: ${status.startsWith('2') ? 'var(--success-color)' : status.startsWith('4') ? 'var(--error-color)' : 'var(--warning-color)'}">${status}</strong>
-                ${response.description ? `<span style="color: var(--text-secondary); margin-left: 8px;">${response.description}</span>` : ''}
+                ${descText ? `<span style="color: var(--text-secondary); margin-left: 8px;">${escapeHtml(descText)}</span>` : ''}
                 ${example ? `
                     <div class="api-response-example" style="margin-top: 8px;">
                         <pre>${escapeHtml(example)}</pre>
@@ -432,13 +510,13 @@ function renderResponses(endpoint) {
     
     return `
         <div class="api-section">
-            <div class="api-section-title">Response</div>
+            <div class="api-section-title">${escapeHtml(_t('apiDocs.sectionResponse'))}</div>
             ${responseItems}
         </div>
     `;
 }
 
-// Render test area
+// 渲染测试区域
 function renderTestSection(endpoint) {
     const method = endpoint.method.toUpperCase();
     const path = endpoint.path;
@@ -462,13 +540,13 @@ function renderTestSection(endpoint) {
         const bodyInputId = `test-body-${escapeId(path)}-${method}`;
         bodyInput = `
             <div class="api-test-input-group">
-                <label>Request Body (JSON)</label>
-                <textarea id="${bodyInputId}" class="test-body-input" placeholder='Enter JSON request body'>${defaultBody}</textarea>
+                <label>${escapeHtml(_t('apiDocs.requestBodyJson'))}</label>
+                <textarea id="${bodyInputId}" class="test-body-input" placeholder='${escapeHtml(_t('apiDocs.requestBodyPlaceholder'))}'>${defaultBody}</textarea>
             </div>
         `;
     }
     
-    // Handle path parameters
+    // 处理路径参数
     const pathParams = (endpoint.parameters || []).filter(p => p.in === 'path');
     let pathParamsInput = '';
     if (pathParams.length > 0) {
@@ -483,7 +561,7 @@ function renderTestSection(endpoint) {
         }).join('');
     }
     
-    // Handle query parameters
+    // 处理查询参数
     const queryParams = (endpoint.parameters || []).filter(p => p.in === 'query');
     let queryParamsInput = '';
     if (queryParams.length > 0) {
@@ -491,7 +569,7 @@ function renderTestSection(endpoint) {
             const inputId = `test-query-${param.name}-${escapeId(path)}-${method}`;
             const defaultValue = param.schema?.default !== undefined ? param.schema.default : '';
             const placeholder = param.description || param.name;
-            const required = param.required ? '<span style="color: var(--error-color);">*</span>' : '<span style="color: var(--text-muted);">Optional</span>';
+            const required = param.required ? '<span style="color: var(--error-color);">*</span>' : '<span style="color: var(--text-muted);">' + escapeHtml(_t('apiDocs.optional')) + '</span>';
             return `
                 <div class="api-test-input-group">
                     <label>${param.name} ${required}</label>
@@ -505,33 +583,40 @@ function renderTestSection(endpoint) {
         }).join('');
     }
     
+    const testSectionTitle = escapeHtml(_t('apiDocs.testSection'));
+    const queryParamsTitle = escapeHtml(_t('apiDocs.queryParams'));
+    const sendRequestLabel = escapeHtml(_t('apiDocs.sendRequest'));
+    const copyCurlLabel = escapeHtml(_t('apiDocs.copyCurl'));
+    const clearResultLabel = escapeHtml(_t('apiDocs.clearResult'));
+    const copyCurlTitle = escapeHtml(_t('apiDocs.copyCurlTitle'));
+    const clearResultTitle = escapeHtml(_t('apiDocs.clearResultTitle'));
     return `
         <div class="api-test-section">
-            <div class="api-section-title">Test API</div>
+            <div class="api-section-title">${testSectionTitle}</div>
             <div class="api-test-form">
                 ${pathParamsInput}
-                ${queryParamsInput ? `<div style="margin-top: 16px;"><div style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">Query Parameters:</div>${queryParamsInput}</div>` : ''}
+                ${queryParamsInput ? `<div style="margin-top: 16px;"><div style="font-weight: 500; margin-bottom: 8px; color: var(--text-primary);">${queryParamsTitle}</div>${queryParamsInput}</div>` : ''}
                 ${bodyInput}
                 <div class="api-test-buttons">
                     <button class="api-test-btn primary" onclick="testAPI('${method}', '${escapeHtml(path)}', '${endpoint.operationId || ''}')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polygon points="5 3 19 12 5 21 5 3"/>
                         </svg>
-                        Send Request
+                        ${sendRequestLabel}
                     </button>
-                    <button class="api-test-btn copy-curl" onclick="copyCurlCommand(event, '${method}', '${escapeHtml(path)}')" title="Copy curl command">
+                    <button class="api-test-btn copy-curl" onclick="copyCurlCommand(event, '${method}', '${escapeHtml(path)}')" title="${copyCurlTitle}">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2"/>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/>
                         </svg>
-                        Copy curl
+                        ${copyCurlLabel}
                     </button>
-                    <button class="api-test-btn clear-result" onclick="clearTestResult('${escapeId(path)}-${method}')" title="Clear test result">
+                    <button class="api-test-btn clear-result" onclick="clearTestResult('${escapeId(path)}-${method}')" title="${clearResultTitle}">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3 6 5 6 21 6"/>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                         </svg>
-                        Clear Result
+                        ${clearResultLabel}
                     </button>
                 </div>
                 <div id="test-result-${escapeId(path)}-${method}" class="api-test-result" style="display: none;"></div>
@@ -540,7 +625,7 @@ function renderTestSection(endpoint) {
     `;
 }
 
-// Test API
+// 测试API
 async function testAPI(method, path, operationId) {
     const resultId = `test-result-${escapeId(path)}-${method}`;
     const resultDiv = document.getElementById(resultId);
@@ -548,10 +633,10 @@ async function testAPI(method, path, operationId) {
     
     resultDiv.style.display = 'block';
     resultDiv.className = 'api-test-result loading';
-    resultDiv.textContent = 'Sending request...';
+    resultDiv.textContent = _t('apiDocs.sendingRequest');
     
     try {
-        // Replace path parameters
+        // 替换路径参数
         let actualPath = path;
         const pathParams = path.match(/\{([^}]+)\}/g) || [];
         pathParams.forEach(param => {
@@ -561,16 +646,16 @@ async function testAPI(method, path, operationId) {
             if (input && input.value) {
                 actualPath = actualPath.replace(param, encodeURIComponent(input.value));
             } else {
-                throw new Error(`Path parameter ${paramName} cannot be empty`);
+                throw new Error(_t('apiDocs.errorPathParamRequired', { name: paramName }));
             }
         });
         
-        // Ensure path starts with /api (if not already in the OpenAPI spec)
+        // 确保路径以/api开头（如果OpenAPI规范中的路径不包含/api）
         if (!actualPath.startsWith('/api') && !actualPath.startsWith('http')) {
             actualPath = '/api' + actualPath;
         }
         
-        // Build query parameters
+        // 构建查询参数
         const queryParams = [];
         const endpointSpec = apiSpec.paths[path]?.[method.toLowerCase()];
         if (endpointSpec && endpointSpec.parameters) {
@@ -580,17 +665,17 @@ async function testAPI(method, path, operationId) {
                 if (input && input.value !== '' && input.value !== null && input.value !== undefined) {
                     queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(input.value)}`);
                 } else if (param.required) {
-                    throw new Error(`Query parameter ${param.name} cannot be empty`);
+                    throw new Error(_t('apiDocs.errorQueryParamRequired', { name: param.name }));
                 }
             });
         }
         
-        // Add query string
+        // 添加查询字符串
         if (queryParams.length > 0) {
             actualPath += (actualPath.includes('?') ? '&' : '?') + queryParams.join('&');
         }
         
-        // Build request options
+        // 构建请求选项
         const options = {
             method: method,
             headers: {
@@ -598,15 +683,14 @@ async function testAPI(method, path, operationId) {
             }
         };
         
-        // Add token
+        // 添加token
         if (currentToken) {
             options.headers['Authorization'] = 'Bearer ' + currentToken;
         } else {
-            // If no token, prompt user
-            throw new Error('Token not detected. Please log in on the frontend page first, then refresh. Or manually add Authorization: Bearer your_token in the request header.');
+            throw new Error(_t('apiDocs.errorTokenRequired'));
         }
         
-        // Add request body
+        // 添加请求体
         if (['POST', 'PUT', 'PATCH'].includes(method)) {
             const bodyInputId = `test-body-${escapeId(path)}-${method}`;
             const bodyInput = document.getElementById(bodyInputId);
@@ -614,12 +698,12 @@ async function testAPI(method, path, operationId) {
                 try {
                     options.body = JSON.stringify(JSON.parse(bodyInput.value.trim()));
                 } catch (e) {
-                    throw new Error('Request body JSON format error: ' + e.message);
+                    throw new Error(_t('apiDocs.errorJsonInvalid') + e.message);
                 }
             }
         }
         
-        // Send Request
+        // 发送请求
         const response = await fetch(actualPath, options);
         const responseText = await response.text();
         
@@ -630,17 +714,17 @@ async function testAPI(method, path, operationId) {
             responseData = responseText;
         }
         
-        // Show result
+        // 显示结果
         resultDiv.className = response.ok ? 'api-test-result success' : 'api-test-result error';
-        resultDiv.textContent = `Status: ${response.status} ${response.statusText}\n\n${typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2)}`;
+        resultDiv.textContent = `状态码: ${response.status} ${response.statusText}\n\n${typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2)}`;
         
     } catch (error) {
         resultDiv.className = 'api-test-result error';
-        resultDiv.textContent = 'Request failed: ' + error.message;
+        resultDiv.textContent = _t('apiDocs.requestFailed') + error.message;
     }
 }
 
-// Clear test result
+// 清除测试结果
 function clearTestResult(id) {
     const resultDiv = document.getElementById(`test-result-${id}`);
     if (resultDiv) {
@@ -649,10 +733,10 @@ function clearTestResult(id) {
     }
 }
 
-// Copy curl command
+// 复制curl命令
 function copyCurlCommand(event, method, path) {
     try {
-        // Replace path parameters
+        // 替换路径参数
         let actualPath = path;
         const pathParams = path.match(/\{([^}]+)\}/g) || [];
         pathParams.forEach(param => {
@@ -664,12 +748,12 @@ function copyCurlCommand(event, method, path) {
             }
         });
         
-        // Ensure path starts with /api
+        // 确保路径以/api开头
         if (!actualPath.startsWith('/api') && !actualPath.startsWith('http')) {
             actualPath = '/api' + actualPath;
         }
         
-        // Build query parameters
+        // 构建查询参数
         const queryParams = [];
         const endpointSpec = apiSpec.paths[path]?.[method.toLowerCase()];
         if (endpointSpec && endpointSpec.parameters) {
@@ -682,66 +766,66 @@ function copyCurlCommand(event, method, path) {
             });
         }
         
-        // Add query string
+        // 添加查询字符串
         if (queryParams.length > 0) {
             actualPath += (actualPath.includes('?') ? '&' : '?') + queryParams.join('&');
         }
         
-        // Build complete URL
+        // 构建完整的URL
         const baseUrl = window.location.origin;
         const fullUrl = baseUrl + actualPath;
         
-        // Build curl command
+        // 构建curl命令
         let curlCommand = `curl -X ${method.toUpperCase()} "${fullUrl}"`;
         
-        // Add request headers
+        // 添加请求头
         curlCommand += ` \\\n  -H "Content-Type: application/json"`;
         
-        // Add Authorization header
+        // 添加Authorization头
         if (currentToken) {
             curlCommand += ` \\\n  -H "Authorization: Bearer ${currentToken}"`;
         } else {
             curlCommand += ` \\\n  -H "Authorization: Bearer YOUR_TOKEN_HERE"`;
         }
         
-        // Add request body (if any)
+        // 添加请求体（如果有）
         if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
             const bodyInputId = `test-body-${escapeId(path)}-${method}`;
             const bodyInput = document.getElementById(bodyInputId);
             if (bodyInput && bodyInput.value.trim()) {
                 try {
-                    // Validate JSON format and format
+                    // 验证JSON格式并格式化
                     const jsonBody = JSON.parse(bodyInput.value.trim());
                     const jsonString = JSON.stringify(jsonBody);
-                    // Inside single quotes, only need to escape single quotes
+                    // 在单引号内，只需要转义单引号本身
                     const escapedJson = jsonString.replace(/'/g, "'\\''");
                     curlCommand += ` \\\n  -d '${escapedJson}'`;
                 } catch (e) {
-                    // If not valid JSON, use raw value
+                    // 如果不是有效JSON，直接使用原始值
                     const escapedBody = bodyInput.value.trim().replace(/'/g, "'\\''");
                     curlCommand += ` \\\n  -d '${escapedBody}'`;
                 }
             }
         }
         
-        // Copy to clipboard
+        // 复制到剪贴板
         const button = event ? event.target.closest('button') : null;
         navigator.clipboard.writeText(curlCommand).then(() => {
-            // Show success hint
             if (button) {
                 const originalText = button.innerHTML;
-                button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Copied';
+                const copiedLabel = escapeHtml(_t('apiDocs.copied'));
+                button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>' + copiedLabel;
                 button.style.color = 'var(--success-color)';
                 setTimeout(() => {
                     button.innerHTML = originalText;
                     button.style.color = '';
                 }, 2000);
             } else {
-                alert('curl command copied to clipboard!');
+                alert(_t('apiDocs.curlCopied'));
             }
         }).catch(err => {
-            console.error('Copy failed:', err);
-            // If clipboard API fails, use fallback method
+            console.error('复制失败:', err);
+            // 如果clipboard API失败，使用fallback方法
             const textarea = document.createElement('textarea');
             textarea.value = curlCommand;
             textarea.style.position = 'fixed';
@@ -752,37 +836,38 @@ function copyCurlCommand(event, method, path) {
                 document.execCommand('copy');
                 if (button) {
                     const originalText = button.innerHTML;
-                    button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Copied';
+                    const copiedLabel = escapeHtml(_t('apiDocs.copied'));
+                    button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>' + copiedLabel;
                     button.style.color = 'var(--success-color)';
                     setTimeout(() => {
                         button.innerHTML = originalText;
                         button.style.color = '';
                     }, 2000);
                 } else {
-                    alert('curl command copied to clipboard!');
+                    alert(_t('apiDocs.curlCopied'));
                 }
             } catch (e) {
-                alert('Copy failed, please copy manually:\n\n' + curlCommand);
+                alert(_t('apiDocs.copyFailedManual') + curlCommand);
             }
             document.body.removeChild(textarea);
         });
         
     } catch (error) {
-        console.error('Failed to generate curl command:', error);
-        alert('Failed to generate curl command: ' + error.message);
+        console.error('生成curl命令失败:', error);
+        alert(_t('apiDocs.curlGenFailed') + error.message);
     }
 }
 
-// Format description text (handle markdown)
+// 格式化描述文本（处理markdown格式）
 function formatDescription(text) {
     if (!text) return '';
     
-    // First extract code blocks (avoid processing markdown inside code blocks)
+    // 先提取代码块（避免代码块内的markdown被处理）
     let formatted = text;
     const codeBlocks = [];
     let codeBlockIndex = 0;
     
-    // Extract code blocks (supports language identifiers like ```json or ```javascript)
+    // 提取代码块（支持语言标识符，如 ```json 或 ```javascript）
     formatted = formatted.replace(/```(\w+)?\s*\n?([\s\S]*?)```/g, (match, lang, code) => {
         const placeholder = `__CODE_BLOCK_${codeBlockIndex}__`;
         codeBlocks[codeBlockIndex] = {
@@ -793,7 +878,7 @@ function formatDescription(text) {
         return placeholder;
     });
     
-    // Extract inline code (avoid processing markdown inside inline code)
+    // 提取行内代码（避免行内代码内的markdown被处理）
     const inlineCodes = [];
     let inlineCodeIndex = 0;
     formatted = formatted.replace(/`([^`\n]+)`/g, (match, code) => {
@@ -803,10 +888,10 @@ function formatDescription(text) {
         return placeholder;
     });
     
-    // Escape HTML (but keep placeholders)
+    // 转义HTML（但保留占位符）
     formatted = escapeHtml(formatted);
     
-    // Restore inline code (needs escaping because placeholders were already escaped)
+    // 恢复行内代码（需要转义，因为占位符已经被转义了）
     inlineCodes.forEach((code, index) => {
         formatted = formatted.replace(
             `__INLINE_CODE_${index}__`,
@@ -814,33 +899,33 @@ function formatDescription(text) {
         );
     });
     
-    // Restore code blocks (content already escaped, use directly)
+    // 恢复代码块（代码块内容已经转义过，直接使用）
     codeBlocks.forEach((block, index) => {
         const langLabel = block.lang ? `<span class="code-lang">${escapeHtml(block.lang)}</span>` : '';
-        // Code block content was saved during extraction, no need to escape again
+        // 代码块内容已经在提取时保存，不需要再次转义
         formatted = formatted.replace(
             `__CODE_BLOCK_${index}__`,
             `<pre class="code-block">${langLabel}<code>${escapeHtml(block.code)}</code></pre>`
         );
     });
     
-    // Handle headings (### heading)
+    // 处理标题（### 标题）
     formatted = formatted.replace(/^###\s+(.+)$/gm, '<h3 class="md-h3">$1</h3>');
     formatted = formatted.replace(/^##\s+(.+)$/gm, '<h2 class="md-h2">$1</h2>');
     formatted = formatted.replace(/^#\s+(.+)$/gm, '<h1 class="md-h1">$1</h1>');
     
-    // Handle bold text (**text** or __text__)
+    // 处理加粗文本（**text** 或 __text__）
     formatted = formatted.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
     formatted = formatted.replace(/__([^_]+?)__/g, '<strong>$1</strong>');
     
-    // Handle italic (*text* or _text_, but not conflicting with bold)
+    // 处理斜体（*text* 或 _text_，但不与加粗冲突）
     formatted = formatted.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<em>$1</em>');
     formatted = formatted.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
     
-    // Handle links [text](url)
+    // 处理链接 [text](url)
     formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
     
-    // Handle list items (ordered and unordered)
+    // 处理列表项（有序和无序）
     const lines = formatted.split('\n');
     const result = [];
     let inUnorderedList = false;
@@ -885,7 +970,7 @@ function formatDescription(text) {
             if (line.trim()) {
                 result.push(line);
             } else if (i < lines.length - 1) {
-                // Add newline only for non-last lines
+                // 只在非最后一行时添加换行
                 result.push('<br>');
             }
         }
@@ -900,33 +985,33 @@ function formatDescription(text) {
     
     formatted = result.join('\n');
     
-    // Handle paragraphs (separated by empty lines)
+    // 处理段落（连续的空行分隔段落）
     formatted = formatted.replace(/(<br>\s*){2,}/g, '</p><p class="md-paragraph">');
     formatted = '<p class="md-paragraph">' + formatted + '</p>';
     
-    // Clean up excess <br> tags (before/after block elements)
+    // 清理多余的<br>标签（在块级元素前后）
     formatted = formatted.replace(/(<\/?(h[1-6]|ul|ol|li|pre|p)[^>]*>)\s*<br>/gi, '$1');
     formatted = formatted.replace(/<br>\s*(<\/?(h[1-6]|ul|ol|li|pre|p)[^>]*>)/gi, '$1');
     
-    // Convert remaining single newlines to <br> (avoid inside block elements)
+    // 将剩余的单个换行符转换为<br>（但避免在块级元素内）
     formatted = formatted.replace(/\n(?!<\/?(h[1-6]|ul|ol|li|pre|p|code))/g, '<br>');
     
     return formatted;
 }
 
-// HTML escaping
+// HTML转义
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// ID escaping (for HTML ID attributes)
+// ID转义（用于HTML ID属性）
 function escapeId(text) {
     return text.replace(/[{}]/g, '').replace(/\//g, '-');
 }
 
-// Toggle description show/hide
+// 切换描述显示/隐藏
 function toggleDescription(button) {
     const icon = button.querySelector('.description-toggle-icon');
     const detail = button.parentElement.querySelector('.api-description-detail');
@@ -935,10 +1020,10 @@ function toggleDescription(button) {
     if (detail.style.display === 'none') {
         detail.style.display = 'block';
         icon.style.transform = 'rotate(180deg)';
-        span.textContent = 'Hide details';
+        span.textContent = typeof window.t === 'function' ? window.t('apiDocs.hideDetailDesc') : '隐藏详细说明';
     } else {
         detail.style.display = 'none';
         icon.style.transform = 'rotate(0deg)';
-        span.textContent = 'View details';
+        span.textContent = typeof window.t === 'function' ? window.t('apiDocs.viewDetailDesc') : '查看详细说明';
     }
 }

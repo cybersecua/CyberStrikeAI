@@ -1,4 +1,7 @@
-// Information gathering page (FOFA)
+// 信息收集页面（FOFA）
+function _t(key, opts) {
+    return typeof window.t === 'function' ? window.t(key, opts) : key;
+}
 
 const FOFA_FORM_STORAGE_KEY = 'info-collect-fofa-form';
 const FOFA_HIDDEN_FIELDS_STORAGE_KEY = 'info-collect-fofa-hidden-fields';
@@ -10,12 +13,12 @@ const infoCollectState = {
     tableBound: false
 };
 
-// AI parsing (natural language -> FOFA) interaction status
+// AI 解析（自然语言 -> FOFA）交互状态
 let fofaParseAbortController = null;
 let fofaParseSlowTimer = null;
 let fofaParseToastHandle = null;
 
-// HTML escaping (if not already defined)
+// HTML转义（如果未定义）
 if (typeof escapeHtml === 'undefined') {
     function escapeHtml(text) {
         if (text == null) return '';
@@ -86,10 +89,10 @@ function initInfoCollectPage() {
     const els = getFofaFormElements();
     if (!els.query || !els.size || !els.fields || !els.tbody) return;
 
-    // Restore hidden fields
+    // 恢复隐藏字段
     infoCollectState.hiddenFields = new Set(loadHiddenFieldsFromStorage());
 
-    // Restore last input
+    // 恢复上次输入
     const saved = loadFofaFormFromStorage();
     if (saved) {
         if (typeof saved.query === 'string') els.query.value = saved.query;
@@ -99,7 +102,7 @@ function initInfoCollectPage() {
         if (typeof saved.full === 'boolean') els.full.checked = saved.full;
     }
 
-    // Bind Enter shortcut (Ctrl/Cmd+Enter in query field)
+    // 绑定 Enter 快捷查询（在 query 里用 Ctrl/Cmd+Enter）
     els.query.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -107,7 +110,7 @@ function initInfoCollectPage() {
         }
     });
 
-    // Natural language input: Ctrl/Cmd+Enter triggers parsing
+    // 自然语言输入：Ctrl/Cmd+Enter 触发解析
     if (els.nl) {
         els.nl.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -117,7 +120,7 @@ function initInfoCollectPage() {
         });
     }
 
-    // Textarea: auto-grow based on content (avoid default blank lines)
+    // textarea：按内容自动增高（避免默认留空白行）
     const autoGrowTextarea = (el) => {
         if (!el) return;
         try {
@@ -131,13 +134,13 @@ function initInfoCollectPage() {
     };
     els.query.addEventListener('input', () => autoGrowTextarea(els.query));
     if (els.nl) els.nl.addEventListener('input', () => autoGrowTextarea(els.nl));
-    // Also run once on initialize
+    // 初始化时也执行一次
     setTimeout(() => {
         autoGrowTextarea(els.query);
         autoGrowTextarea(els.nl);
     }, 0);
 
-    // Bind table events (event delegation, bound only once)
+    // 绑定表格事件（事件委托，只绑定一次）
     bindFofaTableEvents();
     updateSelectedMeta();
 }
@@ -197,12 +200,12 @@ async function submitFofaSearch() {
     const full = !!els.full?.checked;
 
     if (!query) {
-        alert('Please enter a FOFA query');
+        alert(_t('infoCollect.enterFofaQuery'));
         return;
     }
 
     saveFofaFormToStorage({ query, size, page, fields, full });
-    setFofaMeta('Querying...');
+    setFofaMeta(_t('infoCollect.querying'));
     setFofaLoading(true);
 
     try {
@@ -214,14 +217,14 @@ async function submitFofaSearch() {
 
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(result.error || `Request failed: ${response.status}`);
+            throw new Error(result.error || `请求失败: ${response.status}`);
         }
         renderFofaResults(result);
     } catch (e) {
-        console.error('FOFA query failed:', e);
-        setFofaMeta('Query failed');
+        console.error('FOFA 查询失败:', e);
+        setFofaMeta(_t('infoCollect.queryFailed'));
         renderFofaResults({ query, fields: [], results: [], total: 0, page: 1, size: 0 });
-        alert('FOFA query failed: ' + (e && e.message ? e.message : String(e)));
+        alert(_t('infoCollect.queryFailed') + ': ' + (e && e.message ? e.message : String(e)));
     } finally {
         setFofaLoading(false);
     }
@@ -231,28 +234,28 @@ async function parseFofaNaturalLanguage() {
     const els = getFofaFormElements();
     const text = (els.nl?.value || '').trim();
     if (!text) {
-        alert('Please enter a natural language description');
+        alert(_t('infoCollect.enterNaturalLanguage'));
         return;
     }
 
-    // Second click: cancel the in-progress parse (avoids impression of freezing/failure)
+    // 二次点击：取消进行中的解析（避免“以为卡死/失败”）
     if (fofaParseAbortController) {
         try { fofaParseAbortController.abort(); } catch (e) { /* ignore */ }
         return;
     }
 
-    // Create controller first to prevent duplicate concurrent requests on rapid clicks
+    // 先创建 controller，避免极快的重复点击触发并发请求
     fofaParseAbortController = new AbortController();
-    setFofaParseLoading(true, 'AI parsing...');
+    setFofaParseLoading(true, _t('infoCollect.parsePending'));
 
-    // Persistent notice: stays until request completes/cancels/fails
-    fofaParseToastHandle = showInlineToast('AI parsing... (click button to cancel)', { duration: 0, id: 'fofa-parse-pending' });
+    // 持续提示：直到请求完成/取消/失败才消失
+    fofaParseToastHandle = showInlineToast(_t('infoCollect.parsePendingClickCancel'), { duration: 0, id: 'fofa-parse-pending' });
 
-    // If it takes longer than expected, reinforce "still in progress" to reduce false failure impressions
+    // 如果超过一小段时间还没返回，再强调“仍在进行中”，降低误判为失败的概率
     fofaParseSlowTimer = setTimeout(() => {
         const status = document.getElementById('fofa-nl-status');
         if (status) {
-            status.textContent = 'AI parsing is taking longer than expected, still processing...';
+            status.textContent = _t('infoCollect.parseSlow');
             status.style.display = 'block';
         }
     }, 1800);
@@ -266,18 +269,18 @@ async function parseFofaNaturalLanguage() {
         });
         const result = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-            throw new Error(result.error || `Request failed: ${resp.status}`);
+            throw new Error(result.error || `请求失败: ${resp.status}`);
         }
         showFofaParseModal(text, result);
-        showInlineToast('AI parsing complete');
+        showInlineToast(_t('infoCollect.parseDone'));
     } catch (e) {
-        // AbortController cancel: not treated as failure
+        // AbortController 取消：不视为失败
         if (e && (e.name === 'AbortError' || String(e).includes('AbortError'))) {
-            showInlineToast('AI parsing cancelled');
+            showInlineToast(_t('infoCollect.parseCancelled'));
             return;
         }
-        console.error('FOFA natural language parsing failed:', e);
-        showInlineToast('AI parsing failed: ' + (e && e.message ? e.message : String(e)), { duration: 2800 });
+        console.error('FOFA 自然语言解析失败:', e);
+        showInlineToast(_t('infoCollect.parseFailed') + (e && e.message ? e.message : String(e)), { duration: 2800 });
     }
     finally {
         fofaParseAbortController = null;
@@ -298,17 +301,17 @@ function setFofaParseLoading(loading, statusText) {
     const status = document.getElementById('fofa-nl-status');
     if (btn) {
         if (loading) {
-            if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent || 'AI Parse';
+            if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent || _t('infoCollectPage.parseBtn');
             btn.classList.add('btn-loading');
-            btn.textContent = 'Cancel parsing';
-            btn.title = 'Click to cancel AI parsing';
+            btn.textContent = _t('infoCollect.cancelParse');
+            btn.title = _t('infoCollect.clickToCancelParse');
             btn.dataset.loading = '1';
             btn.setAttribute('aria-busy', 'true');
             btn.disabled = false;
         } else {
             btn.classList.remove('btn-loading');
-            btn.textContent = btn.dataset.originalText || 'AI Parse';
-            btn.title = 'Parse natural language into FOFA query syntax';
+            btn.textContent = btn.dataset.originalText || _t('infoCollectPage.parseBtn');
+            btn.title = _t('infoCollect.parseToFofa');
             btn.disabled = false;
             delete btn.dataset.loading;
             btn.removeAttribute('aria-busy');
@@ -336,7 +339,7 @@ function showFofaParseModal(nlText, parsed) {
 
     const warningsHtml = warnings.length
         ? `<ul style="margin: 8px 0 0 18px;">${warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`
-        : `<div class="muted" style="margin-top: 8px;">None</div>`;
+        : '<div class="muted" style="margin-top: 8px;">' + _t('infoCollect.none') + '</div>';
 
     const modal = document.createElement('div');
     modal.id = 'fofa-parse-modal';
@@ -345,23 +348,23 @@ function showFofaParseModal(nlText, parsed) {
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
-                <h2>AI Parse Result</h2>
-                <span class="modal-close" id="fofa-parse-modal-close" title="Close">&times;</span>
+                <h2>${_t('infoCollect.parseResultTitle')}</h2>
+                <span class="modal-close" id="fofa-parse-modal-close" title="${_t('common.close')}">&times;</span>
             </div>
             <div style="padding: 18px 28px; overflow: auto;">
                 <div class="form-group">
-                    <label>Natural Language</label>
+                    <label>${_t('infoCollect.naturalLanguageLabel')}</label>
                     <div class="muted" style="margin-top: 6px; white-space: pre-wrap;">${safeNL || '-'}</div>
                 </div>
 
                 <div class="form-group" style="margin-top: 14px;">
-                    <label for="fofa-parse-query">FOFA Query Syntax (editable)</label>
-                    <textarea id="fofa-parse-query" class="info-collect-query-input" rows="2" placeholder='e.g.: app="Apache" && country="CN"'></textarea>
-                    <small class="form-hint">Please manually verify the syntax and scope before running the query.</small>
+                    <label for="fofa-parse-query">${_t('infoCollect.fofaQueryEditable')}</label>
+                    <textarea id="fofa-parse-query" class="info-collect-query-input" rows="2" placeholder="${_t('infoCollect.queryPlaceholder')}"></textarea>
+                    <small class="form-hint">${_t('infoCollect.confirmBeforeQuery')}</small>
                 </div>
 
                 <div class="form-group" style="margin-top: 14px;">
-                    <label>Warnings</label>
+                    <label>${_t('infoCollect.reminder')}</label>
                     <div style="background: #fff8e1; border: 1px solid #ffe8a3; border-radius: 10px; padding: 10px 12px;">
                         ${warningsHtml}
                     </div>
@@ -369,14 +372,14 @@ function showFofaParseModal(nlText, parsed) {
 
                 ${explanation ? `
                 <div class="form-group" style="margin-top: 14px;">
-                    <label>Parse Explanation</label>
+                    <label>${_t('infoCollect.explanation')}</label>
                     <pre style="margin-top: 8px; white-space: pre-wrap; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px; font-size: 13px;">${escapeHtml(explanation)}</pre>
                 </div>` : ''}
             </div>
             <div class="modal-footer" style="padding: 18px 28px;">
-                <button class="btn-secondary" type="button" id="fofa-parse-cancel">Cancel</button>
-                <button class="btn-secondary" type="button" id="fofa-parse-apply">Fill into query box</button>
-                <button class="btn-primary" type="button" id="fofa-parse-apply-run">Fill and search</button>
+                <button class="btn-secondary" type="button" id="fofa-parse-cancel">${_t('infoCollect.parseModalCancel')}</button>
+                <button class="btn-secondary" type="button" id="fofa-parse-apply">${_t('infoCollect.parseModalApply')}</button>
+                <button class="btn-primary" type="button" id="fofa-parse-apply-run">${_t('infoCollect.parseModalApplyRun')}</button>
             </div>
         </div>
     `;
@@ -402,14 +405,14 @@ function showFofaParseModal(nlText, parsed) {
         const els = getFofaFormElements();
         const q = (queryTextarea?.value || '').trim();
         if (!q) {
-            showInlineToast('Parse result is empty: please fill in or edit the FOFA query syntax in the dialog', { duration: 2600 });
+            showInlineToast(_t('infoCollect.parseResultEmpty'), { duration: 2600 });
             return;
         }
         if (els.query) {
             els.query.value = q;
             try { els.query.focus(); } catch (e) { /* ignore */ }
         }
-        // Write to form cache (consistent with existing direct query behavior)
+        // 写入表单缓存（与现有“直接查询”一致）
         saveFofaFormToStorage({
             query: q,
             size: parseInt(els.size?.value, 10) || 100,
@@ -424,7 +427,7 @@ function showFofaParseModal(nlText, parsed) {
     document.getElementById('fofa-parse-apply')?.addEventListener('click', () => applyToQuery(false));
     document.getElementById('fofa-parse-apply-run')?.addEventListener('click', () => applyToQuery(true));
 
-    // Esc to close
+    // Esc 关闭
     const onKey = (e) => {
         if (e.key === 'Escape') {
             close();
@@ -444,7 +447,7 @@ function setFofaMeta(text) {
 function updateSelectedMeta() {
     const els = getFofaFormElements();
     if (els.selectedMeta) {
-        els.selectedMeta.textContent = `${infoCollectState.selectedRowIndexes.size} selected`;
+        els.selectedMeta.textContent = _t('infoCollectPage.selectedRows', { count: infoCollectState.selectedRowIndexes.size });
     }
 }
 
@@ -454,7 +457,7 @@ function setFofaLoading(loading) {
     if (loading) {
         const fieldsCount = (document.getElementById('fofa-fields')?.value || '').split(',').filter(Boolean).length;
         const colspan = Math.max(1, fieldsCount + 1);
-        els.tbody.innerHTML = `<tr><td class="muted" style="padding: 16px;" colspan="${colspan}">Loading...</td></tr>`;
+        els.tbody.innerHTML = '<tr><td class="muted" style="padding: 16px;" colspan="' + colspan + '">' + escapeHtml(_t('infoCollect.loading')) + '</td></tr>';
     }
 }
 
@@ -465,7 +468,7 @@ function renderFofaResults(payload) {
     const fields = Array.isArray(payload.fields) ? payload.fields : [];
     const results = Array.isArray(payload.results) ? payload.results : [];
 
-    // Save current payload to state
+    // 保存当前 payload 到 state
     infoCollectState.currentPayload = {
         query: payload.query || '',
         total: typeof payload.total === 'number' ? payload.total : 0,
@@ -475,11 +478,11 @@ function renderFofaResults(payload) {
         results
     };
 
-    // Clear selection (avoid misalignment when fields/results change)
+    // 清理选择（避免字段/结果变化导致错位）
     infoCollectState.selectedRowIndexes.clear();
     updateSelectedMeta();
 
-    // Trim hidden fields: keep only those present in current fields
+    // 修剪隐藏字段：只保留当前 fields 中存在的
     const allowed = new Set(fields);
     infoCollectState.hiddenFields.forEach(f => {
         if (!allowed.has(f)) infoCollectState.hiddenFields.delete(f);
@@ -490,26 +493,26 @@ function renderFofaResults(payload) {
     const size = typeof payload.size === 'number' ? payload.size : 0;
     const page = typeof payload.page === 'number' ? payload.page : 1;
 
-    setFofaMeta(`Total ${total} · Page ${results.length} · page=${page} · size=${size}`);
+    setFofaMeta(_t('infoCollect.resultsMeta', { total, count: results.length, page, size }));
 
-    // Visible fields
+    // 可见字段
     const visibleFields = fields.filter(f => !infoCollectState.hiddenFields.has(f));
 
-    // Columns panel
+    // 列面板
     renderFofaColumnsPanel(fields, visibleFields);
 
-    // Table header (left: checkbox column; right: Actions column fixed)
+    // 表头（左：勾选列；右：操作列固定）
     const headerCells = [
-        '<th class="info-collect-col-select"><input type="checkbox" id="fofa-select-all" title="Select all / Deselect all"/></th>',
+        '<th class="info-collect-col-select"><input type="checkbox" id="fofa-select-all" title="' + escapeHtml(_t('infoCollect.selectAll')) + '"/></th>',
         ...visibleFields.map(f => `<th>${escapeHtml(String(f))}</th>`),
-        '<th class="info-collect-col-actions">Actions</th>'
+        '<th class="info-collect-col-actions">' + escapeHtml(_t('infoCollect.actions')) + '</th>'
     ].join('');
     els.thead.innerHTML = `<tr>${headerCells}</tr>`;
 
-    // Table body
+    // 表体
     if (results.length === 0) {
         const colspan = Math.max(1, visibleFields.length + 2);
-        els.tbody.innerHTML = `<tr><td class="muted" style="padding: 16px;" colspan="${colspan}">No data</td></tr>`;
+        els.tbody.innerHTML = '<tr><td class="muted" style="padding: 16px;" colspan="' + colspan + '">' + escapeHtml(_t('common.noData')) + '</td></tr>';
         return;
     }
 
@@ -519,12 +522,12 @@ function renderFofaResults(payload) {
         const encoded = encodeURIComponent(JSON.stringify(safeRow));
         const encodedTarget = encodeURIComponent(target || '');
 
-        const selectHtml = `<td class="info-collect-col-select"><input class="fofa-row-select" type="checkbox" data-index="${idx}" title="Select this row"/></td>`;
+        const selectHtml = '<td class="info-collect-col-select"><input class="fofa-row-select" type="checkbox" data-index="' + idx + '" title="' + escapeHtml(_t('infoCollect.selectRow')) + '"/></td>';
 
         const cellsHtml = visibleFields.map(f => {
             const val = safeRow[f];
             const text = val == null ? '' : String(val);
-            // host field: render as clickable link when possible
+            // host 字段：尽量渲染为可点击链接
             if (f === 'host') {
                 const href = normalizeHttpLink(text);
                 if (href) {
@@ -537,13 +540,13 @@ function renderFofaResults(payload) {
 
         const actionHtml = `
             <div class="info-collect-actions">
-                <button class="btn-icon" onclick="copyFofaTargetEncoded('${encodedTarget}'); event.stopPropagation();" title="Copy target">
+                <button class="btn-icon" onclick="copyFofaTargetEncoded('${encodedTarget}'); event.stopPropagation();" title="${escapeHtml(_t('infoCollect.copyTarget'))}">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     </svg>
                 </button>
-                <button class="btn-icon" onclick="scanFofaRow('${encoded}', event); event.stopPropagation();" title="Send to chat (editable; Ctrl/&#8984;+click to send directly)">
+                <button class="btn-icon" onclick="scanFofaRow('${encoded}', event); event.stopPropagation();" title="${escapeHtml(_t('infoCollect.sendToChat'))}">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M10.5 13.5l3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         <path d="M8 8H5a4 4 0 1 0 0 8h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -558,12 +561,12 @@ function renderFofaResults(payload) {
 
     els.tbody.innerHTML = rowsHtml;
 
-    // Update select-all checkbox status
+    // 更新全选框状态
     syncSelectAllCheckbox();
 }
 
 function inferTargetFromRow(row, fields) {
-    // Prefer host (FOFA commonly returns http(s)://...)
+    // 优先 host（FOFA 常见返回 http(s)://...）
     const host = row.host != null ? String(row.host).trim() : '';
     if (host) return host;
 
@@ -576,7 +579,7 @@ function inferTargetFromRow(row, fields) {
     if (!base) return '';
 
     if (port) {
-        // Light inference: 443 -> https, 80 -> http, others without forced scheme
+        // 仅做一个轻量推断：443 -> https, 80 -> http，其余不强行加 scheme
         const p = parseInt(port, 10);
         if (!isNaN(p) && (p === 80 || p === 443)) {
             const scheme = p === 443 ? 'https' : 'http';
@@ -595,21 +598,21 @@ function normalizeHttpLink(raw) {
     const v = (raw || '').trim();
     if (!v) return '';
     if (v.startsWith('http://') || v.startsWith('https://')) return v;
-    // Some hosts may be a domain or ip:port; don't force-construct to avoid misleading
+    // 某些 host 可能是 domain 或 ip:port；这里不强行拼装，避免误导
     return '';
 }
 
 function copyFofaTarget(target) {
     const text = (target || '').trim();
     if (!text) {
-        alert('No target to copy');
+        alert(_t('infoCollect.noTargetToCopy'));
         return;
     }
     navigator.clipboard.writeText(text).then(() => {
-        // Simple notification
-        showInlineToast('Target copied');
+        // 简单提示
+        showInlineToast(_t('infoCollect.targetCopied'));
     }).catch(() => {
-        alert('Copy failed, please copy manually: ' + text);
+        alert(_t('infoCollect.manualCopyHint') + text);
     });
 }
 
@@ -621,7 +624,7 @@ function copyFofaTargetEncoded(encodedTarget) {
     }
 }
 
-// showInlineToast('xxx'); also supports showInlineToast('xxx', { duration: 0, id: '...' })
+// showInlineToast('xxx')；也支持 showInlineToast('xxx', { duration: 0, id: '...' })
 function showInlineToast(text, options) {
     const opts = options && typeof options === 'object' ? options : {};
     const duration = typeof opts.duration === 'number' ? opts.duration : 1200;
@@ -655,7 +658,7 @@ function showInlineToast(text, options) {
 function truncateForPreview(value, maxLen) {
     const s = value == null ? '' : String(value);
     if (maxLen <= 0 || s.length <= maxLen) return s;
-    return s.slice(0, maxLen) + '...(truncated)';
+    return s.slice(0, maxLen) + '...(' + _t('infoCollect.truncated') + ')';
 }
 
 function formatFofaRowSummary(row, fields) {
@@ -701,17 +704,17 @@ function scanFofaRow(encodedRowJson, clickEvent) {
     try {
         row = JSON.parse(decodeURIComponent(encodedRowJson));
     } catch (e) {
-        console.warn('Failed to parse row data', e);
+        console.warn('解析行数据失败', e);
     }
 
     const fields = (document.getElementById('fofa-fields')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
     const target = inferTargetFromRow(row, fields);
     if (!target) {
-        alert('Cannot infer scan target from this row (consider including host/ip/port/domain in fields)');
+        alert(_t('infoCollect.cannotInferTarget'));
         return;
     }
 
-    // Switch to chat page and send message (each click starts a new session to avoid sending to history)
+    // 切换到对话页并发送消息（每次点击都新建会话，避免发到历史会话）
     if (typeof switchPage === 'function') {
         switchPage('chat');
     } else {
@@ -722,7 +725,7 @@ function scanFofaRow(encodedRowJson, clickEvent) {
     const autoSend = !!(clickEvent && (clickEvent.ctrlKey || clickEvent.metaKey));
 
     setTimeout(async () => {
-        // New session: must wait for it to complete, otherwise it will clear the input box
+        // 新建会话：必须等待其完成，否则它会在后续把输入框清空
         try {
             if (typeof startNewConversation === 'function') {
                 const maybePromise = startNewConversation();
@@ -737,7 +740,7 @@ function scanFofaRow(encodedRowJson, clickEvent) {
         const input = document.getElementById('chat-input');
         if (input) {
             input.value = message;
-            // Trigger auto-height adjustment (if chat.js listens to input event)
+            // 触发自动高度调整（chat.js 里如果监听 input）
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.focus();
         }
@@ -745,10 +748,10 @@ function scanFofaRow(encodedRowJson, clickEvent) {
             if (typeof sendMessage === 'function') {
                 sendMessage();
             } else {
-                alert('sendMessage() not found, please refresh the page and try again');
+                alert(_t('infoCollect.noSendMessage'));
             }
         } else {
-            showInlineToast('Filled into chat input, you can edit before sending');
+            showInlineToast(_t('infoCollect.filledToInput'));
         }
     }, 250);
 }
@@ -758,7 +761,7 @@ function buildScanMessage(target, row, options) {
     const fields = Array.isArray(opts.fields) ? opts.fields : [];
 
     const summary = formatFofaRowSummary(row || {}, fields);
-    return `Perform information gathering and basic scan on the following target:\n${target}\n\nRequirements:\n1) Identify services/frameworks and key fingerprints\n2) Enumerate open ports and common admin entry points\n3) Use httpx/fingerprinting/directory probing to quickly confirm accessible attack surface\n4) Output reproducible commands and conclusions\n\nKnown information (from FOFA row - all fields):\n${summary}`.trim();
+    return `对以下目标做信息收集与基础扫描：\n${target}\n\n要求：\n1) 识别服务/框架与关键指纹\n2) 枚举开放端口与常见管理入口\n3) 用 httpx/指纹/目录探测等方式快速确认可访问面\n4) 输出可复现的命令与结论\n\n已知信息（来自 FOFA 该行全部字段）：\n${summary}`.trim();
 }
 
 function bindFofaTableEvents() {
@@ -768,7 +771,7 @@ function bindFofaTableEvents() {
     const els = getFofaFormElements();
     if (!els.tbody) return;
 
-    // Event delegation: select / cell expand
+    // 事件委托：选择/单元格展开
     els.tbody.addEventListener('click', (e) => {
         const checkbox = e.target && e.target.classList && e.target.classList.contains('fofa-row-select') ? e.target : null;
         if (checkbox) {
@@ -786,7 +789,7 @@ function bindFofaTableEvents() {
         if (cell) {
             const full = cell.getAttribute('data-full') || '';
             const field = cell.getAttribute('data-field') || '';
-            // Clicking a link should not open the modal
+            // 点击链接不弹窗
             if (e.target && e.target.tagName === 'A') return;
             if (full && full.length > 0) {
                 showCellDetailModal(field, full);
@@ -794,7 +797,7 @@ function bindFofaTableEvents() {
         }
     });
 
-    // Select-all in thead (since thead re-renders, use event capture on document)
+    // thead 的全选（因为 thead 会重渲染，用事件捕获到 document）
     document.addEventListener('change', (e) => {
         const t = e.target;
         if (!t || t.id !== 'fofa-select-all') return;
@@ -863,7 +866,7 @@ function toggleFofaColumn(field, visible) {
     if (visible) infoCollectState.hiddenFields.delete(f);
     else infoCollectState.hiddenFields.add(f);
     saveHiddenFieldsToStorage();
-    // Re-render table using the cached payload in state
+    // 重新渲染表格（用 state 中缓存的 payload）
     if (infoCollectState.currentPayload) {
         renderFofaResults(infoCollectState.currentPayload);
     }
@@ -881,7 +884,7 @@ function closeFofaColumnsPanel() {
     if (els.columnsPanel) els.columnsPanel.style.display = 'none';
 }
 
-// Click outside panel to close (avoid blocking the table header permanently)
+// 点击面板外部关闭（避免一直占着表格顶部）
 document.addEventListener('click', (e) => {
     const panel = document.getElementById('fofa-columns-panel');
     const btn = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -900,7 +903,7 @@ function showAllFofaColumns() {
 function hideAllFofaColumns() {
     const p = infoCollectState.currentPayload;
     if (!p || !Array.isArray(p.fields)) return;
-    // Allow hiding all, but keep a minimal visible column: at least one of host/ip/domain (if present)
+    // 允许隐藏全部，但给用户一个最小可用：至少保留 host/ip/domain 中之一（如果存在）
     const keep = ['host', 'ip', 'domain'].find(x => p.fields.includes(x));
     infoCollectState.hiddenFields = new Set(p.fields.filter(f => f !== keep));
     saveHiddenFieldsToStorage();
@@ -910,7 +913,7 @@ function hideAllFofaColumns() {
 function exportFofaResults(format) {
     const p = infoCollectState.currentPayload;
     if (!p || !Array.isArray(p.results) || p.results.length === 0) {
-        alert('No results to export');
+        alert(_t('infoCollect.noExportResult'));
         return;
     }
 
@@ -934,9 +937,9 @@ function exportFofaResults(format) {
     }
 
     if (format === 'xlsx') {
-        // Use SheetJS to generate XLSX (requires xlsx library to be included in the page)
+        // 使用 SheetJS 生成 XLSX（需在页面中引入 xlsx 库）
         if (typeof XLSX === 'undefined') {
-            alert('XLSX library not loaded, please refresh the page and try again');
+            alert(_t('infoCollect.xlsxNotLoaded'));
             return;
         }
         const aoa = [visibleFields].concat(p.results.map(row => {
@@ -945,12 +948,12 @@ function exportFofaResults(format) {
         }));
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'FOFA Results');
+        XLSX.utils.book_append_sheet(wb, ws, _t('infoCollect.batchScanTitle'));
         XLSX.writeFile(wb, `fofa_results_${ts}.xlsx`);
         return;
     }
 
-    // csv: default export visible fields, with UTF-8 BOM for Excel compatibility
+    // csv：默认导出可见字段，带 UTF-8 BOM 以兼容 Excel 中文
     const header = visibleFields;
     const rows = p.results.map(row => {
         const r = row && typeof row === 'object' ? row : {};
@@ -982,12 +985,12 @@ function downloadBlob(content, filename, mime) {
 async function batchScanSelectedFofaRows() {
     const p = infoCollectState.currentPayload;
     if (!p || !Array.isArray(p.results) || p.results.length === 0) {
-        alert('No results');
+        alert(_t('infoCollect.noResults'));
         return;
     }
     const selected = Array.from(infoCollectState.selectedRowIndexes).sort((a, b) => a - b);
     if (selected.length === 0) {
-        alert('Please select rows to scan first');
+        alert(_t('infoCollect.selectRowsFirst'));
         return;
     }
 
@@ -1002,25 +1005,25 @@ async function batchScanSelectedFofaRows() {
             skipped.push(idx + 1);
             return;
         }
-        // Batch task: same as single row, include all fields summary (avoid duplication and excessive length)
+        // 批量任务：与单条一致，只带“该行全部字段”的摘要（避免重复与超长）
         tasks.push(buildScanMessage(target, row || {}, {
             fields
         }));
     });
 
     if (tasks.length === 0) {
-        alert('Could not infer any scannable targets from selected rows (consider including host/ip/port/domain in fields)');
+        alert(_t('infoCollect.noScanTarget'));
         return;
     }
 
-    const title = (p.query ? `FOFA Batch Scan: ${p.query}` : 'FOFA Batch Scan').slice(0, 80);
+    const title = (p.query ? _t('infoCollect.batchScanTitle') + '：' + p.query : _t('infoCollect.batchScanTitle')).slice(0, 80);
     try {
-        // Do not force-switch to "info gathering" role: use current selected role; if Default, pass empty string for backend default logic
+        // 不强制切换到“信息收集”角色：沿用当前已选角色；若为默认则传空字符串交给后端走默认逻辑
         let role = '';
         if (typeof getCurrentRole === 'function') {
             try { role = getCurrentRole() || ''; } catch (e) { /* ignore */ }
         }
-        if (role === 'Default') role = '';
+        if (role === '默认') role = '';
 
         const resp = await apiFetch('/api/batch-tasks', {
             method: 'POST',
@@ -1029,14 +1032,14 @@ async function batchScanSelectedFofaRows() {
         });
         const result = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-            throw new Error(result.error || `Failed to create batch queue: ${resp.status}`);
+            throw new Error(result.error || _t('infoCollect.createQueueFailed') + ': ' + resp.status);
         }
         const queueId = result.queueId;
         if (!queueId) {
-            throw new Error('Created successfully but no queueId returned');
+            throw new Error('创建成功但未返回 queueId');
         }
 
-        // Navigate to task management and open queue details
+        // 跳到任务管理并打开队列详情
         if (typeof switchPage === 'function') switchPage('tasks');
         setTimeout(() => {
             if (typeof showBatchQueueDetail === 'function') {
@@ -1045,13 +1048,13 @@ async function batchScanSelectedFofaRows() {
         }, 250);
 
         if (skipped.length > 0) {
-            showInlineToast(`Queue created (skipped ${skipped.length} rows with no target)`);
+            showInlineToast(_t('infoCollect.queueCreatedSkipped', { n: skipped.length }));
         } else {
-            showInlineToast('Batch scan queue created');
+            showInlineToast(_t('infoCollect.batchQueueCreated'));
         }
     } catch (e) {
-        console.error('Batch scan failed:', e);
-        alert('Batch scan failed: ' + (e && e.message ? e.message : String(e)));
+        console.error('批量扫描失败:', e);
+        alert(_t('infoCollect.batchScanFailed') + ': ' + (e && e.message ? e.message : String(e)));
     }
 }
 
@@ -1065,8 +1068,8 @@ function showCellDetailModal(field, fullText) {
     modal.innerHTML = `
         <div class="info-collect-cell-modal-content" role="dialog" aria-modal="true">
             <div class="info-collect-cell-modal-header">
-                <div class="info-collect-cell-modal-title">${escapeHtml(field || 'Field')}</div>
-                <button class="btn-icon" type="button" id="info-collect-cell-modal-close" title="Close">
+                <div class="info-collect-cell-modal-title">${escapeHtml(field || _t('infoCollect.field'))}</div>
+                <button class="btn-icon" type="button" id="info-collect-cell-modal-close" title="${_t('common.close')}">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     </svg>
@@ -1076,8 +1079,8 @@ function showCellDetailModal(field, fullText) {
                 <pre class="info-collect-cell-modal-pre">${escapeHtml(fullText || '')}</pre>
             </div>
             <div class="info-collect-cell-modal-footer">
-                <button class="btn-secondary" type="button" id="info-collect-cell-modal-copy">Copy</button>
-                <button class="btn-primary" type="button" id="info-collect-cell-modal-ok">Close</button>
+                <button class="btn-secondary" type="button" id="info-collect-cell-modal-copy">${_t('common.copy')}</button>
+                <button class="btn-primary" type="button" id="info-collect-cell-modal-ok">${_t('common.close')}</button>
             </div>
         </div>
     `;
@@ -1091,10 +1094,10 @@ function showCellDetailModal(field, fullText) {
     document.getElementById('info-collect-cell-modal-close')?.addEventListener('click', close);
     document.getElementById('info-collect-cell-modal-ok')?.addEventListener('click', close);
     document.getElementById('info-collect-cell-modal-copy')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(fullText || '').then(() => showInlineToast('Copied')).catch(() => alert('Copy failed'));
+        navigator.clipboard.writeText(fullText || '').then(() => showInlineToast(_t('common.copied'))).catch(() => alert(_t('common.copyFailed')));
     });
 
-    // Esc to close
+    // Esc 关闭
     const onKey = (e) => {
         if (e.key === 'Escape') {
             close();
@@ -1104,7 +1107,7 @@ function showCellDetailModal(field, fullText) {
     document.addEventListener('keydown', onKey);
 }
 
-// Expose to global scope (for index.html onclick handlers)
+// 暴露到全局（供 index.html onclick 调用）
 window.initInfoCollectPage = initInfoCollectPage;
 window.resetFofaForm = resetFofaForm;
 window.submitFofaSearch = submitFofaSearch;
@@ -1122,239 +1125,13 @@ window.toggleFofaColumn = toggleFofaColumn;
 window.exportFofaResults = exportFofaResults;
 window.batchScanSelectedFofaRows = batchScanSelectedFofaRows;
 
-// ═══════════════════════════════════════════════════════════════════════
-// Multi-engine Recon: Tab switching, generic search, result rendering
-// ═══════════════════════════════════════════════════════════════════════
+document.addEventListener('languagechange', function () {
+    updateSelectedMeta();
+});
 
-let activeReconEngine = 'fofa';
-
-// Per-engine result cache
-const reconResults = {};
-
-const RECON_ENGINES = {
-    fofa: {
-        name: 'FOFA',
-        searchEndpoint: '/api/fofa/search',
-        buildPayload: function() {
-            return {
-                query: document.getElementById('fofa-query')?.value.trim() || '',
-                size: parseInt(document.getElementById('fofa-size')?.value) || 100,
-                page: parseInt(document.getElementById('fofa-page')?.value) || 1,
-                fields: document.getElementById('fofa-fields')?.value.trim() || 'host,ip,port,domain,title',
-                full: document.getElementById('fofa-full')?.checked || false
-            };
-        },
-        // FOFA uses its own existing submitFofaSearch()
-        useNativeSearch: true
-    },
-    zoomeye: {
-        name: 'ZoomEye',
-        searchEndpoint: '/api/recon/zoomeye/search',
-        buildPayload: function() {
-            return {
-                query: document.getElementById('zoomeye-query')?.value.trim() || '',
-                pagesize: parseInt(document.getElementById('zoomeye-size')?.value) || 20,
-                page: parseInt(document.getElementById('zoomeye-page')?.value) || 1
-            };
-        }
-    },
-    shodan: {
-        name: 'Shodan',
-        searchEndpoint: '/api/recon/shodan/search',
-        buildPayload: function() {
-            return {
-                query: document.getElementById('shodan-query')?.value.trim() || '',
-                page: parseInt(document.getElementById('shodan-page')?.value) || 1
-            };
-        }
-    },
-    censys: {
-        name: 'Censys',
-        searchEndpoint: '/api/recon/censys/search',
-        buildPayload: function() {
-            return {
-                query: document.getElementById('censys-query')?.value.trim() || '',
-                per_page: parseInt(document.getElementById('censys-size')?.value) || 25,
-                page: parseInt(document.getElementById('censys-page')?.value) || 1
-            };
-        }
-    }
-};
-
-function switchReconTab(engine) {
-    if (!RECON_ENGINES[engine]) return;
-    activeReconEngine = engine;
-
-    // Update tab buttons
-    document.querySelectorAll('.recon-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.engine === engine);
-    });
-
-    // Show/hide panels (CSS handles display via .active class)
-    document.querySelectorAll('.recon-panel').forEach(panel => {
-        panel.classList.toggle('active', panel.id === 'recon-panel-' + engine);
-    });
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { updateSelectedMeta(); });
+} else {
+    updateSelectedMeta();
 }
 
-function submitReconSearch() {
-    const engine = activeReconEngine;
-    const cfg = RECON_ENGINES[engine];
-    if (!cfg) return;
-
-    // FOFA uses its own native search function
-    if (cfg.useNativeSearch) {
-        submitFofaSearch();
-        return;
-    }
-
-    const payload = cfg.buildPayload();
-    if (!payload.query) {
-        alert(cfg.name + ': please enter a query');
-        return;
-    }
-
-    const metaEl = document.getElementById(engine + '-results-meta');
-    const theadEl = document.getElementById(engine + '-results-thead');
-    const tbodyEl = document.getElementById(engine + '-results-tbody');
-    if (metaEl) metaEl.textContent = 'Searching...';
-    if (tbodyEl) tbodyEl.innerHTML = '<tr><td class="muted" style="padding:16px">Loading...</td></tr>';
-
-    apiFetch(cfg.searchEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(resp => {
-        if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || 'Search failed'); });
-        return resp.json();
-    })
-    .then(data => {
-        reconResults[engine] = data;
-        renderReconResults(engine, data);
-    })
-    .catch(err => {
-        if (metaEl) metaEl.textContent = 'Error: ' + err.message;
-        if (tbodyEl) tbodyEl.innerHTML = '<tr><td class="muted" style="padding:16px;color:var(--color-error)">' + escapeHtml(err.message) + '</td></tr>';
-    });
-}
-
-function renderReconResults(engine, data) {
-    const metaEl = document.getElementById(engine + '-results-meta');
-    const theadEl = document.getElementById(engine + '-results-thead');
-    const tbodyEl = document.getElementById(engine + '-results-tbody');
-
-    if (!data || !data.results || data.results.length === 0) {
-        if (metaEl) metaEl.textContent = 'No results';
-        if (tbodyEl) tbodyEl.innerHTML = '<tr><td class="muted" style="padding:16px">No results found</td></tr>';
-        return;
-    }
-
-    if (metaEl) metaEl.textContent = `Total: ${data.total || 0} | Page: ${data.page || 1} | Showing: ${data.results_count || data.results.length}`;
-
-    const fields = data.fields || Object.keys(data.results[0]);
-
-    // Render header
-    if (theadEl) {
-        theadEl.innerHTML = '<tr>' + fields.map(f => '<th>' + escapeHtml(f) + '</th>').join('') + '</tr>';
-    }
-
-    // Render body
-    if (tbodyEl) {
-        tbodyEl.innerHTML = data.results.map(row => {
-            return '<tr>' + fields.map(f => {
-                let val = row[f];
-                if (val === null || val === undefined) val = '';
-                if (typeof val === 'object') val = JSON.stringify(val);
-                val = String(val);
-                if (val.length > 120) val = val.substring(0, 120) + '...';
-                return '<td>' + escapeHtml(val) + '</td>';
-            }).join('') + '</tr>';
-        }).join('');
-    }
-}
-
-function resetReconForm() {
-    const engine = activeReconEngine;
-    if (engine === 'fofa') {
-        resetFofaForm();
-        return;
-    }
-    const queryEl = document.getElementById(engine + '-query');
-    if (queryEl) queryEl.value = '';
-    const sizeEl = document.getElementById(engine + '-size');
-    if (sizeEl) sizeEl.value = engine === 'censys' ? '25' : '20';
-    const pageEl = document.getElementById(engine + '-page');
-    if (pageEl) pageEl.value = '1';
-    const metaEl = document.getElementById(engine + '-results-meta');
-    if (metaEl) metaEl.textContent = '-';
-    const tbodyEl = document.getElementById(engine + '-results-tbody');
-    if (tbodyEl) tbodyEl.innerHTML = '<tr><td class="muted" style="padding:16px">No data</td></tr>';
-    const theadEl = document.getElementById(engine + '-results-thead');
-    if (theadEl) theadEl.innerHTML = '';
-}
-
-function exportReconResults(engine, format) {
-    const data = reconResults[engine];
-    if (!data || !data.results || data.results.length === 0) {
-        alert('No results to export');
-        return;
-    }
-
-    const fields = data.fields || Object.keys(data.results[0]);
-    let content, filename, mime;
-
-    if (format === 'json') {
-        content = JSON.stringify(data.results, null, 2);
-        filename = engine + '_results.json';
-        mime = 'application/json';
-    } else {
-        // CSV
-        const rows = [fields.join(',')];
-        for (const row of data.results) {
-            rows.push(fields.map(f => {
-                let v = row[f];
-                if (v === null || v === undefined) v = '';
-                if (typeof v === 'object') v = JSON.stringify(v);
-                v = String(v).replace(/"/g, '""');
-                return '"' + v + '"';
-            }).join(','));
-        }
-        content = rows.join('\n');
-        filename = engine + '_results.csv';
-        mime = 'text/csv;charset=utf-8';
-    }
-
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-}
-
-// Update recon tab availability based on config
-function updateReconTabStates() {
-    if (typeof currentConfig === 'undefined') return;
-    const checks = {
-        fofa: !!(currentConfig.fofa?.email && currentConfig.fofa?.api_key),
-        zoomeye: !!currentConfig.zoomeye?.api_key,
-        shodan: !!currentConfig.shodan?.api_key,
-        censys: !!(currentConfig.censys?.api_id && currentConfig.censys?.api_secret)
-    };
-    document.querySelectorAll('.recon-tab').forEach(tab => {
-        const engine = tab.dataset.engine;
-        if (engine && checks[engine] !== undefined) {
-            const configured = checks[engine];
-            tab.classList.toggle('disabled', !configured);
-            tab.title = configured ? '' : 'API key not configured — set it in Settings';
-        }
-    });
-}
-
-// Expose to global
-window.switchReconTab = switchReconTab;
-window.submitReconSearch = submitReconSearch;
-window.resetReconForm = resetReconForm;
-window.exportReconResults = exportReconResults;
-window.updateReconTabStates = updateReconTabStates;

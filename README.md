@@ -1,9 +1,20 @@
 <div align="center">
-  <img src="images/cybersec.png" alt="CyberStrikeAI Logo" width="400">
+  <img src="web/static/logo.png" alt="CyberStrikeAI Logo" width="200">
 </div>
 
 # CyberStrikeAI
 
+
+[中文](README_CN.md) | [English](README.md)
+
+**Community**: [Join us on Discord](https://discord.gg/8PjVCMu8Zw)
+
+<details>
+<summary><strong>WeChat group</strong> (click to reveal QR code)</summary>
+
+<img src="./images/wechat-group-cyberstrikeai-qr.jpg" alt="CyberStrikeAI WeChat group QR code" width="280">
+
+</details>
 
 CyberStrikeAI is an **AI-native security testing platform** built in Go. It integrates 100+ security tools, an intelligent orchestration engine, role-based testing with predefined security roles, a skills system with specialized testing skills, and comprehensive lifecycle management capabilities. Through native MCP protocol and AI agents, it enables end-to-end automation from conversational commands to vulnerability discovery, attack-chain analysis, knowledge retrieval, and result visualization—delivering an auditable, traceable, and collaborative testing environment for security teams.
 
@@ -27,40 +38,54 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 <img src="./images/web-console.png" alt="Web Console" width="100%">
 </td>
 <td width="33.33%" align="center">
-<strong>Attack Chain Visualization</strong><br/>
-<img src="./images/attack-chain.png" alt="Attack Chain" width="100%">
-</td>
-<td width="33.33%" align="center">
 <strong>Task Management</strong><br/>
 <img src="./images/task-management.png" alt="Task Management" width="100%">
+</td>
+<td width="33.33%" align="center">
+<strong>Vulnerability Management</strong><br/>
+<img src="./images/vulnerability-management.png" alt="Vulnerability Management" width="100%">
 </td>
 </tr>
 <tr>
 <td width="33.33%" align="center">
-<strong>Vulnerability Management</strong><br/>
-<img src="./images/vulnerability-management.png" alt="Vulnerability Management" width="100%">
+<strong>WebShell Management</strong><br/>
+<img src="./images/webshell-management.png" alt="WebShell Management" width="100%">
 </td>
 <td width="33.33%" align="center">
 <strong>MCP Management</strong><br/>
 <img src="./images/mcp-management.png" alt="MCP management" width="100%">
 </td>
 <td width="33.33%" align="center">
-<strong>MCP stdio Mode</strong><br/>
-<img src="./images/mcp-stdio2.png" alt="MCP stdio mode" width="100%">
-</td>
-</tr>
-<tr>
-<td width="33.33%" align="center">
 <strong>Knowledge Base</strong><br/>
 <img src="./images/knowledge-base.png" alt="Knowledge Base" width="100%">
 </td>
+</tr>
+<tr>
 <td width="33.33%" align="center">
 <strong>Skills Management</strong><br/>
 <img src="./images/skills.png" alt="Skills Management" width="100%">
 </td>
 <td width="33.33%" align="center">
+<strong>Agent Management</strong><br/>
+<img src="./images/agent-management.png" alt="Agent Management" width="100%">
+</td>
+<td width="33.33%" align="center">
 <strong>Role Management</strong><br/>
 <img src="./images/role-management.png" alt="Role Management" width="100%">
+</td>
+</tr>
+<tr>
+<td width="33.33%" align="center">
+<strong>System Settings</strong><br/>
+<img src="./images/settings.png" alt="System settings" width="100%">
+</td>
+<td width="33.33%" align="center">
+<strong>MCP stdio Mode</strong><br/>
+<img src="./images/mcp-stdio2.png" alt="MCP stdio mode" width="100%">
+</td>
+<td width="33.33%" align="center">
+<strong>Burp Suite Plugin</strong><br/>
+<img src="./images/plugins.png" alt="Burp Suite plugin" width="100%">
 </td>
 </tr>
 </table>
@@ -75,17 +100,23 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 📄 Large-result pagination, compression, and searchable archives
 - 🔗 Attack-chain graph, risk scoring, and step-by-step replay
 - 🔒 Password-protected web UI, audit logs, and SQLite persistence
-- 📚 Knowledge base with vector search and **corpus-level BM25 hybrid retrieval** for security expertise
-- 🧠 **Persistent memory**: key-value store that survives conversation compression and server restarts — agents remember credentials, targets, and findings across sessions; tool results are automatically stored as memory entries
-- 🔍 **Agent introspection**: before every major action the agent automatically retrieves similar memory entries and pre-fetches relevant knowledge-base guidance to avoid duplicate work and improve tool selection
-- ⏰ **Time awareness**: current date/time is automatically injected into every agent system prompt; configurable timezone support
+- 📚 Knowledge base with vector search and hybrid retrieval for security expertise
 - 📁 Conversation grouping with pinning, rename, and batch management
 - 🛡️ Vulnerability management with CRUD operations, severity tracking, status workflow, and statistics
 - 📋 Batch task management: create task queues, add multiple tasks, and execute them sequentially
-- 🎭 Role-based testing: 13 predefined security testing roles (Penetration Testing, CTF, Web App Scanning, etc.) with custom prompts and tool restrictions
-- 🎯 Skills system: 22 predefined security testing skills (SQL injection, XSS, API security, etc.) that can be attached to roles or called on-demand by AI agents
-- 🐳 **Docker lifecycle management**: deploy, update, start, stop, restart, and monitor the Docker stack directly from the System Settings UI or via REST API
-- 📱 **Chatbot**: Telegram and Lark long-lived connections so you can talk to CyberStrikeAI from mobile (see [Robot / Chatbot guide](docs/robot_en.md) for setup and commands)
+- 🎭 Role-based testing: predefined security testing roles (Penetration Testing, CTF, Web App Scanning, etc.) with custom prompts and tool restrictions
+- 🧩 **Multi-agent mode (Eino DeepAgent)**: optional orchestration where a coordinator delegates work to Markdown-defined sub-agents via the `task` tool; main agent in `agents/orchestrator.md` (or `kind: orchestrator`), sub-agents under `agents/*.md`; chat mode switch when `multi_agent.enabled` is true (see [Multi-agent doc](docs/MULTI_AGENT_EINO.md))
+- 🎯 Skills system: 20+ predefined security testing skills (SQL injection, XSS, API security, etc.) that can be attached to roles or called on-demand by AI agents
+- 📱 **Chatbot**: DingTalk and Lark (Feishu) long-lived connections so you can talk to CyberStrikeAI from mobile (see [Robot / Chatbot guide](docs/robot_en.md) for setup and commands)
+ - 🐚 **WebShell management**: Add and manage WebShell connections (e.g. IceSword/AntSword compatible), use a virtual terminal for command execution, a built-in file manager for file operations, and an AI assistant tab that orchestrates tests and keeps per-connection conversation history; supports PHP, ASP, ASPX, JSP and custom shell types with configurable request method and command parameter.
+
+## Plugins
+
+CyberStrikeAI includes optional integrations under `plugins/`.
+
+- **Burp Suite extension**: `plugins/burp-suite/cyberstrikeai-burp-extension/`  
+  Build output: `plugins/burp-suite/cyberstrikeai-burp-extension/dist/cyberstrikeai-burp-extension.jar`  
+  Docs: `plugins/burp-suite/cyberstrikeai-burp-extension/README.md`
 
 ## Tool Overview
 
@@ -117,7 +148,7 @@ CyberStrikeAI ships with 100+ curated tools covering the whole kill chain:
 
 **One-Command Deployment:**
 ```bash
-git clone https://github.com/cybersecua/CyberStrikeAI.git
+git clone https://github.com/Ed1s0nZ/CyberStrikeAI.git
 cd CyberStrikeAI
 chmod +x run.sh && ./run.sh
 ```
@@ -163,14 +194,37 @@ go build -o cyberstrike-ai cmd/server/main.go
 
 **Note:** The Python virtual environment (`venv/`) is automatically created and managed by `run.sh`. Tools that require Python (like `api-fuzzer`, `http-framework-test`, etc.) will automatically use this environment.
 
+### Version Update (No Breaking Changes)
+
+**CyberStrikeAI one-click upgrade (recommended):**
+1. (First time) enable the script: `chmod +x upgrade.sh`
+2. Upgrade with: `./upgrade.sh` (optional flags: `--tag vX.Y.Z`, `--no-venv`, `--preserve-custom`, `--yes`)
+3. The script will back up your `config.yaml` and `data/`, upgrade the code from GitHub Release, update `config.yaml`'s `version`, then restart the server.
+
+Recommended one-liner:
+`chmod +x upgrade.sh && ./upgrade.sh --yes`
+
+If something goes wrong, you can restore from `.upgrade-backup/` (or manually copy `/data` and `config.yaml` back) and run `./run.sh` again.
+
+Requirements / tips:
+* You need `curl` or `wget` for downloading Release packages.
+* `rsync` is recommended/required for the safe code sync.
+* If GitHub API rate-limits you, set `export GITHUB_TOKEN="..."` before running `./upgrade.sh`.
+
+⚠️ **Note:** This procedure only applies to version updates without compatibility or breaking changes. If a release includes compatibility changes, this method may not apply.
+
+**Examples:** No breaking changes — e.g. v1.3.1 → v1.3.2; with breaking changes — e.g. v1.3.1 → v1.4.0. The project follows [Semantic Versioning](https://semver.org/) (SemVer): when only the patch version (third number) changes, this upgrade path is usually safe; when the minor or major version changes, config, data, or APIs may have changed — check the release notes before using this method.
+
 ### Core Workflows
 - **Conversation testing** – Natural-language prompts trigger toolchains with streaming SSE output.
+- **Single vs multi-agent** – With `multi_agent.enabled: true`, the chat UI can switch between **single** (classic ReAct loop) and **multi** (Eino DeepAgent + `task` sub-agents). Multi mode uses `/api/multi-agent/stream`; tools are bridged from the same MCP stack as single-agent.
 - **Role-based testing** – Select from predefined security testing roles (Penetration Testing, CTF, Web App Scanning, API Security Testing, etc.) to customize AI behavior and tool availability. Each role applies custom system prompts and can restrict available tools for focused testing scenarios.
 - **Tool monitor** – Inspect running jobs, execution logs, and large-result attachments.
 - **History & audit** – Every conversation and tool invocation is stored in SQLite with replay.
 - **Conversation groups** – Organize conversations into groups, pin important groups, rename or delete groups via context menu.
 - **Vulnerability management** – Create, update, and track vulnerabilities discovered during testing. Filter by severity (critical/high/medium/low/info), status (open/confirmed/fixed/false_positive), and conversation. View statistics and export findings.
 - **Batch task management** – Create task queues with multiple tasks, add or edit tasks before execution, and run them sequentially. Each task executes as a separate conversation, with status tracking (pending/running/completed/failed/cancelled) and full execution history.
+- **WebShell management** – Add and manage WebShell connections (PHP/ASP/ASPX/JSP or custom). Use the virtual terminal to run commands, the file manager to list, read, edit, upload, and delete files, and the AI assistant tab to drive scripted tests with per-connection conversation history. Connections are stored in SQLite; supports GET/POST and configurable command parameter (e.g. IceSword/AntSword style).
 - **Settings** – Tweak provider keys, MCP enablement, tool toggles, and agent iteration limits.
 
 ### Built-in Safeguards
@@ -182,7 +236,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 ## Advanced Usage
 
 ### Role-Based Testing
-- **Predefined roles** – System includes 13 predefined security testing roles (Penetration Testing, CTF, Web App Scanning, API Security Testing, Binary Analysis, Cloud Security Audit, etc.) in the `roles/` directory.
+- **Predefined roles** – System includes 12+ predefined security testing roles (Penetration Testing, CTF, Web App Scanning, API Security Testing, Binary Analysis, Cloud Security Audit, etc.) in the `roles/` directory.
 - **Custom prompts** – Each role can define a `user_prompt` that prepends to user messages, guiding the AI to adopt specialized testing methodologies and focus areas.
 - **Tool restrictions** – Roles can specify a `tools` list to limit available tools, ensuring focused testing workflows (e.g., CTF role restricts to CTF-specific utilities).
 - **Skills integration** – Roles can attach security testing skills. Skill names are added to system prompts as hints, and AI agents can access skill content on-demand using the `read_skill` tool.
@@ -207,8 +261,17 @@ go build -o cyberstrike-ai cmd/server/main.go
    ```
 2. Restart the server or reload configuration; the role appears in the role selector dropdown.
 
+### Multi-Agent Mode (Eino DeepAgent)
+- **What it is** – An optional second execution path based on CloudWeGo **Eino** `adk/prebuilt/deep`: a **coordinator** (main agent) calls a **`task`** tool to run ephemeral **sub-agents**, each with its own model loop and tool set derived from the current role.
+- **Markdown agents** – Under `agents_dir` (default `agents/`, relative to `config.yaml`), define:
+  - **Orchestrator**: file name `orchestrator.md` *or* any `.md` with front matter `kind: orchestrator` (only **one** per directory). Sets Deep agent name/id, description, and optional full system prompt (body); if the body is empty, `multi_agent.orchestrator_instruction` and then Eino defaults apply.
+  - **Sub-agents**: other `*.md` files (YAML front matter + body as instruction). They are **not** used as `task` targets if classified as orchestrator.
+- **Management** – Web UI: **Agents → Agent management** for CRUD on Markdown agents; API prefix `/api/multi-agent/markdown-agents`.
+- **Config** – `multi_agent` block in `config.yaml`: `enabled`, `default_mode` (`single` | `multi`), `robot_use_multi_agent`, `batch_use_multi_agent`, `max_iteration`, `orchestrator_instruction`, optional YAML `sub_agents` merged with disk (same `id` → Markdown wins).
+- **Details** – Streaming events, robots, batch queue, and troubleshooting: **[docs/MULTI_AGENT_EINO.md](docs/MULTI_AGENT_EINO.md)**.
+
 ### Skills System
-- **Predefined skills** – System includes 22 predefined security testing skills (SQL injection, XSS, API security, cloud security, container security, etc.) in the `skills/` directory.
+- **Predefined skills** – System includes 20+ predefined security testing skills (SQL injection, XSS, API security, cloud security, container security, etc.) in the `skills/` directory.
 - **Skill hints in prompts** – When a role is selected, skill names attached to that role are added to the system prompt as recommendations. Skill content is not automatically injected; AI agents must use the `read_skill` tool to access skill details when needed.
 - **On-demand access** – AI agents can also access skills on-demand using built-in tools (`list_skills`, `read_skill`), allowing dynamic skill retrieval during task execution.
 - **Structured format** – Each skill is a directory containing a `SKILL.md` file with detailed testing methods, tool usage, best practices, and examples. Skills support YAML front matter for metadata.
@@ -237,10 +300,19 @@ go build -o cyberstrike-ai cmd/server/main.go
 - The web UI renders the chain as an interactive graph with severity scoring and step replay.
 - Export the chain or raw findings to external reporting pipelines.
 
+### WebShell Management
+- **Connections** – From the Web UI, go to **WebShell Management** to add, edit, or delete WebShell connections. Each connection stores: Shell URL, password/key, shell type (PHP, ASP, ASPX, JSP, Custom), request method (GET/POST), command parameter name (default `cmd`), and an optional remark; all records persist in SQLite and are compatible with common clients such as IceSword and AntSword.
+- **Virtual terminal** – After selecting a connection, use the **Virtual terminal** tab to run arbitrary commands with history and quick commands (whoami/id/ls/pwd etc.). Output is streamed in the browser, and Ctrl+L clears the screen.
+- **File manager** – Use the **File manager** tab to list directories, read or edit files, delete files, create folders/files, upload files (including chunked uploads for large files), rename paths, and download selected files. Path navigation supports breadcrumbs, parent directory jumps, and name filtering.
+- **AI assistant** – Use the **AI assistant** tab to chat with an agent that understands the current WebShell connection, automatically runs tools and shell commands, and maintains per-connection conversation history with a sidebar of previous sessions.
+- **Connectivity test** – Use **Test connectivity** to verify that the shell URL, password, and command parameter are correct before running commands (sends a lightweight `echo 1` check).
+- **Persistence** – All WebShell connections and AI conversations are stored in SQLite (same database as conversations), so they persist across restarts.
+
 ### MCP Everywhere
 - **Web mode** – ships with HTTP MCP server automatically consumed by the UI.
 - **MCP stdio mode** – `go run cmd/mcp-stdio/main.go` exposes the agent to Cursor/CLI.
 - **External MCP federation** – register third-party MCP servers (HTTP, stdio, or SSE) from the UI, toggle them per engagement, and monitor their health and call volume in real time.
+- **Optional MCP servers** – the [`mcp-servers/`](mcp-servers/README.md) directory provides standalone MCPs (e.g. reverse shell). They speak standard MCP over stdio and work with CyberStrikeAI (Settings → External MCP), Cursor, VS Code, and other MCP clients.
 
 #### MCP stdio quick start
 1. **Build the binary** (run from the project root):
@@ -264,21 +336,33 @@ go build -o cyberstrike-ai cmd/server/main.go
    ```
    Replace the paths with your local locations; Cursor will launch the stdio server automatically.
 
-#### MCP HTTP quick start
-1. Ensure `config.yaml` has `mcp.enabled: true` and adjust `mcp.host` / `mcp.port` if you need a non-default binding (localhost:8081 works well for local Cursor usage).
-2. Start the main service (`./run.sh` or `go run cmd/server/main.go`); the MCP endpoint lives at `http://<host>:<port>/mcp`.
-3. In Cursor, choose **Add Custom MCP → HTTP** and set `Base URL` to `http://127.0.0.1:8081/mcp`.
-4. Prefer committing the setup via `.cursor/mcp.json` so teammates can reuse it:
-   ```json
-   {
-     "mcpServers": {
-       "cyberstrike-ai-http": {
-         "transport": "http",
-         "url": "http://127.0.0.1:8081/mcp"
-       }
-     }
-   }
-   ```
+#### MCP HTTP quick start (Cursor / Claude Code)
+The HTTP MCP server runs on a separate port (default `8081`) and supports **header-based authentication** so only clients that send the correct header can call tools.
+
+1. **Enable MCP in config** – In `config.yaml` set `mcp.enabled: true` and optionally `mcp.host` / `mcp.port`. For auth (recommended if the port is reachable from the network), set:
+   - `mcp.auth_header` – header name (e.g. `X-MCP-Token`);
+   - `mcp.auth_header_value` – secret value. **Leave it empty** if you want the server to **auto-generate** a random token on first start and write it back to the config.
+2. **Start the service** – Run `./run.sh` or `go run cmd/server/main.go`. The MCP endpoint is `http://<host>:<port>/mcp` (e.g. `http://localhost:8081/mcp`).
+3. **Copy the JSON from the terminal** – When MCP is enabled, the server prints a **ready-to-paste** JSON block. If `auth_header_value` was empty, it will have been generated and saved; the printed JSON includes the URL and headers.
+4. **Use in Cursor or Claude Code**:
+   - **Cursor**: Paste the block into `~/.cursor/mcp.json` (or your project’s `.cursor/mcp.json`) under `mcpServers`, or merge it into your existing `mcpServers`.
+   - **Claude Code**: Paste into `.mcp.json` or `~/.claude.json` under `mcpServers`.
+
+Example of what the terminal prints (with auth enabled):
+```json
+{
+  "mcpServers": {
+    "cyberstrike-ai": {
+      "url": "http://localhost:8081/mcp",
+      "headers": {
+        "X-MCP-Token": "<auto-generated-or-your-value>"
+      },
+      "type": "http"
+    }
+  }
+}
+```
+If you do not set `auth_header` / `auth_header_value`, the endpoint accepts requests without authentication (suitable only for localhost or trusted networks).
 
 #### External MCP federation (HTTP/stdio/SSE)
 CyberStrikeAI supports connecting to external MCP servers via three transport modes:
@@ -338,14 +422,13 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 
 ### Knowledge Base
 - **Vector search** – AI agent can automatically search the knowledge base for relevant security knowledge during conversations using the `search_knowledge_base` tool.
-- **Hybrid retrieval** – combines vector similarity search with **corpus-level BM25 Okapi** keyword scoring for better accuracy. The BM25 index is built from all knowledge chunks (with real inverse document frequency) and is automatically rebuilt when new items are indexed.
-- **Configurable hybrid weight** – `knowledge.retrieval.hybrid_weight` blends vector similarity and BM25 scores (1.0 = pure vector, 0.0 = pure keyword).
+- **Hybrid retrieval** – combines vector similarity search with keyword matching for better accuracy.
 - **Auto-indexing** – scans the `knowledge_base/` directory for Markdown files and automatically indexes them with embeddings.
 - **Web management** – create, update, delete knowledge items through the web UI, with category-based organization.
 - **Retrieval logs** – tracks all knowledge retrieval operations for audit and debugging.
 
 **Quick Start (Using Pre-built Knowledge Base):**
-1. **Download the knowledge database** – Download the pre-built knowledge database file from [GitHub Releases](https://github.com/cybersecua/CyberStrikeAI/releases).
+1. **Download the knowledge database** – Download the pre-built knowledge database file from [GitHub Releases](https://github.com/Ed1s0nZ/CyberStrikeAI/releases).
 2. **Extract and place** – Extract the downloaded knowledge database file (`knowledge.db`) and place it in the project's `data/` directory.
 3. **Restart the service** – Restart the CyberStrikeAI service, and the knowledge base will be ready to use immediately without rebuilding the index.
 
@@ -375,145 +458,13 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 - The system supports incremental updates – modified files are re-indexed automatically.
 
 
-### Persistent Memory
-
-The persistent memory system allows agents to remember key facts across conversation compressions and server restarts. Memories are stored in SQLite alongside conversations and are automatically injected into every system prompt.
-
-**Memory categories:**
-
-| Category | Purpose |
-|----------|---------|
-| `credential` | Discovered passwords, tokens, API keys, and secrets |
-| `target` | IP addresses, domains, service ports, and scope items |
-| `vulnerability` | Exploit notes, CVE references, and payload details |
-| `fact` | General observations and intelligence about the environment |
-| `note` | Operational reminders and planning notes |
-
-**Built-in memory tools (available to the AI agent):**
-
-| Tool | Description |
-|------|-------------|
-| `store_memory` | Persist a key/value fact with a category |
-| `retrieve_memory` | Search memories by query text and optional category |
-| `list_memories` | List all stored memories, optionally filtered by category |
-| `delete_memory` | Remove a memory entry by ID |
-
-**Configuration (`config.yaml`):**
-```yaml
-agent:
-  memory:
-    enabled: true      # Enable persistent memory (default: true)
-    max_entries: 200   # Hard cap on entries (0 = unlimited)
-```
-
-The context block injected into each system prompt looks like:
-```
-[CREDENTIALS]
-  • admin_password: P@ssw0rd123
-[TARGETS]
-  • main_target: 192.168.1.100 (Apache 2.4, port 80/443)
-[VULNERABILITIES]
-  • sqli_endpoint: /login.php?id= is injectable (union-based)
-```
-
----
-
-### Time Awareness
-
-The time awareness feature automatically prepends the current date, time, timezone, and session age to every agent system prompt. This helps the agent:
-- Correctly timestamp vulnerability reports and notes
-- Reason about time-limited engagements
-- Build time-relative plans (schedule scans, set reminders)
-
-**Built-in time tool:**
-
-| Tool | Description |
-|------|-------------|
-| `get_current_time` | Returns current date/time, timezone, Unix timestamp, and session uptime |
-
-**Configuration (`config.yaml`):**
-```yaml
-agent:
-  time_awareness:
-    enabled: true      # Inject time context into prompts (default: true)
-    timezone: "UTC"    # IANA timezone (e.g. "America/New_York", "Europe/London", "Asia/Tokyo")
-```
-
-The injected block looks like:
-```
-<time_context>
-  Current date and time : 2026-03-04 14:30:00 UTC
-  Day of week           : Wednesday
-  Unix timestamp        : 1741099800
-  Session age           : 2h 15m 30s
-</time_context>
-```
-
----
-
-### Docker Lifecycle Management
-
-CyberStrikeAI includes a full Docker management layer accessible from both the web UI and REST API.
-
-**System Settings → Docker panel** lets you:
-- View container status, image version, and compose version at a glance
-- Stream live container logs with a configurable line count
-- Run lifecycle actions (deploy, update, start, stop, restart, remove) with optional proxy or VPN configuration
-- Monitor HTTP health probes for the app on ports 8080 and 18080
-
-**CLI via `run_docker.sh`:**
-```bash
-./run_docker.sh deploy            # Build and start the stack
-./run_docker.sh update            # git pull + redeploy
-./run_docker.sh start|stop|restart
-./run_docker.sh status            # Show container + app status
-./run_docker.sh logs              # Print last N container log lines
-./run_docker.sh test              # Run container runtime tests
-./run_docker.sh remove            # Remove containers, network, and volumes
-
-# Proxy options (passed through to the container environment):
-./run_docker.sh deploy --proxy-mode socks --proxy-url socks5h://127.0.0.1:1080
-./run_docker.sh deploy --proxy-mode vpn --vpn-container my-vpn
-./run_docker.sh update --git-ref v1.5.0
-```
-
-**Docker API endpoints:**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/api/docker/status` | Container status, compose version, and HTTP health probes |
-| `GET`  | `/api/docker/logs?lines=200` | Last N lines from container logs (or local `logs/suite.log`) |
-| `POST` | `/api/docker/action` | Run a lifecycle action (`deploy`, `update`, `start`, `stop`, `restart`, `remove`, `test`) |
-
-**Docker action request body:**
-```json
-{
-  "action": "update",
-  "proxy_mode": "direct",
-  "proxy_url": "",
-  "vpn_container": "",
-  "git_ref": "main"
-}
-```
-
-See [Docker Guide](docs/docker_en.md) for a full walkthrough.
-
-### Agent Introspection
-
-Before every major new action the agent now performs a mandatory introspection pass:
-
-1. **Memory similarity check** – retrieves memory entries that are semantically similar to the current user request, plus entity-based matches (IP addresses, domain names). This surfaces relevant credentials, prior tool results, and known vulnerabilities without requiring the user to repeat context.
-2. **Knowledge-base preflight** – runs a focused knowledge-base query combining the user input with penetration-testing terminology to surface relevant exploitation techniques and tool guidance.
-3. **Contextual decision** – the agent uses this retrieved context to choose tools and parameters, avoiding duplicate scans and leveraging prior findings automatically.
-
-The introspection context is injected into the system prompt as a `<memory_similarity_context>` block before each agent turn, ensuring the agent never starts a scan it already completed.
-
 ### Automation Hooks
 - **REST APIs** – everything the UI uses (auth, conversations, tool runs, monitor, vulnerabilities, roles) is available over JSON.
+- **Multi-agent APIs** – `POST /api/multi-agent/stream` (SSE, when enabled), `POST /api/multi-agent` (non-streaming), Markdown agents under `/api/multi-agent/markdown-agents` (list/get/create/update/delete).
 - **Role APIs** – manage security testing roles via `/api/roles` endpoints: `GET /api/roles` (list all roles), `GET /api/roles/:name` (get role), `POST /api/roles` (create role), `PUT /api/roles/:name` (update role), `DELETE /api/roles/:name` (delete role). Roles are stored as YAML files in the `roles/` directory and support hot-reload.
 - **Vulnerability APIs** – manage vulnerabilities via `/api/vulnerabilities` endpoints: `GET /api/vulnerabilities` (list with filters), `POST /api/vulnerabilities` (create), `GET /api/vulnerabilities/:id` (get), `PUT /api/vulnerabilities/:id` (update), `DELETE /api/vulnerabilities/:id` (delete), `GET /api/vulnerabilities/stats` (statistics).
 - **Batch Task APIs** – manage batch task queues via `/api/batch-tasks` endpoints: `POST /api/batch-tasks` (create queue), `GET /api/batch-tasks` (list queues), `GET /api/batch-tasks/:queueId` (get queue), `POST /api/batch-tasks/:queueId/start` (start execution), `POST /api/batch-tasks/:queueId/cancel` (cancel), `DELETE /api/batch-tasks/:queueId` (delete), `POST /api/batch-tasks/:queueId/tasks` (add task), `PUT /api/batch-tasks/:queueId/tasks/:taskId` (update task), `DELETE /api/batch-tasks/:queueId/tasks/:taskId` (delete task). Tasks execute sequentially, each creating a separate conversation with full status tracking.
-- **Docker APIs** – manage the Docker stack via `/api/docker/status`, `/api/docker/logs`, and `/api/docker/action` (see Docker Lifecycle Management section above).
+- **WebShell APIs** – manage WebShell connections and execute commands via `/api/webshell/connections` (GET list, POST create, PUT update, DELETE delete) and `/api/webshell/exec` (command execution), `/api/webshell/fileop` (list/read/write/delete files).
 - **Task control** – pause/resume/stop long scans, re-run steps with new params, or stream transcripts.
 - **Audit & security** – rotate passwords via `/api/auth/change-password`, enforce short-lived sessions, and restrict MCP ports at the network layer when exposing the service.
 
@@ -533,32 +484,17 @@ mcp:
   enabled: true
   host: "0.0.0.0"
   port: 8081
+  auth_header: "X-MCP-Token"       # optional; leave empty for no auth
+  auth_header_value: ""            # optional; leave empty to auto-generate on first start
 openai:
   api_key: "sk-xxx"
   base_url: "https://api.deepseek.com/v1"
   model: "deepseek-chat"
-  max_total_tokens: 120000  # Token limit shared by memory compression and attack-chain building
 database:
   path: "data/conversations.db"
   knowledge_db_path: "data/knowledge.db"  # Optional: separate DB for knowledge base
 security:
   tools_dir: "tools"
-  tool_description_mode: "full"  # "full" or "short" — controls how much tool info is sent to the LLM
-agent:
-  max_iterations: 120
-  large_result_threshold: 102400  # bytes; results larger than this are stored on disk
-  result_storage_dir: "tmp"
-  parallel_tool_execution: true
-  max_parallel_tools: 0           # 0 = unlimited concurrent tools
-  tool_retry_count: 0
-  # ── Time Awareness ──────────────────────────────────────────────────────────
-  time_awareness:
-    enabled: true      # Prepend current date/time to every system prompt (recommended)
-    timezone: "UTC"    # IANA timezone name, e.g. "America/New_York", "Europe/London"
-  # ── Persistent Memory ───────────────────────────────────────────────────────
-  memory:
-    enabled: true      # Enable cross-session persistent memory store
-    max_entries: 200   # Hard cap on memory entries (0 = unlimited)
 knowledge:
   enabled: false  # Enable knowledge base feature
   base_path: "knowledge_base"  # Path to knowledge base directory
@@ -570,9 +506,16 @@ knowledge:
   retrieval:
     top_k: 5  # Number of top results to return
     similarity_threshold: 0.7  # Minimum similarity score (0-1)
-    hybrid_weight: 0.7  # Weight for vector search (1.0 = pure vector, 0.0 = pure BM25 keyword)
+    hybrid_weight: 0.7  # Weight for vector search (1.0 = pure vector, 0.0 = pure keyword)
 roles_dir: "roles"  # Role configuration directory (relative to config file)
 skills_dir: "skills"  # Skills directory (relative to config file)
+agents_dir: "agents"  # Multi-agent Markdown definitions (orchestrator + sub-agents)
+multi_agent:
+  enabled: false
+  default_mode: "single"   # single | multi (UI default when multi-agent is enabled)
+  robot_use_multi_agent: false
+  batch_use_multi_agent: false
+  orchestrator_instruction: ""  # Optional; used when orchestrator.md body is empty
 ```
 
 ### Tool Definition Example (`tools/nmap.yaml`)
@@ -615,38 +558,27 @@ tools:
 enabled: true
 ```
 
-## Related Documentation
+## Related documentation
 
-| Document | Description |
-|----------|-------------|
-| [Robot / Chatbot guide](docs/robot_en.md) | Full setup, commands, and troubleshooting for Lark & Telegram integration. **Follow this to avoid common pitfalls.** |
-| [Docker Guide](docs/docker_en.md) | Docker deployment, lifecycle management, proxy/VPN configuration, and System Settings UI reference. |
-| [Memory Guide](docs/memory_en.md) | Persistent memory system: categories, agent tools, UI panel, and API reference. |
-| [Tool Configuration Guide](tools/README.md) | How to write, configure, and extend YAML tool recipes. |
-| [Role Configuration Guide](roles/README.md) | How to create and manage security testing roles. |
-| [Skills System Guide](skills/README.md) | How to create and attach skills to roles. |
-| [Roadmap](ROADMAP.md) | Planned features and development direction. |
+- [Multi-agent mode (Eino)](docs/MULTI_AGENT_EINO.md): DeepAgent orchestration, `agents/*.md`, APIs, and chat/stream behavior.
+- [Robot / Chatbot guide (DingTalk & Lark)](docs/robot_en.md): Full setup, commands, and troubleshooting for using CyberStrikeAI from DingTalk or Lark on your phone. **Follow this doc to avoid common pitfalls.**
 
 ## Project Layout
 
 ```
 CyberStrikeAI/
-├── cmd/                 # Server, MCP stdio, and test entrypoints
-├── internal/            # Agent engine, MCP core, handlers, security executor
-├── web/                 # Single-page application (templates + static assets)
-├── tools/               # YAML tool recipes (100+ provided)
-├── roles/               # Role configurations (13 predefined security testing roles)
-├── skills/              # Skills library (22 predefined security testing skills)
-├── knowledge_base/      # Markdown files for the vector knowledge base
-├── scripts/             # Installation and utility scripts
-├── docs/                # Additional documentation (chatbot, Docker, memory guides)
-├── images/              # Screenshots and diagrams for documentation
+├── cmd/                 # Server, MCP stdio entrypoints, tooling
+├── internal/            # Agent, MCP core, handlers, security executor
+├── web/                 # Static SPA + templates
+├── tools/               # YAML tool recipes (100+ examples provided)
+├── roles/               # Role configurations (12+ predefined security testing roles)
+├── skills/              # Skills directory (20+ predefined security testing skills)
+├── agents/              # Multi-agent Markdown (orchestrator.md + sub-agent *.md)
+├── docs/                # Documentation (e.g. robot/chatbot guide, MULTI_AGENT_EINO.md)
+├── images/              # Docs screenshots & diagrams
 ├── config.yaml          # Runtime configuration
-├── run.sh               # One-command launcher script
-├── run_docker.sh        # Docker lifecycle management script
-├── docker-compose.yml   # Docker Compose configuration
-├── ROADMAP.md           # Development roadmap
-└── README.md
+├── run.sh               # Convenience launcher
+└── README*.md
 ```
 
 ## Basic Usage Examples
@@ -668,6 +600,32 @@ Compress the 5 MB nuclei report, summarize critical CVEs, and attach the artifac
 Build an attack chain for the latest engagement and export the node list with severity >= high.
 ```
 
+## 404Starlink 
+
+<img src="./images/404StarLinkLogo.png" width="30%">
+
+CyberStrikeAI has joined [404Starlink](https://github.com/knownsec/404StarLink)
+
+## TCH Top-Ranked Intelligent Pentest Project  
+<div align="left">
+  <a href="https://zc.tencent.com/competition/competitionHackathon?code=cha004" target="_blank">
+    <img src="./images/tch.png" alt="TCH Top-Ranked Intelligent Pentest Project" width="30%">
+  </a>
+</div>
+
+## Stargazers over time
+![Stargazers over time](https://starchart.cc/Ed1s0nZ/CyberStrikeAI.svg)
+
+
+---
+
+## License
+
+CyberStrikeAI is licensed under the Apache License 2.0.  
+See the [LICENSE](LICENSE) file for details.
+
+---
+
 ## ⚠️ Disclaimer
 
 **This tool is for educational and authorized testing purposes only!**
@@ -685,7 +643,5 @@ CyberStrikeAI is a professional security testing platform designed to assist sec
 ---
 
 Need help or want to contribute? Open an issue or PR—community tooling additions are welcome!
-
-See [ROADMAP.md](ROADMAP.md) for planned features and the project direction.
 
 

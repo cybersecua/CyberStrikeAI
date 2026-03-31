@@ -1,6 +1,9 @@
-// Task management page functionality
+// 任务管理页面功能
+function _t(key, opts) {
+    return typeof window.t === 'function' ? window.t(key, opts) : key;
+}
 
-// HTML escape function (if not defined)
+// HTML转义函数（如果未定义）
 if (typeof escapeHtml === 'undefined') {
     function escapeHtml(text) {
         if (text == null) return '';
@@ -10,7 +13,7 @@ if (typeof escapeHtml === 'undefined') {
     }
 }
 
-// Task management state
+// 任务管理状态
 const tasksState = {
     allTasks: [],
     filteredTasks: [],
@@ -18,72 +21,72 @@ const tasksState = {
     autoRefresh: true,
     refreshInterval: null,
     durationUpdateInterval: null,
-    completedTasksHistory: [], // Save the most recently completed task history
-    showHistory: true // Whether to show history
+    completedTasksHistory: [], // 保存最近完成的任务历史
+    showHistory: true // 是否显示历史记录
 };
 
-// Load completed task history from localStorage
+// 从localStorage加载已完成任务历史
 function loadCompletedTasksHistory() {
     try {
         const saved = localStorage.getItem('tasks-completed-history');
         if (saved) {
             const history = JSON.parse(saved);
-            // Only keep tasks completed within the last 24 hours
+            // 只保留最近24小时内完成的任务
             const now = Date.now();
             const oneDayAgo = now - 24 * 60 * 60 * 1000;
             tasksState.completedTasksHistory = history.filter(task => {
                 const completedTime = task.completedAt || task.startedAt;
                 return completedTime && new Date(completedTime).getTime() > oneDayAgo;
             });
-            // Save the cleaned-up history
+            // 保存清理后的历史
             saveCompletedTasksHistory();
         }
     } catch (error) {
-        console.error('Failed to load completed task history:', error);
+        console.error('加载已完成任务历史失败:', error);
         tasksState.completedTasksHistory = [];
     }
 }
 
-// Save completed task history to localStorage
+// 保存已完成任务历史到localStorage
 function saveCompletedTasksHistory() {
     try {
         localStorage.setItem('tasks-completed-history', JSON.stringify(tasksState.completedTasksHistory));
     } catch (error) {
-        console.error('Failed to save completed task history:', error);
+        console.error('保存已完成任务历史失败:', error);
     }
 }
 
-// Update completed task history
+// 更新已完成任务历史
 function updateCompletedTasksHistory(currentTasks) {
-    // Save snapshot of all current tasks (for comparison next time)
+    // 保存当前所有任务作为快照（用于下次比较）
     const currentTaskIds = new Set(currentTasks.map(t => t.conversationId));
     
-    // If this is the first load, just save the current task snapshot
+    // 如果是首次加载，只需要保存当前任务快照
     if (tasksState.allTasks.length === 0) {
         return;
     }
     
     const previousTaskIds = new Set(tasksState.allTasks.map(t => t.conversationId));
     
-    // Find tasks that just completed (previously existed but no longer present)
-    // Any task that disappears from the list is considered completed
+    // 找出刚完成的任务（之前存在但现在不存在的）
+    // 只要任务从列表中消失了，就认为它已完成
     const justCompleted = tasksState.allTasks.filter(task => {
         return previousTaskIds.has(task.conversationId) && !currentTaskIds.has(task.conversationId);
     });
     
-    // Add newly completed tasks to history
+    // 将刚完成的任务添加到历史中
     justCompleted.forEach(task => {
-        // Check if already exists (to avoid duplicate entries)
+        // 检查是否已存在（避免重复添加）
         const exists = tasksState.completedTasksHistory.some(t => t.conversationId === task.conversationId);
         if (!exists) {
-            // If task status is not a final status, mark as completed
+            // 如果任务状态不是最终状态，标记为completed
             const finalStatus = ['completed', 'failed', 'timeout', 'cancelled'].includes(task.status) 
                 ? task.status 
                 : 'completed';
             
             tasksState.completedTasksHistory.push({
                 conversationId: task.conversationId,
-                message: task.message || 'Unnamed Task',
+                message: task.message || '未命名任务',
                 startedAt: task.startedAt,
                 status: finalStatus,
                 completedAt: new Date().toISOString()
@@ -91,7 +94,7 @@ function updateCompletedTasksHistory(currentTasks) {
         }
     });
     
-    // Limit history size (keep at most 50 entries)
+    // 限制历史记录数量（最多保留50条）
     if (tasksState.completedTasksHistory.length > 50) {
         tasksState.completedTasksHistory = tasksState.completedTasksHistory
             .sort((a, b) => new Date(b.completedAt || b.startedAt) - new Date(a.completedAt || a.startedAt))
@@ -101,55 +104,55 @@ function updateCompletedTasksHistory(currentTasks) {
     saveCompletedTasksHistory();
 }
 
-// Load task list
+// 加载任务列表
 async function loadTasks() {
     const listContainer = document.getElementById('tasks-list');
     if (!listContainer) return;
     
-    listContainer.innerHTML = '<div class="loading-spinner">Loading...</div>';
+    listContainer.innerHTML = '<div class="loading-spinner">' + _t('tasks.loadingTasks') + '</div>';
 
     try {
-        // Load running tasks and completed task history in parallel
+        // 并行加载运行中的任务和已完成的任务历史
         const [activeResponse, completedResponse] = await Promise.allSettled([
             apiFetch('/api/agent-loop/tasks'),
-            apiFetch('/api/agent-loop/tasks/completed').catch(() => null) // If API does not exist, return null
+            apiFetch('/api/agent-loop/tasks/completed').catch(() => null) // 如果API不存在，返回null
         ]);
 
-        // Handle running tasks
+        // 处理运行中的任务
         if (activeResponse.status === 'rejected' || !activeResponse.value || !activeResponse.value.ok) {
-            throw new Error('Failed to get task list');
+            throw new Error(_t('tasks.loadTaskListFailed'));
         }
 
         const activeResult = await activeResponse.value.json();
         const activeTasks = activeResult.tasks || [];
         
-        // Load completed task history (if API is available)
+        // 加载已完成任务历史（如果API可用）
         let completedTasks = [];
         if (completedResponse.status === 'fulfilled' && completedResponse.value && completedResponse.value.ok) {
             try {
                 const completedResult = await completedResponse.value.json();
                 completedTasks = completedResult.tasks || [];
             } catch (e) {
-                console.warn('Failed to parse completed task history:', e);
+                console.warn('解析已完成任务历史失败:', e);
             }
         }
         
-        // Save all tasks
+        // 保存所有任务
         tasksState.allTasks = activeTasks;
         
-        // Update completed task history (from backend API)
+        // 更新已完成任务历史（从后端API获取）
         if (completedTasks.length > 0) {
-            // Merge backend and local history records (deduplicate)
+            // 合并后端历史记录和本地历史记录（去重）
             const backendTaskIds = new Set(completedTasks.map(t => t.conversationId));
             const localHistory = tasksState.completedTasksHistory.filter(t => 
                 !backendTaskIds.has(t.conversationId)
             );
             
-            // Backend history takes priority, then add local-only entries
+            // 后端的历史记录优先，然后添加本地独有的
             tasksState.completedTasksHistory = [
                 ...completedTasks.map(t => ({
                     conversationId: t.conversationId,
-                    message: t.message || 'Unnamed Task',
+                    message: t.message || '未命名任务',
                     startedAt: t.startedAt,
                     status: t.status || 'completed',
                     completedAt: t.completedAt || new Date().toISOString()
@@ -157,7 +160,7 @@ async function loadTasks() {
                 ...localHistory
             ];
             
-            // Limit history size
+            // 限制历史记录数量
             if (tasksState.completedTasksHistory.length > 50) {
                 tasksState.completedTasksHistory = tasksState.completedTasksHistory
                     .sort((a, b) => new Date(b.completedAt || b.startedAt) - new Date(a.completedAt || a.startedAt))
@@ -166,7 +169,7 @@ async function loadTasks() {
             
             saveCompletedTasksHistory();
         } else {
-            // If backend API is not available, still use frontend logic to update history
+            // 如果后端API不可用，仍然使用前端逻辑更新历史
             updateCompletedTasksHistory(activeTasks);
         }
         
@@ -174,17 +177,17 @@ async function loadTasks() {
         filterAndSortTasks();
         startDurationUpdates();
     } catch (error) {
-        console.error('Failed to load tasks:', error);
+        console.error('加载任务失败:', error);
         listContainer.innerHTML = `
             <div class="tasks-empty">
-                <p>Failed to load: ${escapeHtml(error.message)}</p>
-                <button class="btn-secondary" onclick="loadTasks()">Retry</button>
+                <p>${_t('tasks.loadFailedRetry')}: ${escapeHtml(error.message)}</p>
+                <button class="btn-secondary" onclick="loadTasks()">${_t('tasks.retry')}</button>
             </div>
         `;
     }
 }
 
-// Update task statistics
+// 更新任务统计
 function updateTaskStats(tasks) {
     const stats = {
         running: 0,
@@ -223,25 +226,25 @@ function updateTaskStats(tasks) {
     if (statTotal) statTotal.textContent = stats.total;
 }
 
-// Filter tasks
+// 筛选任务
 function filterTasks() {
     filterAndSortTasks();
 }
 
-// Sort tasks
+// 排序任务
 function sortTasks() {
     filterAndSortTasks();
 }
 
-// Filter and sort tasks
+// 筛选和排序任务
 function filterAndSortTasks() {
     const statusFilter = document.getElementById('tasks-status-filter')?.value || 'all';
     const sortBy = document.getElementById('tasks-sort-by')?.value || 'time-desc';
     
-    // Merge current tasks and history tasks
+    // 合并当前任务和历史任务
     let allTasks = [...tasksState.allTasks];
     
-    // If showing history, add historical tasks
+    // 如果显示历史记录，添加历史任务
     if (tasksState.showHistory) {
         const historyTasks = tasksState.completedTasksHistory
             .filter(ht => !tasksState.allTasks.some(t => t.conversationId === ht.conversationId))
@@ -249,21 +252,21 @@ function filterAndSortTasks() {
         allTasks = [...allTasks, ...historyTasks];
     }
     
-    // Filter
+    // 筛选
     let filtered = allTasks;
     if (statusFilter === 'active') {
-        // Only running tasks (exclude history)
+        // 仅运行中的任务（不包括历史）
         filtered = tasksState.allTasks.filter(task => 
             task.status === 'running' || task.status === 'cancelling'
         );
     } else if (statusFilter === 'history') {
-        // History only
+        // 仅历史记录
         filtered = allTasks.filter(task => task.isHistory);
     } else if (statusFilter !== 'all') {
         filtered = allTasks.filter(task => task.status === statusFilter);
     }
     
-    // Sort
+    // 排序
     filtered.sort((a, b) => {
         const aTime = new Date(a.completedAt || a.startedAt);
         const bTime = new Date(b.completedAt || b.startedAt);
@@ -287,47 +290,47 @@ function filterAndSortTasks() {
     updateBatchActions();
 }
 
-// Toggle show history
+// 切换显示历史记录
 function toggleShowHistory(show) {
     tasksState.showHistory = show;
     localStorage.setItem('tasks-show-history', show ? 'true' : 'false');
     filterAndSortTasks();
 }
 
-// Calculate execution duration
+// 计算执行时长
 function calculateDuration(startedAt) {
-    if (!startedAt) return 'Unknown';
+    if (!startedAt) return _t('tasks.unknown');
     const start = new Date(startedAt);
     const now = new Date();
-    const diff = Math.floor((now - start) / 1000); // seconds
+    const diff = Math.floor((now - start) / 1000);
     
     if (diff < 60) {
-        return `${diff}s`;
+        return diff + _t('tasks.durationSeconds');
     } else if (diff < 3600) {
         const minutes = Math.floor(diff / 60);
         const seconds = diff % 60;
-        return `${minutes}m ${seconds}s`;
+        return minutes + _t('tasks.durationMinutes') + ' ' + seconds + _t('tasks.durationSeconds');
     } else {
         const hours = Math.floor(diff / 3600);
         const minutes = Math.floor((diff % 3600) / 60);
-        return `${hours}h ${minutes}m`;
+        return hours + _t('tasks.durationHours') + ' ' + minutes + _t('tasks.durationMinutes');
     }
 }
 
-// Start duration updates
+// 开始时长更新
 function startDurationUpdates() {
-    // Clear old timer
+    // 清除旧的定时器
     if (tasksState.durationUpdateInterval) {
         clearInterval(tasksState.durationUpdateInterval);
     }
     
-    // Update execution duration every second
+    // 每秒更新一次执行时长
     tasksState.durationUpdateInterval = setInterval(() => {
         updateTaskDurations();
     }, 1000);
 }
 
-// Update task execution duration display
+// 更新任务执行时长显示
 function updateTaskDurations() {
     const taskItems = document.querySelectorAll('.task-item[data-task-id]');
     taskItems.forEach(item => {
@@ -341,7 +344,7 @@ function updateTaskDurations() {
     });
 }
 
-// Render task list
+// 渲染任务列表
 function renderTasks(tasks) {
     const listContainer = document.getElementById('tasks-list');
     if (!listContainer) return;
@@ -349,41 +352,41 @@ function renderTasks(tasks) {
     if (tasks.length === 0) {
         listContainer.innerHTML = `
             <div class="tasks-empty">
-                <p>No tasks match the current criteria</p>
+                <p>${_t('tasks.noMatchingTasks')}</p>
                 ${tasksState.allTasks.length === 0 && tasksState.completedTasksHistory.length > 0 ? 
-                    '<p style="margin-top: 8px; color: var(--text-muted); font-size: 0.875rem;">Tip: There are completed task history entries, check "Show History" to view</p>' : ''}
+                    '<p style="margin-top: 8px; color: var(--text-muted); font-size: 0.875rem;">' + _t('tasks.historyHint') + '</p>' : ''}
             </div>
         `;
         return;
     }
 
-    // Status map
+    // 状态映射
     const statusMap = {
-        'running': { text: 'Running', class: 'task-status-running' },
-        'cancelling': { text: 'Cancelling', class: 'task-status-cancelling' },
-        'failed': { text: 'Failed', class: 'task-status-failed' },
-        'timeout': { text: 'Timed Out', class: 'task-status-timeout' },
-        'cancelled': { text: 'Cancelled', class: 'task-status-cancelled' },
-        'completed': { text: 'Completed', class: 'task-status-completed' }
+        'running': { text: _t('tasks.statusRunning'), class: 'task-status-running' },
+        'cancelling': { text: _t('tasks.statusCancelling'), class: 'task-status-cancelling' },
+        'failed': { text: _t('tasks.statusFailed'), class: 'task-status-failed' },
+        'timeout': { text: _t('tasks.statusTimeout'), class: 'task-status-timeout' },
+        'cancelled': { text: _t('tasks.statusCancelled'), class: 'task-status-cancelled' },
+        'completed': { text: _t('tasks.statusCompleted'), class: 'task-status-completed' }
     };
 
-    // Separate current tasks from historical tasks
+    // 分离当前任务和历史任务
     const activeTasks = tasks.filter(t => !t.isHistory);
     const historyTasks = tasks.filter(t => t.isHistory);
 
     let html = '';
     
-    // Render current tasks
+    // 渲染当前任务
     if (activeTasks.length > 0) {
         html += activeTasks.map(task => renderTaskItem(task, statusMap)).join('');
     }
     
-    // Render historical tasks
+    // 渲染历史任务
     if (historyTasks.length > 0) {
         html += `<div class="tasks-history-section">
             <div class="tasks-history-header">
-                <span class="tasks-history-title">📜 Recently Completed Tasks (Last 24 Hours)</span>
-                <button class="btn-secondary btn-small" onclick="clearTasksHistory()">Clear History</button>
+                <span class="tasks-history-title">📜 ` + _t('tasks.recentCompletedTasks') + `</span>
+                <button class="btn-secondary btn-small" onclick="clearTasksHistory()">` + _t('tasks.clearHistory') + `</button>
             </div>
             ${historyTasks.map(task => renderTaskItem(task, statusMap, true)).join('')}
         </div>`;
@@ -392,7 +395,7 @@ function renderTasks(tasks) {
     listContainer.innerHTML = html;
 }
 
-// Render a single task item
+// 渲染单个任务项
 function renderTaskItem(task, statusMap, isHistory = false) {
     const startedTime = task.startedAt ? new Date(task.startedAt) : null;
     const completedTime = task.completedAt ? new Date(task.completedAt) : null;
@@ -406,7 +409,7 @@ function renderTaskItem(task, statusMap, isHistory = false) {
             minute: '2-digit',
             second: '2-digit'
         })
-        : 'UnknownTime';
+        : _t('tasks.unknownTime');
     
     const completedText = completedTime && !isNaN(completedTime.getTime())
         ? completedTime.toLocaleString('zh-CN', { 
@@ -438,31 +441,31 @@ function renderTaskItem(task, statusMap, isHistory = false) {
                         </label>
                     ` : '<div class="task-checkbox-placeholder"></div>'}
                     <span class="task-status ${status.class}">${status.text}</span>
-                    ${isHistory ? '<span class="task-history-badge" title="History">📜</span>' : ''}
-                    <span class="task-message" title="${escapeHtml(task.message || 'Unnamed Task')}">${escapeHtml(task.message || 'Unnamed Task')}</span>
+                    ${isHistory ? '<span class="task-history-badge" title="' + _t('tasks.historyBadge') + '">📜</span>' : ''}
+                    <span class="task-message" title="${escapeHtml(task.message || _t('tasks.unnamedTask'))}">${escapeHtml(task.message || _t('tasks.unnamedTask'))}</span>
                 </div>
                 <div class="task-actions">
-                    ${duration ? `<span class="task-duration" title="Execution Duration">⏱ ${duration}</span>` : ''}
-                    <span class="task-time" title="${isHistory && completedText ? 'Completed Time' : 'Start Time'}">
+                    ${duration ? `<span class="task-duration" title="${_t('tasks.duration')}">⏱ ${duration}</span>` : ''}
+                    <span class="task-time" title="${isHistory && completedText ? _t('tasks.completedAt') : _t('tasks.startedAt')}">
                         ${isHistory && completedText ? completedText : timeText}
                     </span>
-                    ${canCancel ? `<button class="btn-secondary btn-small" onclick="cancelTask('${task.conversationId}', this)">Cancel Task</button>` : ''}
-                    ${task.conversationId ? `<button class="btn-secondary btn-small" onclick="viewConversation('${task.conversationId}')">View Conversation</button>` : ''}
+                    ${canCancel ? `<button class="btn-secondary btn-small" onclick="cancelTask('${task.conversationId}', this)">` + _t('tasks.cancelTask') + `</button>` : ''}
+                    ${task.conversationId ? `<button class="btn-secondary btn-small" onclick="viewConversation('${task.conversationId}')">` + _t('tasks.viewConversation') + `</button>` : ''}
                 </div>
             </div>
             ${task.conversationId ? `
                 <div class="task-details">
-                    <span class="task-id-label">Conversation ID:</span>
-                    <span class="task-id-value" title="Click to copy" onclick="copyTaskId('${task.conversationId}')">${escapeHtml(task.conversationId)}</span>
+                    <span class="task-id-label">` + _t('tasks.conversationIdLabel') + `:</span>
+                    <span class="task-id-value" title="` + _t('tasks.clickToCopy') + `" onclick="copyTaskId('${task.conversationId}')">${escapeHtml(task.conversationId)}</span>
                 </div>
             ` : ''}
         </div>
     `;
 }
 
-// Clear task history
+// 清空任务历史
 function clearTasksHistory() {
-    if (!confirm('Are you sure you want to clear all task history?')) {
+    if (!confirm(_t('tasks.clearHistoryConfirm'))) {
         return;
     }
     tasksState.completedTasksHistory = [];
@@ -470,7 +473,7 @@ function clearTasksHistory() {
     filterAndSortTasks();
 }
 
-// Toggle task selection
+// 切换任务选择
 function toggleTaskSelection(conversationId, selected) {
     if (selected) {
         tasksState.selectedTasks.add(conversationId);
@@ -480,7 +483,7 @@ function toggleTaskSelection(conversationId, selected) {
     updateBatchActions();
 }
 
-// Update batch actions UI
+// 更新批量操作UI
 function updateBatchActions() {
     const batchActions = document.getElementById('tasks-batch-actions');
     const selectedCount = document.getElementById('tasks-selected-count');
@@ -490,26 +493,26 @@ function updateBatchActions() {
     const count = tasksState.selectedTasks.size;
     if (count > 0) {
         batchActions.style.display = 'flex';
-        selectedCount.textContent = `${count} item(s) selected`;
+        selectedCount.textContent = typeof window.t === 'function' ? window.t('mcp.selectedCount', { count: count }) : `已选择 ${count} 项`;
     } else {
         batchActions.style.display = 'none';
     }
 }
 
-// Clear task selection
+// 清除任务选择
 function clearTaskSelection() {
     tasksState.selectedTasks.clear();
     updateBatchActions();
-    // Re-render to update checkbox status
+    // 重新渲染以更新复选框状态
     filterAndSortTasks();
 }
 
-// Batch cancel tasks
+// 批量取消任务
 async function batchCancelTasks() {
     const selected = Array.from(tasksState.selectedTasks);
     if (selected.length === 0) return;
     
-    if (!confirm(`Are you sure you want to cancel ${selected.length} task(s)?`)) {
+    if (!confirm(_t('tasks.confirmCancelTasks', { n: selected.length }))) {
         return;
     }
     
@@ -532,46 +535,46 @@ async function batchCancelTasks() {
                 failCount++;
             }
         } catch (error) {
-            console.error('Failed to cancel task:', conversationId, error);
+            console.error('取消任务失败:', conversationId, error);
             failCount++;
         }
     }
     
-    // Clear selection
+    // 清除选择
     clearTaskSelection();
     
-    // Refresh task list
+    // 刷新任务列表
     await loadTasks();
     
-    // Show result
+    // 显示结果
     if (failCount > 0) {
-        alert(`Batch cancel completed: ${successCount} succeeded, ${failCount} failed`);
+        alert(_t('tasks.batchCancelResultPartial', { success: successCount, fail: failCount }));
     } else {
-        alert(`Successfully cancelled ${successCount} task(s)`);
+        alert(_t('tasks.batchCancelResultSuccess', { n: successCount }));
     }
 }
 
-// Copy task ID
+// 复制任务ID
 function copyTaskId(conversationId) {
     navigator.clipboard.writeText(conversationId).then(() => {
-        // Show copy success tooltip
+        // 显示复制成功提示
         const tooltip = document.createElement('div');
-        tooltip.textContent = 'Copied!';
+        tooltip.textContent = _t('tasks.copiedToast');
         tooltip.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 8px 16px; border-radius: 4px; z-index: 10000;';
         document.body.appendChild(tooltip);
         setTimeout(() => tooltip.remove(), 1000);
     }).catch(err => {
-        console.error('Copy failed:', err);
+        console.error('复制失败:', err);
     });
 }
 
-// Cancel task
+// 取消任务
 async function cancelTask(conversationId, button) {
     if (!conversationId) return;
     
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = 'Cancelling...';
+    button.textContent = _t('tasks.cancelling');
 
     try {
         const response = await apiFetch('/api/agent-loop/cancel', {
@@ -584,67 +587,67 @@ async function cancelTask(conversationId, button) {
 
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to cancel task');
+            throw new Error(result.error || _t('tasks.cancelTaskFailed'));
         }
 
-        // Remove from selection
+        // 从选择中移除
         tasksState.selectedTasks.delete(conversationId);
         updateBatchActions();
         
-        // Reload task list
+        // 重新加载任务列表
         await loadTasks();
     } catch (error) {
-        console.error('Failed to cancel task:', error);
-        alert('Failed to cancel task: ' + error.message);
+        console.error('取消任务失败:', error);
+        alert(_t('tasks.cancelTaskFailed') + ': ' + error.message);
         button.disabled = false;
         button.textContent = originalText;
     }
 }
 
-// View conversation
+// 查看对话
 function viewConversation(conversationId) {
     if (!conversationId) return;
     
-    // Switch to conversation page
+    // 切换到对话页面
     if (typeof switchPage === 'function') {
         switchPage('chat');
-        // Load and select the conversation - using global function
+        // 加载并选中该对话 - 使用全局函数
         setTimeout(() => {
-            // Try multiple methods to load conversation
+            // 尝试多种方式加载对话
             if (typeof loadConversation === 'function') {
                 loadConversation(conversationId);
             } else if (typeof window.loadConversation === 'function') {
                 window.loadConversation(conversationId);
             } else {
-                // If function does not exist, try URL navigation
+                // 如果函数不存在，尝试通过URL跳转
                 window.location.hash = `chat?conversation=${conversationId}`;
-                console.log('Switched to conversation page, conversation ID:', conversationId);
+                console.log('切换到对话页面，对话ID:', conversationId);
             }
         }, 500);
     }
 }
 
-// Refresh task list
+// 刷新任务列表
 async function refreshTasks() {
     await loadTasks();
 }
 
-// Toggle auto-refresh
+// 切换自动刷新
 function toggleTasksAutoRefresh(enabled) {
     tasksState.autoRefresh = enabled;
     
-    // Save to localStorage
+    // 保存到localStorage
     localStorage.setItem('tasks-auto-refresh', enabled ? 'true' : 'false');
     
     if (enabled) {
-        // Start auto-refresh
+        // 启动自动刷新
         if (!tasksState.refreshInterval) {
             tasksState.refreshInterval = setInterval(() => {
                 loadBatchQueues();
             }, 5000);
         }
     } else {
-        // Stop auto-refresh
+        // 停止自动刷新
         if (tasksState.refreshInterval) {
             clearInterval(tasksState.refreshInterval);
             tasksState.refreshInterval = null;
@@ -652,9 +655,9 @@ function toggleTasksAutoRefresh(enabled) {
     }
 }
 
-// Initialize task management page
+// 初始化任务管理页面
 function initTasksPage() {
-    // Restore auto-refresh settings
+    // 恢复自动刷新设置
     const autoRefreshCheckbox = document.getElementById('tasks-auto-refresh');
     if (autoRefreshCheckbox) {
         const saved = localStorage.getItem('tasks-auto-refresh');
@@ -665,11 +668,11 @@ function initTasksPage() {
         toggleTasksAutoRefresh(true);
     }
     
-    // Only load batch task queues
+    // 只加载批量任务队列
     loadBatchQueues();
 }
 
-// Clean up timers (called when switching pages)
+// 清理定时器（页面切换时调用）
 function cleanupTasksPage() {
     if (tasksState.refreshInterval) {
         clearInterval(tasksState.refreshInterval);
@@ -683,7 +686,7 @@ function cleanupTasksPage() {
     stopBatchQueueRefresh();
 }
 
-// Export functions for global use
+// 导出函数供全局使用
 window.loadTasks = loadTasks;
 window.cancelTask = cancelTask;
 window.viewConversation = viewConversation;
@@ -700,14 +703,14 @@ window.toggleTasksAutoRefresh = toggleTasksAutoRefresh;
 window.toggleShowHistory = toggleShowHistory;
 window.clearTasksHistory = clearTasksHistory;
 
-// ==================== Batch Task Features ====================
+// ==================== 批量任务功能 ====================
 
-// Batch task state
+// 批量任务状态
 const batchQueuesState = {
     queues: [],
     currentQueueId: null,
     refreshInterval: null,
-    // Filter and pagination state
+    // 筛选和分页状态
     filterStatus: 'all', // 'all', 'pending', 'running', 'paused', 'completed', 'cancelled'
     searchKeyword: '',
     currentPage: 1,
@@ -716,7 +719,7 @@ const batchQueuesState = {
     totalPages: 1
 };
 
-// Show new task modal
+// 显示新建任务模态框
 async function showBatchImportModal() {
     const modal = document.getElementById('batch-import-modal');
     const input = document.getElementById('batch-tasks-input');
@@ -727,28 +730,28 @@ async function showBatchImportModal() {
         if (titleInput) {
             titleInput.value = '';
         }
-        // Reset role selection to default
+        // 重置角色选择为默认
         if (roleSelect) {
             roleSelect.value = '';
         }
         updateBatchImportStats('');
         
-        // Load and populate role list
+        // 加载并填充角色列表
         if (roleSelect && typeof loadRoles === 'function') {
             try {
                 const loadedRoles = await loadRoles();
-                // Clear existing options (except the default option)
-                roleSelect.innerHTML = '<option value="">Default</option>';
+                // 清空现有选项（除了默认选项）
+                roleSelect.innerHTML = '<option value="">' + _t('batchImportModal.defaultRole') + '</option>';
                 
-                // Add enabled roles
+                // 添加已启用的角色
                 const sortedRoles = loadedRoles.sort((a, b) => {
-                    if (a.name === 'Default') return -1;
-                    if (b.name === 'Default') return 1;
+                    if (a.name === '默认') return -1;
+                    if (b.name === '默认') return 1;
                     return (a.name || '').localeCompare(b.name || '', 'zh-CN');
                 });
                 
                 sortedRoles.forEach(role => {
-                    if (role.name !== 'Default' && role.enabled !== false) {
+                    if (role.name !== '默认' && role.enabled !== false) {
                         const option = document.createElement('option');
                         option.value = role.name;
                         option.textContent = role.name;
@@ -756,7 +759,7 @@ async function showBatchImportModal() {
                     }
                 });
             } catch (error) {
-                console.error('Failed to load role list:', error);
+                console.error('加载角色列表失败:', error);
             }
         }
         
@@ -765,7 +768,7 @@ async function showBatchImportModal() {
     }
 }
 
-// Close new task modal
+// 关闭新建任务模态框
 function closeBatchImportModal() {
     const modal = document.getElementById('batch-import-modal');
     if (modal) {
@@ -773,7 +776,7 @@ function closeBatchImportModal() {
     }
 }
 
-// Update new task statistics
+// 更新新建任务统计
 function updateBatchImportStats(text) {
     const statsEl = document.getElementById('batch-import-stats');
     if (!statsEl) return;
@@ -782,14 +785,14 @@ function updateBatchImportStats(text) {
     const count = lines.length;
     
     if (count > 0) {
-        statsEl.innerHTML = `<div class="batch-import-stat">Total: ${count} task(s)</div>`;
+        statsEl.innerHTML = '<div class="batch-import-stat">' + _t('tasks.taskCount', { count: count }) + '</div>';
         statsEl.style.display = 'block';
     } else {
         statsEl.style.display = 'none';
     }
 }
 
-// Listen for batch task input
+// 监听批量任务输入
 document.addEventListener('DOMContentLoaded', function() {
     const input = document.getElementById('batch-tasks-input');
     if (input) {
@@ -799,7 +802,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Create batch task queue
+// 创建批量任务队列
 async function createBatchQueue() {
     const input = document.getElementById('batch-tasks-input');
     const titleInput = document.getElementById('batch-queue-title');
@@ -808,21 +811,21 @@ async function createBatchQueue() {
     
     const text = input.value.trim();
     if (!text) {
-        alert('Please enter at least one task');
+        alert(_t('tasks.enterTaskPrompt'));
         return;
     }
     
-    // Split tasks by line
+    // 按行分割任务
     const tasks = text.split('\n').map(line => line.trim()).filter(line => line !== '');
     if (tasks.length === 0) {
-        alert('No valid tasks found');
+        alert(_t('tasks.noValidTask'));
         return;
     }
     
-    // Get title (optional)
+    // 获取标题（可选）
     const title = titleInput ? titleInput.value.trim() : '';
     
-    // Get role (optional, empty string means default role)
+    // 获取角色（可选，空字符串表示默认角色）
     const role = roleSelect ? roleSelect.value || '' : '';
     
     try {
@@ -836,73 +839,73 @@ async function createBatchQueue() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to create batch task queue');
+            throw new Error(result.error || _t('tasks.createBatchQueueFailed'));
         }
         
         const result = await response.json();
         closeBatchImportModal();
         
-        // Show queue details
+        // 显示队列详情
         showBatchQueueDetail(result.queueId);
         
-        // Refresh batch queue list
+        // 刷新批量队列列表
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to create batch task queue:', error);
-        alert('Failed to create batch task queue: ' + error.message);
+        console.error('创建批量任务队列失败:', error);
+        alert(_t('tasks.createBatchQueueFailed') + ': ' + error.message);
     }
 }
 
-// Get role icon (helper function)
+// 获取角色图标（辅助函数）
 function getRoleIconForDisplay(roleName, rolesList) {
     if (!roleName || roleName === '') {
-        return '🔵'; // Default role icon
+        return '🔵'; // 默认角色图标
     }
     
     if (Array.isArray(rolesList) && rolesList.length > 0) {
         const role = rolesList.find(r => r.name === roleName);
         if (role && role.icon) {
             let icon = role.icon;
-            // Check if it is Unicode escape format (may contain quotes)
+            // 检查是否是 Unicode 转义格式（可能包含引号）
             const unicodeMatch = icon.match(/^"?\\U([0-9A-F]{8})"?$/i);
             if (unicodeMatch) {
                 try {
                     const codePoint = parseInt(unicodeMatch[1], 16);
                     icon = String.fromCodePoint(codePoint);
                 } catch (e) {
-                    // Conversion failed, use default icon
-                    console.warn('Failed to convert icon Unicode escape:', icon, e);
+                    // 转换失败，使用默认图标
+                    console.warn('转换 icon Unicode 转义失败:', icon, e);
                     return '👤';
                 }
             }
             return icon;
         }
     }
-    return '👤'; // Default icon
+    return '👤'; // 默认图标
 }
 
-// Load batch task queue list
+// 加载批量任务队列列表
 async function loadBatchQueues(page) {
     const section = document.getElementById('batch-queues-section');
     if (!section) return;
     
-    // If page is specified, use it; otherwise use current page
+    // 如果指定了page，使用它；否则使用当前页
     if (page !== undefined) {
         batchQueuesState.currentPage = page;
     }
     
-    // Load role list (for displaying correct role icons)
+    // 加载角色列表（用于显示正确的角色图标）
     let loadedRoles = [];
     if (typeof loadRoles === 'function') {
         try {
             loadedRoles = await loadRoles();
         } catch (error) {
-            console.warn('Failed to load role list, will use default icon:', error);
+            console.warn('加载角色列表失败，将使用默认图标:', error);
         }
     }
-    batchQueuesState.loadedRoles = loadedRoles; // Save to state for use during rendering
+    batchQueuesState.loadedRoles = loadedRoles; // 保存到状态中供渲染使用
     
-    // Build query parameters
+    // 构建查询参数
     const params = new URLSearchParams();
     params.append('page', batchQueuesState.currentPage.toString());
     params.append('limit', batchQueuesState.pageSize.toString());
@@ -916,7 +919,7 @@ async function loadBatchQueues(page) {
     try {
         const response = await apiFetch(`/api/batch-tasks?${params.toString()}`);
         if (!response.ok) {
-            throw new Error('Failed to get batch task queues');
+            throw new Error(_t('tasks.loadFailedRetry'));
         }
         
         const result = await response.json();
@@ -925,16 +928,16 @@ async function loadBatchQueues(page) {
         batchQueuesState.totalPages = result.total_pages || 1;
         renderBatchQueues();
     } catch (error) {
-        console.error('Failed to load batch task queues:', error);
+        console.error('加载批量任务队列失败:', error);
         section.style.display = 'block';
         const list = document.getElementById('batch-queues-list');
         if (list) {
-            list.innerHTML = '<div class="tasks-empty"><p>Failed to load: ' + escapeHtml(error.message) + '</p><button class="btn-secondary" onclick="refreshBatchQueues()">Retry</button></div>';
+            list.innerHTML = '<div class="tasks-empty"><p>' + _t('tasks.loadFailedRetry') + ': ' + escapeHtml(error.message) + '</p><button class="btn-secondary" onclick="refreshBatchQueues()">' + _t('tasks.retry') + '</button></div>';
         }
     }
 }
 
-// Filter batch task queues
+// 筛选批量任务队列
 function filterBatchQueues() {
     const statusFilter = document.getElementById('batch-queues-status-filter');
     const searchInput = document.getElementById('batch-queues-search');
@@ -946,12 +949,12 @@ function filterBatchQueues() {
         batchQueuesState.searchKeyword = searchInput.value.trim();
     }
     
-    // Reset to first page and reload
+    // 重置到第一页并重新加载
     batchQueuesState.currentPage = 1;
     loadBatchQueues(1);
 }
 
-// Render batch task queue list
+// 渲染批量任务队列列表
 function renderBatchQueues() {
     const section = document.getElementById('batch-queues-section');
     const list = document.getElementById('batch-queues-list');
@@ -964,28 +967,28 @@ function renderBatchQueues() {
     const queues = batchQueuesState.queues;
     
     if (queues.length === 0) {
-        list.innerHTML = '<div class="tasks-empty"><p>No batch task queues found</p></div>';
+        list.innerHTML = '<div class="tasks-empty"><p>' + _t('tasks.noBatchQueues') + '</p></div>';
         if (pagination) pagination.style.display = 'none';
         return;
     }
     
-    // Ensure pagination controls are visible (reset previously set display: none)
+    // 确保分页控件可见（重置之前可能设置的 display: none）
     if (pagination) {
         pagination.style.display = '';
     }
     
     list.innerHTML = queues.map(queue => {
         const statusMap = {
-            'pending': { text: 'Pending', class: 'batch-queue-status-pending' },
-            'running': { text: 'Running', class: 'batch-queue-status-running' },
-            'paused': { text: 'Paused', class: 'batch-queue-status-paused' },
-            'completed': { text: 'Completed', class: 'batch-queue-status-completed' },
-            'cancelled': { text: 'Cancelled', class: 'batch-queue-status-cancelled' }
+            'pending': { text: _t('tasks.statusPending'), class: 'batch-queue-status-pending' },
+            'running': { text: _t('tasks.statusRunning'), class: 'batch-queue-status-running' },
+            'paused': { text: _t('tasks.statusPaused'), class: 'batch-queue-status-paused' },
+            'completed': { text: _t('tasks.statusCompleted'), class: 'batch-queue-status-completed' },
+            'cancelled': { text: _t('tasks.statusCancelled'), class: 'batch-queue-status-cancelled' }
         };
         
         const status = statusMap[queue.status] || { text: queue.status, class: 'batch-queue-status-unknown' };
         
-        // Tally task statuses
+        // 统计任务状态
         const stats = {
             total: queue.tasks.length,
             pending: 0,
@@ -1004,16 +1007,16 @@ function renderBatchQueues() {
         });
         
         const progress = stats.total > 0 ? Math.round((stats.completed + stats.failed + stats.cancelled) / stats.total * 100) : 0;
-        // Allow deleting queues in pending, completed or cancelled status
+        // 允许删除待执行、已完成或已取消状态的队列
         const canDelete = queue.status === 'pending' || queue.status === 'completed' || queue.status === 'cancelled';
         
         const titleDisplay = queue.title ? `<span class="batch-queue-title" style="font-weight: 600; color: var(--text-primary); margin-right: 8px;">${escapeHtml(queue.title)}</span>` : '';
         
-        // Show role info (using the correct role icon)
+        // 显示角色信息（使用正确的角色图标）
         const loadedRoles = batchQueuesState.loadedRoles || [];
         const roleIcon = getRoleIconForDisplay(queue.role, loadedRoles);
-        const roleName = queue.role && queue.role !== '' ? queue.role : 'Default';
-        const roleDisplay = `<span class="batch-queue-role" style="margin-right: 8px;" title="Role: ${escapeHtml(roleName)}">${roleIcon} ${escapeHtml(roleName)}</span>`;
+        const roleName = queue.role && queue.role !== '' ? queue.role : _t('batchQueueDetailModal.defaultRole');
+        const roleDisplay = `<span class="batch-queue-role" style="margin-right: 8px;" title="${_t('batchQueueDetailModal.role')}: ${escapeHtml(roleName)}">${roleIcon} ${escapeHtml(roleName)}</span>`;
         
         return `
             <div class="batch-queue-item" data-queue-id="${queue.id}" onclick="showBatchQueueDetail('${queue.id}')">
@@ -1022,8 +1025,8 @@ function renderBatchQueues() {
                         ${titleDisplay}
                         ${roleDisplay}
                         <span class="batch-queue-status ${status.class}">${status.text}</span>
-                        <span class="batch-queue-id">Queue ID: ${escapeHtml(queue.id)}</span>
-                        <span class="batch-queue-time">Created: ${new Date(queue.createdAt).toLocaleString('en-US')}</span>
+                        <span class="batch-queue-id">${_t('tasks.queueIdLabel')}: ${escapeHtml(queue.id)}</span>
+                        <span class="batch-queue-time">${_t('tasks.createdTimeLabel')}: ${new Date(queue.createdAt).toLocaleString()}</span>
                     </div>
                     <div class="batch-queue-progress">
                         <div class="batch-queue-progress-bar">
@@ -1032,50 +1035,50 @@ function renderBatchQueues() {
                         <span class="batch-queue-progress-text">${progress}% (${stats.completed + stats.failed + stats.cancelled}/${stats.total})</span>
                     </div>
                     <div class="batch-queue-actions" style="display: flex; align-items: center; gap: 8px; margin-left: 12px;" onclick="event.stopPropagation();">
-                        ${canDelete ? `<button class="btn-secondary btn-small btn-danger" onclick="deleteBatchQueueFromList('${queue.id}')" title="Delete queue">Delete</button>` : ''}
+                        ${canDelete ? `<button class="btn-secondary btn-small btn-danger" onclick="deleteBatchQueueFromList('${queue.id}')" title="${_t('tasks.deleteQueue')}">${_t('common.delete')}</button>` : ''}
                     </div>
                 </div>
                 <div class="batch-queue-stats">
-                    <span>Total: ${stats.total}</span>
-                    <span>Pending: ${stats.pending}</span>
-                    <span>Running: ${stats.running}</span>
-                    <span style="color: var(--success-color);">Completed: ${stats.completed}</span>
-                    <span style="color: var(--error-color);">Failed: ${stats.failed}</span>
-                    ${stats.cancelled > 0 ? `<span style="color: var(--text-secondary);">Cancelled: ${stats.cancelled}</span>` : ''}
+                    <span>${_t('tasks.totalLabel')}: ${stats.total}</span>
+                    <span>${_t('tasks.pendingLabel')}: ${stats.pending}</span>
+                    <span>${_t('tasks.runningLabel')}: ${stats.running}</span>
+                    <span style="color: var(--success-color);">${_t('tasks.completedLabel')}: ${stats.completed}</span>
+                    <span style="color: var(--error-color);">${_t('tasks.failedLabel')}: ${stats.failed}</span>
+                    ${stats.cancelled > 0 ? `<span style="color: var(--text-secondary);">${_t('tasks.cancelledLabel')}: ${stats.cancelled}</span>` : ''}
                 </div>
             </div>
         `;
     }).join('');
     
-    // Render pagination controls
+    // 渲染分页控件
     renderBatchQueuesPagination();
 }
 
-// Render batch task queue pagination controls (following the Skills management page style)
+// 渲染批量任务队列分页控件（参考Skills管理页面样式）
 function renderBatchQueuesPagination() {
     const paginationContainer = document.getElementById('batch-queues-pagination');
     if (!paginationContainer) return;
     
     const { currentPage, pageSize, total, totalPages } = batchQueuesState;
     
-    // Show pagination info even when there is only one page (following Skills style)
+    // 即使只有一页也显示分页信息（参考Skills样式）
     if (total === 0) {
         paginationContainer.innerHTML = '';
         return;
     }
     
-    // Calculate display range
+    // 计算显示范围
     const start = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
     const end = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
     
     let paginationHTML = '<div class="pagination">';
     
-    // Left side: display range info and per-page size selector (following Skills style)
+    // 左侧：显示范围信息和每页数量选择器（参考Skills样式）
     paginationHTML += `
         <div class="pagination-info">
-            <span>Showing ${start}-${end} of ${total}</span>
+            <span>` + _t('tasks.paginationShow', { start: start, end: end, total: total }) + `</span>
             <label class="pagination-page-size">
-                Per page:
+                ` + _t('tasks.paginationPerPage') + `
                 <select id="batch-queues-page-size-pagination" onchange="changeBatchQueuesPageSize()">
                     <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
                     <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
@@ -1086,14 +1089,14 @@ function renderBatchQueuesPagination() {
         </div>
     `;
     
-    // Right side: pagination buttons (following Skills style: first, prev, page X/Y, next, last)
+    // 右侧：分页按钮（参考Skills样式：首页、上一页、第X/Y页、下一页、末页）
     paginationHTML += `
         <div class="pagination-controls">
-            <button class="btn-secondary" onclick="goBatchQueuesPage(1)" ${currentPage === 1 || total === 0 ? 'disabled' : ''}>First</button>
-            <button class="btn-secondary" onclick="goBatchQueuesPage(${currentPage - 1})" ${currentPage === 1 || total === 0 ? 'disabled' : ''}>Prev</button>
-            <span class="pagination-page">Page ${currentPage} / ${totalPages || 1}</span>
-            <button class="btn-secondary" onclick="goBatchQueuesPage(${currentPage + 1})" ${currentPage >= totalPages || total === 0 ? 'disabled' : ''}>Next</button>
-            <button class="btn-secondary" onclick="goBatchQueuesPage(${totalPages || 1})" ${currentPage >= totalPages || total === 0 ? 'disabled' : ''}>Last</button>
+            <button class="btn-secondary" onclick="goBatchQueuesPage(1)" ${currentPage === 1 || total === 0 ? 'disabled' : ''}>` + _t('tasks.paginationFirst') + `</button>
+            <button class="btn-secondary" onclick="goBatchQueuesPage(${currentPage - 1})" ${currentPage === 1 || total === 0 ? 'disabled' : ''}>` + _t('tasks.paginationPrev') + `</button>
+            <span class="pagination-page">` + _t('tasks.paginationPage', { current: currentPage, total: totalPages || 1 }) + `</span>
+            <button class="btn-secondary" onclick="goBatchQueuesPage(${currentPage + 1})" ${currentPage >= totalPages || total === 0 ? 'disabled' : ''}>` + _t('tasks.paginationNext') + `</button>
+            <button class="btn-secondary" onclick="goBatchQueuesPage(${totalPages || 1})" ${currentPage >= totalPages || total === 0 ? 'disabled' : ''}>` + _t('tasks.paginationLast') + `</button>
         </div>
     `;
     
@@ -1101,32 +1104,32 @@ function renderBatchQueuesPagination() {
     
     paginationContainer.innerHTML = paginationHTML;
     
-    // Ensure pagination component aligns with list content area (excluding scrollbar)
+    // 确保分页组件与列表内容区域对齐（不包括滚动条）
     function alignPaginationWidth() {
         const batchQueuesList = document.getElementById('batch-queues-list');
         if (batchQueuesList && paginationContainer) {
-            // Get the actual content width of the list (excluding scrollbar)
-            const listClientWidth = batchQueuesList.clientWidth; // Visible area width (excluding scrollbar)
-            const listScrollHeight = batchQueuesList.scrollHeight; // Total content height
-            const listClientHeight = batchQueuesList.clientHeight; // Visible area height
+            // 获取列表的实际内容宽度（不包括滚动条）
+            const listClientWidth = batchQueuesList.clientWidth; // 可视区域宽度（不包括滚动条）
+            const listScrollHeight = batchQueuesList.scrollHeight; // 内容总高度
+            const listClientHeight = batchQueuesList.clientHeight; // 可视区域高度
             const hasScrollbar = listScrollHeight > listClientHeight;
             
-            // If list has a vertical scrollbar, pagination should align with list content area (clientWidth)
-            // If no scrollbar, use 100% width
+            // 如果列表有垂直滚动条，分页组件应该与列表内容区域对齐（clientWidth）
+            // 如果没有滚动条，使用100%宽度
             if (hasScrollbar) {
-                // Pagination component should align with list content area, excluding scrollbar
+                // 分页组件应该与列表内容区域对齐，不包括滚动条
                 paginationContainer.style.width = `${listClientWidth}px`;
             } else {
-                // If no scrollbar, use 100% width
+                // 如果没有滚动条，使用100%宽度
                 paginationContainer.style.width = '100%';
             }
         }
     }
     
-    // Execute once immediately
+    // 立即执行一次
     alignPaginationWidth();
     
-    // Listen for window resize and list content changes
+    // 监听窗口大小变化和列表内容变化
     const resizeObserver = new ResizeObserver(() => {
         alignPaginationWidth();
     });
@@ -1137,21 +1140,21 @@ function renderBatchQueuesPagination() {
     }
 }
 
-// Jump to specified page
+// 跳转到指定页面
 function goBatchQueuesPage(page) {
     const { totalPages } = batchQueuesState;
     if (page < 1 || page > totalPages) return;
     
     loadBatchQueues(page);
     
-    // Scroll to top of list
+    // 滚动到列表顶部
     const list = document.getElementById('batch-queues-list');
     if (list) {
         list.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 }
 
-// Change per-page count
+// 改变每页显示数量
 function changeBatchQueuesPageSize() {
     const pageSizeSelect = document.getElementById('batch-queues-page-size-pagination');
     if (!pageSizeSelect) return;
@@ -1159,12 +1162,12 @@ function changeBatchQueuesPageSize() {
     const newPageSize = parseInt(pageSizeSelect.value, 10);
     if (newPageSize && newPageSize > 0) {
         batchQueuesState.pageSize = newPageSize;
-        batchQueuesState.currentPage = 1; // Reset to first page
+        batchQueuesState.currentPage = 1; // 重置到第一页
         loadBatchQueues(1);
     }
 }
 
-// Show batch task queue details
+// 显示批量任务队列详情
 async function showBatchQueueDetail(queueId) {
     const modal = document.getElementById('batch-queue-detail-modal');
     const title = document.getElementById('batch-queue-detail-title');
@@ -1177,19 +1180,19 @@ async function showBatchQueueDetail(queueId) {
         if (!modal || !content) return;
         
         try {
-        // Load role list (if not already loaded)
+        // 加载角色列表（如果还未加载）
         let loadedRoles = [];
         if (typeof loadRoles === 'function') {
             try {
                 loadedRoles = await loadRoles();
             } catch (error) {
-                console.warn('Failed to load role list, will use default icon:', error);
+                console.warn('加载角色列表失败，将使用默认图标:', error);
             }
         }
         
         const response = await apiFetch(`/api/batch-tasks/${queueId}`);
         if (!response.ok) {
-            throw new Error('Failed to get queue details');
+            throw new Error(_t('tasks.getQueueDetailFailed'));
         }
         
         const result = await response.json();
@@ -1197,58 +1200,58 @@ async function showBatchQueueDetail(queueId) {
         batchQueuesState.currentQueueId = queueId;
         
         if (title) {
-            // textContent itself escapes; do not use escapeHtml again here, otherwise && will display as &amp;... (looks like garbled text)
-            title.textContent = queue.title ? `Batch Task Queue - ${String(queue.title)}` : 'Batch Task Queue';
+            // textContent 本身会做转义；这里不要再 escapeHtml，否则会把 && 显示成 &amp;...（看起来像“变形/乱码”）
+            title.textContent = queue.title ? _t('tasks.batchQueueTitle') + ' - ' + String(queue.title) : _t('tasks.batchQueueTitle');
         }
         
-        // Update button display
+        // 更新按钮显示
         const pauseBtn = document.getElementById('batch-queue-pause-btn');
         if (addTaskBtn) {
             addTaskBtn.style.display = queue.status === 'pending' ? 'inline-block' : 'none';
         }
         if (startBtn) {
-            // Show "Start Execution" for pending status, "Resume Execution" for paused status
+            // pending状态显示"开始执行"，paused状态显示"继续执行"
             startBtn.style.display = (queue.status === 'pending' || queue.status === 'paused') ? 'inline-block' : 'none';
             if (startBtn && queue.status === 'paused') {
-                startBtn.textContent = 'Resume Execution';
+                startBtn.textContent = _t('tasks.resumeExecute');
             } else if (startBtn && queue.status === 'pending') {
-                startBtn.textContent = 'Start Execution';
+                startBtn.textContent = _t('batchQueueDetailModal.startExecute');
             }
         }
         if (pauseBtn) {
-            // Show "Pause Queue" for running status
+            // running状态显示"暂停队列"
             pauseBtn.style.display = queue.status === 'running' ? 'inline-block' : 'none';
         }
         if (deleteBtn) {
-            // Allow deleting queues in pending, completed or cancelled status
+            // 允许删除待执行、已完成或已取消状态的队列
             deleteBtn.style.display = (queue.status === 'pending' || queue.status === 'completed' || queue.status === 'cancelled' || queue.status === 'paused') ? 'inline-block' : 'none';
         }
         
-        // Queue status map
+        // 队列状态映射
         const queueStatusMap = {
-            'pending': { text: 'Pending', class: 'batch-queue-status-pending' },
-            'running': { text: 'Running', class: 'batch-queue-status-running' },
-            'paused': { text: 'Paused', class: 'batch-queue-status-paused' },
-            'completed': { text: 'Completed', class: 'batch-queue-status-completed' },
-            'cancelled': { text: 'Cancelled', class: 'batch-queue-status-cancelled' }
+            'pending': { text: _t('tasks.statusPending'), class: 'batch-queue-status-pending' },
+            'running': { text: _t('tasks.statusRunning'), class: 'batch-queue-status-running' },
+            'paused': { text: _t('tasks.statusPaused'), class: 'batch-queue-status-paused' },
+            'completed': { text: _t('tasks.statusCompleted'), class: 'batch-queue-status-completed' },
+            'cancelled': { text: _t('tasks.statusCancelled'), class: 'batch-queue-status-cancelled' }
         };
         
-        // Task status map
+        // 任务状态映射
         const taskStatusMap = {
-            'pending': { text: 'Pending', class: 'batch-task-status-pending' },
-            'running': { text: 'Running', class: 'batch-task-status-running' },
-            'completed': { text: 'Completed', class: 'batch-task-status-completed' },
-            'failed': { text: 'Failed', class: 'batch-task-status-failed' },
-            'cancelled': { text: 'Cancelled', class: 'batch-task-status-cancelled' }
+            'pending': { text: _t('tasks.statusPending'), class: 'batch-task-status-pending' },
+            'running': { text: _t('tasks.statusRunning'), class: 'batch-task-status-running' },
+            'completed': { text: _t('tasks.statusCompleted'), class: 'batch-task-status-completed' },
+            'failed': { text: _t('tasks.failedLabel'), class: 'batch-task-status-failed' },
+            'cancelled': { text: _t('tasks.statusCancelled'), class: 'batch-task-status-cancelled' }
         };
         
-        // Get role info (if queue has role configuration)
+        // 获取角色信息（如果队列有角色配置）
         let roleDisplay = '';
         if (queue.role && queue.role !== '') {
-            // If role is configured, try to get role details
+            // 如果有角色配置，尝试获取角色详细信息
             let roleName = queue.role;
             let roleIcon = '👤';
-            // Find role icon from loaded role list
+            // 从已加载的角色列表中查找角色图标
             if (Array.isArray(loadedRoles) && loadedRoles.length > 0) {
                 const role = loadedRoles.find(r => r.name === roleName);
                 if (role && role.icon) {
@@ -1259,58 +1262,58 @@ async function showBatchQueueDetail(queueId) {
                             const codePoint = parseInt(unicodeMatch[1], 16);
                             icon = String.fromCodePoint(codePoint);
                         } catch (e) {
-                            // Conversion failed, use default icon
+                            // 转换失败，使用默认图标
                         }
                     }
                     roleIcon = icon;
                 }
             }
             roleDisplay = `<div class="detail-item">
-                <span class="detail-label">Role</span>
+                <span class="detail-label">` + _t('batchQueueDetailModal.role') + `</span>
                 <span class="detail-value">${roleIcon} ${escapeHtml(roleName)}</span>
             </div>`;
         } else {
-            // Default role
+            // 默认角色
             roleDisplay = `<div class="detail-item">
-                <span class="detail-label">Role</span>
-                <span class="detail-value">🔵 Default</span>
+                <span class="detail-label">` + _t('batchQueueDetailModal.role') + `</span>
+                <span class="detail-value">🔵 ` + _t('batchQueueDetailModal.defaultRole') + `</span>
             </div>`;
         }
         
         content.innerHTML = `
             <div class="batch-queue-detail-info">
                 ${queue.title ? `<div class="detail-item">
-                    <span class="detail-label">Task Title</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.queueTitle') + `</span>
                     <span class="detail-value">${escapeHtml(queue.title)}</span>
                 </div>` : ''}
                 ${roleDisplay}
                 <div class="detail-item">
-                    <span class="detail-label">Queue ID</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.queueId') + `</span>
                     <span class="detail-value"><code>${escapeHtml(queue.id)}</code></span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Status</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.status') + `</span>
                     <span class="detail-value"><span class="batch-queue-status ${queueStatusMap[queue.status]?.class || ''}">${queueStatusMap[queue.status]?.text || queue.status}</span></span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Created Time</span>
-                    <span class="detail-value">${new Date(queue.createdAt).toLocaleString('en-US')}</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.createdAt') + `</span>
+                    <span class="detail-value">${new Date(queue.createdAt).toLocaleString()}</span>
                 </div>
                 ${queue.startedAt ? `<div class="detail-item">
-                    <span class="detail-label">Start Time</span>
-                    <span class="detail-value">${new Date(queue.startedAt).toLocaleString('en-US')}</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.startedAt') + `</span>
+                    <span class="detail-value">${new Date(queue.startedAt).toLocaleString()}</span>
                 </div>` : ''}
                 ${queue.completedAt ? `<div class="detail-item">
-                    <span class="detail-label">Completed Time</span>
-                    <span class="detail-value">${new Date(queue.completedAt).toLocaleString('en-US')}</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.completedAt') + `</span>
+                    <span class="detail-value">${new Date(queue.completedAt).toLocaleString()}</span>
                 </div>` : ''}
                 <div class="detail-item">
-                    <span class="detail-label">Total Tasks</span>
+                    <span class="detail-label">` + _t('batchQueueDetailModal.taskTotal') + `</span>
                     <span class="detail-value">${queue.tasks.length}</span>
                 </div>
             </div>
             <div class="batch-queue-tasks-list">
-                <h4>Task List</h4>
+                <h4>` + _t('batchQueueDetailModal.taskList') + `</h4>
                 ${queue.tasks.map((task, index) => {
                     const taskStatus = taskStatusMap[task.status] || { text: task.status, class: 'batch-task-status-unknown' };
                     const canEdit = queue.status === 'pending' && task.status === 'pending';
@@ -1321,14 +1324,14 @@ async function showBatchQueueDetail(queueId) {
                                 <span class="batch-task-index">#${index + 1}</span>
                                 <span class="batch-task-status ${taskStatus.class}">${taskStatus.text}</span>
                                 <span class="batch-task-message" title="${escapeHtml(task.message)}">${escapeHtml(task.message)}</span>
-                                ${canEdit ? `<button class="btn-secondary btn-small batch-task-edit-btn" onclick="editBatchTaskFromElement(this); event.stopPropagation();">Edit</button>` : ''}
-                                ${canEdit ? `<button class="btn-secondary btn-small btn-danger batch-task-delete-btn" onclick="deleteBatchTaskFromElement(this); event.stopPropagation();">Delete</button>` : ''}
-                                ${task.conversationId ? `<button class="btn-secondary btn-small" onclick="viewBatchTaskConversation('${task.conversationId}'); event.stopPropagation();">View Conversation</button>` : ''}
+                                ${canEdit ? `<button class="btn-secondary btn-small batch-task-edit-btn" onclick="editBatchTaskFromElement(this); event.stopPropagation();">` + _t('common.edit') + `</button>` : ''}
+                                ${canEdit ? `<button class="btn-secondary btn-small btn-danger batch-task-delete-btn" onclick="deleteBatchTaskFromElement(this); event.stopPropagation();">` + _t('common.delete') + `</button>` : ''}
+                                ${task.conversationId ? `<button class="btn-secondary btn-small" onclick="viewBatchTaskConversation('${task.conversationId}'); event.stopPropagation();">` + _t('tasks.viewConversation') + `</button>` : ''}
                             </div>
-                            ${task.startedAt ? `<div class="batch-task-time">Started: ${new Date(task.startedAt).toLocaleString('en-US')}</div>` : ''}
-                            ${task.completedAt ? `<div class="batch-task-time">Completed: ${new Date(task.completedAt).toLocaleString('en-US')}</div>` : ''}
-                            ${task.error ? `<div class="batch-task-error">Error: ${escapeHtml(task.error)}</div>` : ''}
-                            ${task.result ? `<div class="batch-task-result">Result: ${escapeHtml(task.result.substring(0, 200))}${task.result.length > 200 ? '...' : ''}</div>` : ''}
+                            ${task.startedAt ? `<div class="batch-task-time">` + _t('batchQueueDetailModal.startLabel') + `: ${new Date(task.startedAt).toLocaleString()}</div>` : ''}
+                            ${task.completedAt ? `<div class="batch-task-time">` + _t('batchQueueDetailModal.completeLabel') + `: ${new Date(task.completedAt).toLocaleString()}</div>` : ''}
+                            ${task.error ? `<div class="batch-task-error">` + _t('batchQueueDetailModal.errorLabel') + `: ${escapeHtml(task.error)}</div>` : ''}
+                            ${task.result ? `<div class="batch-task-result">` + _t('batchQueueDetailModal.resultLabel') + `: ${escapeHtml(task.result.substring(0, 200))}${task.result.length > 200 ? '...' : ''}</div>` : ''}
                         </div>
                     `;
                 }).join('')}
@@ -1337,17 +1340,17 @@ async function showBatchQueueDetail(queueId) {
         
         modal.style.display = 'block';
         
-        // If queue is running, auto-refresh
+        // 如果队列正在运行，自动刷新
         if (queue.status === 'running') {
             startBatchQueueRefresh(queueId);
         }
     } catch (error) {
-        console.error('Failed to get queue details:', error);
-        alert('Failed to get queue details: ' + error.message);
+        console.error('获取队列详情失败:', error);
+        alert(_t('tasks.getQueueDetailFailed') + ': ' + error.message);
     }
 }
 
-// Start batch task queue
+// 开始批量任务队列
 async function startBatchQueue() {
     const queueId = batchQueuesState.currentQueueId;
     if (!queueId) return;
@@ -1359,24 +1362,24 @@ async function startBatchQueue() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to start batch task');
+            throw new Error(result.error || _t('tasks.startBatchQueueFailed'));
         }
         
-        // Refresh details
+        // 刷新详情
         showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to start batch task:', error);
-        alert('Failed to start batch task: ' + error.message);
+        console.error('启动批量任务失败:', error);
+        alert(_t('tasks.startBatchQueueFailed') + ': ' + error.message);
     }
 }
 
-// Pause batch task queue
+// 暂停批量任务队列
 async function pauseBatchQueue() {
     const queueId = batchQueuesState.currentQueueId;
     if (!queueId) return;
     
-    if (!confirm('Are you sure you want to pause this batch task queue? The currently running task will be stopped, and subsequent tasks will remain in pending status.')) {
+    if (!confirm(_t('tasks.pauseQueueConfirm'))) {
         return;
     }
     
@@ -1387,24 +1390,24 @@ async function pauseBatchQueue() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to pause batch task');
+            throw new Error(result.error || _t('tasks.pauseQueueFailed'));
         }
         
-        // Refresh details
+        // 刷新详情
         showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to pause batch task:', error);
-        alert('Failed to pause batch task: ' + error.message);
+        console.error('暂停批量任务失败:', error);
+        alert(_t('tasks.pauseQueueFailed') + ': ' + error.message);
     }
 }
 
-// Delete batch task queue (from details modal)
+// 删除批量任务队列（从详情模态框）
 async function deleteBatchQueue() {
     const queueId = batchQueuesState.currentQueueId;
     if (!queueId) return;
     
-    if (!confirm('Are you sure you want to delete this batch task queue? This action cannot be undone.')) {
+    if (!confirm(_t('tasks.deleteQueueConfirm'))) {
         return;
     }
     
@@ -1415,22 +1418,22 @@ async function deleteBatchQueue() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to delete batch task queue');
+            throw new Error(result.error || _t('tasks.deleteQueueFailed'));
         }
         
         closeBatchQueueDetailModal();
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to delete batch task queue:', error);
-        alert('Failed to delete batch task queue: ' + error.message);
+        console.error('删除批量任务队列失败:', error);
+        alert(_t('tasks.deleteQueueFailed') + ': ' + error.message);
     }
 }
 
-// Delete batch task queue from list
+// 从列表删除批量任务队列
 async function deleteBatchQueueFromList(queueId) {
     if (!queueId) return;
     
-    if (!confirm('Are you sure you want to delete this batch task queue? This action cannot be undone.')) {
+    if (!confirm(_t('tasks.deleteQueueConfirm'))) {
         return;
     }
     
@@ -1441,23 +1444,23 @@ async function deleteBatchQueueFromList(queueId) {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to delete batch task queue');
+            throw new Error(result.error || _t('tasks.deleteQueueFailed'));
         }
         
-        // If currently viewing this queue's details, close the details modal
+        // 如果当前正在查看这个队列的详情，关闭详情模态框
         if (batchQueuesState.currentQueueId === queueId) {
             closeBatchQueueDetailModal();
         }
         
-        // Refresh queue list
+        // 刷新队列列表
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to delete batch task queue:', error);
-        alert('Failed to delete batch task queue: ' + error.message);
+        console.error('删除批量任务队列失败:', error);
+        alert(_t('tasks.deleteQueueFailed') + ': ' + error.message);
     }
 }
 
-// Close batch task queue details modal
+// 关闭批量任务队列详情模态框
 function closeBatchQueueDetailModal() {
     const modal = document.getElementById('batch-queue-detail-modal');
     if (modal) {
@@ -1467,7 +1470,7 @@ function closeBatchQueueDetailModal() {
     stopBatchQueueRefresh();
 }
 
-// Start batch queue refresh
+// 开始批量队列刷新
 function startBatchQueueRefresh(queueId) {
     if (batchQueuesState.refreshInterval) {
         clearInterval(batchQueuesState.refreshInterval);
@@ -1480,10 +1483,10 @@ function startBatchQueueRefresh(queueId) {
         } else {
             stopBatchQueueRefresh();
         }
-    }, 3000); // Refresh every 3 seconds
+    }, 3000); // 每3秒刷新一次
 }
 
-// Stop batch queue refresh
+// 停止批量队列刷新
 function stopBatchQueueRefresh() {
     if (batchQueuesState.refreshInterval) {
         clearInterval(batchQueuesState.refreshInterval);
@@ -1491,34 +1494,34 @@ function stopBatchQueueRefresh() {
     }
 }
 
-// Refresh batch task queue list
+// 刷新批量任务队列列表
 async function refreshBatchQueues() {
     await loadBatchQueues(batchQueuesState.currentPage);
 }
 
-// View batch task conversation
+// 查看批量任务的对话
 function viewBatchTaskConversation(conversationId) {
     if (!conversationId) return;
     
-    // Close batch task details modal
+    // 关闭批量任务详情模态框
     closeBatchQueueDetailModal();
     
-    // Use URL hash navigation directly, let router handle page switching and conversation loading
-    // This is more reliable because the router ensures the page switch is done before loading the conversation
+    // 直接使用URL hash跳转，让router处理页面切换和对话加载
+    // 这样更可靠，因为router会确保页面切换完成后再加载对话
     window.location.hash = `chat?conversation=${conversationId}`;
 }
 
-// Edit batch task state
+// 编辑批量任务的状态
 const editBatchTaskState = {
     queueId: null,
     taskId: null
 };
 
-// Get task info from element and open edit modal
+// 从元素获取任务信息并打开编辑模态框
 function editBatchTaskFromElement(button) {
     const taskItem = button.closest('.batch-task-item');
     if (!taskItem) {
-        console.error('Could not find task item element');
+        console.error('无法找到任务项元素');
         return;
     }
     
@@ -1527,11 +1530,11 @@ function editBatchTaskFromElement(button) {
     const taskMessage = taskItem.getAttribute('data-task-message');
     
     if (!queueId || !taskId) {
-        console.error('Task info is incomplete');
+        console.error('任务信息不完整');
         return;
     }
     
-    // Decode HTML entities
+    // 解码HTML实体
     const decodedMessage = taskMessage
         .replace(/&#39;/g, "'")
         .replace(/&quot;/g, '"')
@@ -1540,7 +1543,7 @@ function editBatchTaskFromElement(button) {
     editBatchTask(queueId, taskId, decodedMessage);
 }
 
-// Open edit batch task modal
+// 打开编辑批量任务模态框
 function editBatchTask(queueId, taskId, currentMessage) {
     editBatchTaskState.queueId = queueId;
     editBatchTaskState.taskId = taskId;
@@ -1549,20 +1552,20 @@ function editBatchTask(queueId, taskId, currentMessage) {
     const messageInput = document.getElementById('edit-task-message');
     
     if (!modal || !messageInput) {
-        console.error('Edit task modal element does not exist');
+        console.error('编辑任务模态框元素不存在');
         return;
     }
     
     messageInput.value = currentMessage;
     modal.style.display = 'block';
     
-    // Focus on input field
+    // 聚焦到输入框
     setTimeout(() => {
         messageInput.focus();
         messageInput.select();
     }, 100);
     
-    // Add ESC key listener
+    // 添加ESC键监听
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
             closeEditBatchTaskModal();
@@ -1571,7 +1574,7 @@ function editBatchTask(queueId, taskId, currentMessage) {
     };
     document.addEventListener('keydown', handleKeyDown);
     
-    // Add Enter+Ctrl/Cmd save functionality
+    // 添加Enter+Ctrl/Cmd保存功能
     const handleKeyPress = (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -1582,7 +1585,7 @@ function editBatchTask(queueId, taskId, currentMessage) {
     messageInput.addEventListener('keydown', handleKeyPress);
 }
 
-// Close edit batch task modal
+// 关闭编辑批量任务模态框
 function closeEditBatchTaskModal() {
     const modal = document.getElementById('edit-batch-task-modal');
     if (modal) {
@@ -1592,25 +1595,25 @@ function closeEditBatchTaskModal() {
     editBatchTaskState.taskId = null;
 }
 
-// Save batch task
+// 保存批量任务
 async function saveBatchTask() {
     const queueId = editBatchTaskState.queueId;
     const taskId = editBatchTaskState.taskId;
     const messageInput = document.getElementById('edit-task-message');
     
     if (!queueId || !taskId) {
-        alert('Task info is incomplete');
+        alert(_t('tasks.taskIncomplete'));
         return;
     }
     
     if (!messageInput) {
-        alert('Unable to get task message input field');
+        alert(_t('tasks.cannotGetTaskMessageInput'));
         return;
     }
     
     const message = messageInput.value.trim();
     if (!message) {
-        alert('Task message cannot be empty');
+        alert(_t('tasks.taskMessageRequired'));
         return;
     }
     
@@ -1625,30 +1628,30 @@ async function saveBatchTask() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to update task');
+            throw new Error(result.error || _t('tasks.updateTaskFailed'));
         }
         
-        // Close edit modal
+        // 关闭编辑模态框
         closeEditBatchTaskModal();
         
-        // Refresh queue details
+        // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
             showBatchQueueDetail(queueId);
         }
         
-        // Refresh queue list
+        // 刷新队列列表
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to save task:', error);
-        alert('Failed to save task: ' + error.message);
+        console.error('保存任务失败:', error);
+        alert(_t('tasks.saveTaskFailed') + ': ' + error.message);
     }
 }
 
-// Show add batch task modal
+// 显示添加批量任务模态框
 function showAddBatchTaskModal() {
     const queueId = batchQueuesState.currentQueueId;
     if (!queueId) {
-        alert('Queue info does not exist');
+        alert(_t('tasks.queueInfoMissing'));
         return;
     }
     
@@ -1656,19 +1659,19 @@ function showAddBatchTaskModal() {
     const messageInput = document.getElementById('add-task-message');
     
     if (!modal || !messageInput) {
-        console.error('Add task modal element does not exist');
+        console.error('添加任务模态框元素不存在');
         return;
     }
     
     messageInput.value = '';
     modal.style.display = 'block';
     
-    // Focus on input field
+    // 聚焦到输入框
     setTimeout(() => {
         messageInput.focus();
     }, 100);
     
-    // Add ESC key listener
+    // 添加ESC键监听
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
             closeAddBatchTaskModal();
@@ -1677,7 +1680,7 @@ function showAddBatchTaskModal() {
     };
     document.addEventListener('keydown', handleKeyDown);
     
-    // Add Enter+Ctrl/Cmd save functionality
+    // 添加Enter+Ctrl/Cmd保存功能
     const handleKeyPress = (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -1688,7 +1691,7 @@ function showAddBatchTaskModal() {
     messageInput.addEventListener('keydown', handleKeyPress);
 }
 
-// Close add batch task modal
+// 关闭添加批量任务模态框
 function closeAddBatchTaskModal() {
     const modal = document.getElementById('add-batch-task-modal');
     const messageInput = document.getElementById('add-task-message');
@@ -1700,24 +1703,24 @@ function closeAddBatchTaskModal() {
     }
 }
 
-// Save added batch task
+// 保存添加的批量任务
 async function saveAddBatchTask() {
     const queueId = batchQueuesState.currentQueueId;
     const messageInput = document.getElementById('add-task-message');
     
     if (!queueId) {
-        alert('Queue info does not exist');
+        alert(_t('tasks.queueInfoMissing'));
         return;
     }
     
     if (!messageInput) {
-        alert('Unable to get task message input field');
+        alert(_t('tasks.cannotGetTaskMessageInput'));
         return;
     }
     
     const message = messageInput.value.trim();
     if (!message) {
-        alert('Task message cannot be empty');
+        alert(_t('tasks.taskMessageRequired'));
         return;
     }
     
@@ -1732,30 +1735,30 @@ async function saveAddBatchTask() {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to add task');
+            throw new Error(result.error || _t('tasks.addTaskFailed'));
         }
         
-        // Close add task modal
+        // 关闭添加任务模态框
         closeAddBatchTaskModal();
         
-        // Refresh queue details
+        // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
             showBatchQueueDetail(queueId);
         }
         
-        // Refresh queue list
+        // 刷新队列列表
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to add task:', error);
-        alert('Failed to add task: ' + error.message);
+        console.error('添加任务失败:', error);
+        alert(_t('tasks.addTaskFailed') + ': ' + error.message);
     }
 }
 
-// Get task info from element and delete task
+// 从元素获取任务信息并删除任务
 function deleteBatchTaskFromElement(button) {
     const taskItem = button.closest('.batch-task-item');
     if (!taskItem) {
-        console.error('Could not find task item element');
+        console.error('无法找到任务项元素');
         return;
     }
     
@@ -1764,32 +1767,32 @@ function deleteBatchTaskFromElement(button) {
     const taskMessage = taskItem.getAttribute('data-task-message');
     
     if (!queueId || !taskId) {
-        console.error('Task info is incomplete');
+        console.error('任务信息不完整');
         return;
     }
     
-    // Decode HTML entities for display
+    // 解码HTML实体以显示消息
     const decodedMessage = taskMessage
         .replace(/&#39;/g, "'")
         .replace(/&quot;/g, '"')
         .replace(/\\n/g, '\n');
     
-    // Truncate long message for confirmation dialog
+    // 截断长消息用于确认对话框
     const displayMessage = decodedMessage.length > 50 
         ? decodedMessage.substring(0, 50) + '...' 
         : decodedMessage;
     
-    if (!confirm(`Are you sure you want to delete this task?\n\nTask content: ${displayMessage}\n\nThis action cannot be undone.`)) {
+    if (!confirm(_t('tasks.confirmDeleteTask', { message: displayMessage }))) {
         return;
     }
     
     deleteBatchTask(queueId, taskId);
 }
 
-// Delete batch task
+// 删除批量任务
 async function deleteBatchTask(queueId, taskId) {
     if (!queueId || !taskId) {
-        alert('Task info is incomplete');
+        alert(_t('tasks.taskIncomplete'));
         return;
     }
     
@@ -1800,23 +1803,23 @@ async function deleteBatchTask(queueId, taskId) {
         
         if (!response.ok) {
             const result = await response.json().catch(() => ({}));
-            throw new Error(result.error || 'Failed to delete task');
+            throw new Error(result.error || _t('tasks.deleteTaskFailed'));
         }
         
-        // Refresh queue details
+        // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
             showBatchQueueDetail(queueId);
         }
         
-        // Refresh queue list
+        // 刷新队列列表
         refreshBatchQueues();
     } catch (error) {
-        console.error('Failed to delete task:', error);
-        alert('Failed to delete task: ' + error.message);
+        console.error('删除任务失败:', error);
+        alert(_t('tasks.deleteTaskFailed') + ': ' + error.message);
     }
 }
 
-// Export functions
+// 导出函数
 window.showBatchImportModal = showBatchImportModal;
 window.closeBatchImportModal = closeBatchImportModal;
 window.createBatchQueue = createBatchQueue;

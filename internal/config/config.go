@@ -3,6 +3,8 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,27 +34,91 @@ type Config struct {
 	RolesDir    string                `yaml:"roles_dir,omitempty" json:"roles_dir,omitempty"`   // Role configuration file directory (new approach)
 	Roles       map[string]RoleConfig `yaml:"roles,omitempty" json:"roles,omitempty"`           // Backward-compatible: supports defining roles in the main config file
 	SkillsDir   string                `yaml:"skills_dir,omitempty" json:"skills_dir,omitempty"` // Skills configuration file directory
+	AgentsDir   string                `yaml:"agents_dir,omitempty" json:"agents_dir,omitempty"` // Multi-agent sub-agent Markdown definitions directory
+	MultiAgent  MultiAgentConfig      `yaml:"multi_agent,omitempty" json:"multi_agent,omitempty"`
 }
 
-// RobotsConfig holds bot configuration for Lark/Feishu and Telegram.
+// MultiAgentConfig holds multi-agent orchestration settings (coexists with single Agent /agent-loop).
+type MultiAgentConfig struct {
+	Enabled                 bool                  `yaml:"enabled" json:"enabled"`
+	DefaultMode             string                `yaml:"default_mode" json:"default_mode"`                   // single | multi
+	RobotUseMultiAgent      bool                  `yaml:"robot_use_multi_agent" json:"robot_use_multi_agent"`
+	BatchUseMultiAgent      bool                  `yaml:"batch_use_multi_agent" json:"batch_use_multi_agent"`
+	MaxIteration            int                   `yaml:"max_iteration" json:"max_iteration"`
+	SubAgentMaxIterations   int                   `yaml:"sub_agent_max_iterations" json:"sub_agent_max_iterations"`
+	WithoutGeneralSubAgent  bool                  `yaml:"without_general_sub_agent" json:"without_general_sub_agent"`
+	WithoutWriteTodos       bool                  `yaml:"without_write_todos" json:"without_write_todos"`
+	OrchestratorInstruction string                `yaml:"orchestrator_instruction" json:"orchestrator_instruction"`
+	SubAgents               []MultiAgentSubConfig `yaml:"sub_agents" json:"sub_agents"`
+}
+
+// MultiAgentSubConfig holds sub-agent configuration.
+type MultiAgentSubConfig struct {
+	ID            string   `yaml:"id" json:"id"`
+	Name          string   `yaml:"name" json:"name"`
+	Description   string   `yaml:"description" json:"description"`
+	Instruction   string   `yaml:"instruction" json:"instruction"`
+	BindRole      string   `yaml:"bind_role,omitempty" json:"bind_role,omitempty"`
+	RoleTools     []string `yaml:"role_tools" json:"role_tools"`
+	MaxIterations int      `yaml:"max_iterations" json:"max_iterations"`
+	Kind          string   `yaml:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// MultiAgentPublic is the public-facing subset of MultiAgentConfig.
+type MultiAgentPublic struct {
+	Enabled            bool   `json:"enabled"`
+	DefaultMode        string `json:"default_mode"`
+	RobotUseMultiAgent bool   `json:"robot_use_multi_agent"`
+	BatchUseMultiAgent bool   `json:"batch_use_multi_agent"`
+	SubAgentCount      int    `json:"sub_agent_count"`
+}
+
+// MultiAgentAPIUpdate holds fields updatable via API (does not overwrite sub_agents).
+type MultiAgentAPIUpdate struct {
+	Enabled            bool   `json:"enabled"`
+	DefaultMode        string `json:"default_mode"`
+	RobotUseMultiAgent bool   `json:"robot_use_multi_agent"`
+	BatchUseMultiAgent bool   `json:"batch_use_multi_agent"`
+}
+
+// RobotsConfig holds bot configuration for Wecom, DingTalk, Lark/Feishu, and Telegram.
 type RobotsConfig struct {
+	Wecom    RobotWecomConfig    `yaml:"wecom,omitempty" json:"wecom,omitempty"`       // WeCom
+	Dingtalk RobotDingtalkConfig `yaml:"dingtalk,omitempty" json:"dingtalk,omitempty"` // DingTalk
 	Lark     RobotLarkConfig     `yaml:"lark,omitempty" json:"lark,omitempty"`         // Lark (Feishu)
 	Telegram RobotTelegramConfig `yaml:"telegram,omitempty" json:"telegram,omitempty"` // Telegram
+}
+
+// RobotWecomConfig holds WeCom robot configuration.
+type RobotWecomConfig struct {
+	Enabled        bool   `yaml:"enabled" json:"enabled"`
+	Token          string `yaml:"token" json:"token"`
+	EncodingAESKey string `yaml:"encoding_aes_key" json:"encoding_aes_key"`
+	CorpID         string `yaml:"corp_id" json:"corp_id"`
+	Secret         string `yaml:"secret" json:"secret"`
+	AgentID        int64  `yaml:"agent_id" json:"agent_id"`
+}
+
+// RobotDingtalkConfig holds DingTalk robot configuration.
+type RobotDingtalkConfig struct {
+	Enabled      bool   `yaml:"enabled" json:"enabled"`
+	ClientID     string `yaml:"client_id" json:"client_id"`
+	ClientSecret string `yaml:"client_secret" json:"client_secret"`
 }
 
 // RobotLarkConfig holds the Lark (Feishu) bot configuration.
 type RobotLarkConfig struct {
 	Enabled     bool   `yaml:"enabled" json:"enabled"`
-	AppID       string `yaml:"app_id" json:"app_id"`             // Application App ID
-	AppSecret   string `yaml:"app_secret" json:"app_secret"`     // Application App Secret
-	VerifyToken string `yaml:"verify_token" json:"verify_token"` // Event subscription Verification Token (optional)
+	AppID       string `yaml:"app_id" json:"app_id"`
+	AppSecret   string `yaml:"app_secret" json:"app_secret"`
+	VerifyToken string `yaml:"verify_token" json:"verify_token"`
 }
 
 // RobotTelegramConfig holds the Telegram bot configuration.
 type RobotTelegramConfig struct {
 	Enabled        bool    `yaml:"enabled" json:"enabled"`
-	BotToken       string  `yaml:"bot_token" json:"bot_token"`                                   // Bot token from @BotFather
-	AllowedUserIDs []int64 `yaml:"allowed_user_ids,omitempty" json:"allowed_user_ids,omitempty"` // Whitelist of Telegram user IDs; empty = allow all
+	BotToken       string  `yaml:"bot_token" json:"bot_token"`
+	AllowedUserIDs []int64 `yaml:"allowed_user_ids,omitempty" json:"allowed_user_ids,omitempty"`
 }
 
 type ServerConfig struct {
@@ -66,11 +132,11 @@ type LogConfig struct {
 }
 
 type MCPConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	EnabledSet  bool   `yaml:"-" json:"-"`
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	AllowRemote bool   `yaml:"allow_remote,omitempty" json:"allow_remote,omitempty"`
+	Enabled         bool   `yaml:"enabled"`
+	Host            string `yaml:"host"`
+	Port            int    `yaml:"port"`
+	AuthHeader      string `yaml:"auth_header,omitempty"`       // Auth header name (empty = no auth)
+	AuthHeaderValue string `yaml:"auth_header_value,omitempty"` // Auth header value
 }
 
 type OpenAIConfig struct {
@@ -171,6 +237,7 @@ type AgentConfig struct {
 	MaxIterations           int                 `yaml:"max_iterations" json:"max_iterations"`
 	LargeResultThreshold    int                 `yaml:"large_result_threshold" json:"large_result_threshold"`         // Large-result threshold (bytes), default 50 KB
 	ResultStorageDir        string              `yaml:"result_storage_dir" json:"result_storage_dir"`                 // Result storage directory, default tmp
+	ToolTimeoutMinutes      int                 `yaml:"tool_timeout_minutes" json:"tool_timeout_minutes"`             // Per-tool max execution time in minutes (0 = unlimited)
 	ParallelToolExecution   bool                `yaml:"parallel_tool_execution" json:"parallel_tool_execution"`       // Execute multiple tool calls concurrently (default true)
 	MaxParallelTools        int                 `yaml:"max_parallel_tools" json:"max_parallel_tools"`                 // Maximum concurrent tool calls (0 = unlimited)
 	ToolRetryCount          int                 `yaml:"tool_retry_count" json:"tool_retry_count"`                     // Number of retries on transient tool errors (default 0)
@@ -181,7 +248,6 @@ type AgentConfig struct {
 	Cuttlefish              CuttlefishConfig    `yaml:"cuttlefish" json:"cuttlefish"`                                 // Android VM (Cuttlefish) settings
 	SSLStrip                SSLStripConfig      `yaml:"sslstrip" json:"sslstrip"`                                     // SSLStrip MITM tool settings
 	Proxy                   ProxyConfig         `yaml:"proxy" json:"proxy"`                                           // Global proxy middleware for tool traffic routing
-	ToolTimeout             int                 `yaml:"tool_timeout" json:"tool_timeout"`                             // Per-tool execution timeout in seconds (default 300 = 5 min)
 }
 
 // TimeAwarenessConfig controls whether and how the agent injects time context.
@@ -224,7 +290,6 @@ func (c *MCPConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = MCPConfig(out)
-	markEnabledPresence(value, &c.EnabledSet)
 	return nil
 }
 
@@ -292,12 +357,12 @@ type SSLStripConfig struct {
 // ProxyConfig controls global proxy middleware for all tool executions.
 // Secrets (gsocket secret, proxy auth) are stored in persistent memory, not here.
 type ProxyConfig struct {
-	Enabled   bool   `yaml:"enabled" json:"enabled"`                       // Enable proxy middleware (default false)
-	Type      string `yaml:"type" json:"type"`                             // Proxy type: socks5, socks5h, http, https, gsocket (default socks5h)
-	Host      string `yaml:"host" json:"host"`                             // Proxy host (default 127.0.0.1)
-	Port      int    `yaml:"port" json:"port"`                             // Proxy port (default 1080)
-	NoProxy   string `yaml:"no_proxy" json:"no_proxy"`                     // Comma-separated bypass list (default: localhost,127.0.0.1)
-	AutoStart bool   `yaml:"auto_start" json:"auto_start"`                 // Auto-start gsocket SOCKS tunnel on server start (default false)
+	Enabled   bool   `yaml:"enabled" json:"enabled"`       // Enable proxy middleware (default false)
+	Type      string `yaml:"type" json:"type"`             // Proxy type: socks5, socks5h, http, https, gsocket (default socks5h)
+	Host      string `yaml:"host" json:"host"`             // Proxy host (default 127.0.0.1)
+	Port      int    `yaml:"port" json:"port"`             // Proxy port (default 1080)
+	NoProxy   string `yaml:"no_proxy" json:"no_proxy"`     // Comma-separated bypass list (default: localhost,127.0.0.1)
+	AutoStart bool   `yaml:"auto_start" json:"auto_start"` // Auto-start gsocket SOCKS tunnel on server start (default false)
 }
 
 type AuthConfig struct {
@@ -349,16 +414,17 @@ type ToolConfig struct {
 
 // ParameterConfig holds the configuration for a single tool parameter.
 type ParameterConfig struct {
-	Name        string      `yaml:"name"`               // Parameter name
-	Type        string      `yaml:"type"`               // Parameter type: string, int, bool, array
-	Description string      `yaml:"description"`        // Parameter description
-	Required    bool        `yaml:"required,omitempty"` // Whether the parameter is required
-	Default     interface{} `yaml:"default,omitempty"`  // Default value
-	Flag        string      `yaml:"flag,omitempty"`     // Command-line flag, e.g. "-u", "--url", "-p"
-	Position    *int        `yaml:"position,omitempty"` // Position of a positional parameter (0-based)
-	Format      string      `yaml:"format,omitempty"`   // Parameter format: "flag", "positional", "combined" (flag=value), "template"
-	Template    string      `yaml:"template,omitempty"` // Template string, e.g. "{flag} {value}" or "{value}"
-	Options     []string    `yaml:"options,omitempty"`  // List of allowed values (for enum parameters)
+	Name        string      `yaml:"name"`                // Parameter name
+	Type        string      `yaml:"type"`                // Parameter type: string, int, bool, array
+	Description string      `yaml:"description"`         // Parameter description
+	Required    bool        `yaml:"required,omitempty"`  // Whether the parameter is required
+	Default     interface{} `yaml:"default,omitempty"`   // Default value
+	ItemType    string      `yaml:"item_type,omitempty"` // When type is array, the element type (string, number, object)
+	Flag        string      `yaml:"flag,omitempty"`      // Command-line flag, e.g. "-u", "--url", "-p"
+	Position    *int        `yaml:"position,omitempty"`  // Position of a positional parameter (0-based)
+	Format      string      `yaml:"format,omitempty"`    // Parameter format: "flag", "positional", "combined" (flag=value), "template"
+	Template    string      `yaml:"template,omitempty"`  // Template string, e.g. "{flag} {value}" or "{value}"
+	Options     []string    `yaml:"options,omitempty"`   // List of allowed values (for enum parameters)
 }
 
 func Load(path string) (*Config, error) {
@@ -575,6 +641,123 @@ func PrintGeneratedPasswordWarning(password string, persisted bool, persistErr s
 	fmt.Println("----------------------------------------------------------------")
 }
 
+// generateRandomToken generates a random hex string for MCP auth.
+func generateRandomToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// persistMCPAuth writes MCP auth_header / auth_header_value back to the config file.
+func persistMCPAuth(path string, mcp *MCPConfig) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	inMcpBlock := false
+	mcpIndent := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inMcpBlock {
+			if strings.HasPrefix(trimmed, "mcp:") {
+				inMcpBlock = true
+				mcpIndent = len(line) - len(strings.TrimLeft(line, " "))
+			}
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		leadingSpaces := len(line) - len(strings.TrimLeft(line, " "))
+		if leadingSpaces <= mcpIndent {
+			inMcpBlock = false
+			mcpIndent = -1
+			if strings.HasPrefix(trimmed, "mcp:") {
+				inMcpBlock = true
+				mcpIndent = leadingSpaces
+			}
+			continue
+		}
+
+		prefix := line[:leadingSpaces]
+		rest := strings.TrimSpace(line[leadingSpaces:])
+		comment := ""
+		if idx := strings.Index(line, "#"); idx >= 0 {
+			comment = strings.TrimRight(line[idx:], " ")
+		}
+		withComment := ""
+		if comment != "" {
+			if !strings.HasPrefix(comment, " ") {
+				withComment = " "
+			}
+			withComment += comment
+		}
+
+		if strings.HasPrefix(rest, "auth_header_value:") {
+			lines[i] = fmt.Sprintf("%sauth_header_value: %q%s", prefix, mcp.AuthHeaderValue, withComment)
+		} else if strings.HasPrefix(rest, "auth_header:") {
+			lines[i] = fmt.Sprintf("%sauth_header: %q%s", prefix, mcp.AuthHeader, withComment)
+		}
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// EnsureMCPAuth auto-generates a random MCP auth key when MCP is enabled but auth_header_value is empty.
+func EnsureMCPAuth(path string, cfg *Config) error {
+	if !cfg.MCP.Enabled || strings.TrimSpace(cfg.MCP.AuthHeaderValue) != "" {
+		return nil
+	}
+	token, err := generateRandomToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate MCP auth key: %w", err)
+	}
+	cfg.MCP.AuthHeaderValue = token
+	if strings.TrimSpace(cfg.MCP.AuthHeader) == "" {
+		cfg.MCP.AuthHeader = "X-MCP-Token"
+	}
+	return persistMCPAuth(path, &cfg.MCP)
+}
+
+// PrintMCPConfigJSON prints MCP config JSON to terminal for use in Cursor / Claude Code.
+func PrintMCPConfigJSON(mcp MCPConfig) {
+	if !mcp.Enabled {
+		return
+	}
+	hostForURL := strings.TrimSpace(mcp.Host)
+	if hostForURL == "" || hostForURL == "0.0.0.0" {
+		hostForURL = "localhost"
+	}
+	url := fmt.Sprintf("http://%s:%d/mcp", hostForURL, mcp.Port)
+	headers := map[string]string{}
+	if mcp.AuthHeader != "" {
+		headers[mcp.AuthHeader] = mcp.AuthHeaderValue
+	}
+	serverEntry := map[string]interface{}{
+		"url": url,
+	}
+	if len(headers) > 0 {
+		serverEntry["headers"] = headers
+	}
+	serverEntry["type"] = "http"
+	out := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"cyberstrike-ai": serverEntry,
+		},
+	}
+	b, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Println("[CyberStrikeAI] MCP config (copy to Cursor / Claude Code):")
+	fmt.Println("  Cursor: place in ~/.cursor/mcp.json mcpServers, or project .cursor/mcp.json")
+	fmt.Println("  Claude Code: place in .mcp.json or ~/.claude.json mcpServers")
+	fmt.Println("----------------------------------------------------------------")
+	fmt.Println(string(b))
+	fmt.Println("----------------------------------------------------------------")
+}
+
 // LoadToolsFromDir loads all tool configuration files from a directory.
 func LoadToolsFromDir(dir string) ([]ToolConfig, error) {
 	var tools []ToolConfig
@@ -740,11 +923,9 @@ func Default() *Config {
 			Output: "stdout",
 		},
 		MCP: MCPConfig{
-			Enabled:     true,
-			EnabledSet:  true,
-			Host:        "0.0.0.0",
-			Port:        8081,
-			AllowRemote: false,
+			Enabled: true,
+			Host:    "0.0.0.0",
+			Port:    8081,
 		},
 		OpenAI: OpenAIConfig{
 			BaseURL:        "https://api.openai.com/v1",
@@ -752,7 +933,8 @@ func Default() *Config {
 			MaxTotalTokens: 120000,
 		},
 		Agent: AgentConfig{
-			MaxIterations: 30, // Default maximum iteration count
+			MaxIterations:      30, // Default maximum iteration count
+			ToolTimeoutMinutes: 10, // Per-tool default max 10 minutes
 			TimeAwareness: TimeAwarenessConfig{
 				Enabled:    true,
 				EnabledSet: true,
@@ -785,8 +967,17 @@ func Default() *Config {
 			},
 			Retrieval: RetrievalConfig{
 				TopK:                5,
-				SimilarityThreshold: 0.7,
+				SimilarityThreshold: 0.65, // 降低阈值到 0.65，减少漏检
 				HybridWeight:        0.7,
+			},
+			Indexing: IndexingConfig{
+				ChunkSize:        768, // 增加到 768，更好的上下文保持
+				ChunkOverlap:     50,
+				MaxChunksPerItem: 20,  // 限制单个知识项最多 20 个块，避免消耗过多配额
+				MaxRPM:           100, // 默认 100 RPM，避免 429 错误
+				RateLimitDelayMs: 600, // 600ms 间隔，对应 100 RPM
+				MaxRetries:       3,
+				RetryDelayMs:     1000,
 			},
 		},
 	}
@@ -798,6 +989,26 @@ type KnowledgeConfig struct {
 	BasePath  string          `yaml:"base_path" json:"base_path"` // Knowledge base path
 	Embedding EmbeddingConfig `yaml:"embedding" json:"embedding"`
 	Retrieval RetrievalConfig `yaml:"retrieval" json:"retrieval"`
+	Indexing  IndexingConfig  `yaml:"indexing,omitempty" json:"indexing,omitempty"` // 索引构建配置
+}
+
+// IndexingConfig 索引构建配置（用于控制知识库索引构建时的行为）
+type IndexingConfig struct {
+	// 分块配置
+	ChunkSize        int `yaml:"chunk_size,omitempty" json:"chunk_size,omitempty"`                   // 每个块的最大 token 数（估算），默认 512
+	ChunkOverlap     int `yaml:"chunk_overlap,omitempty" json:"chunk_overlap,omitempty"`             // 块之间的重叠 token 数，默认 50
+	MaxChunksPerItem int `yaml:"max_chunks_per_item,omitempty" json:"max_chunks_per_item,omitempty"` // 单个知识项的最大块数量，0 表示不限制
+
+	// 速率限制配置（用于避免 API 速率限制）
+	RateLimitDelayMs int `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // 请求间隔时间（毫秒），0 表示不使用固定延迟
+	MaxRPM           int `yaml:"max_rpm,omitempty" json:"max_rpm,omitempty"`                         // 每分钟最大请求数，0 表示不限制
+
+	// 重试配置（用于处理临时错误）
+	MaxRetries   int `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`       // 最大重试次数，默认 3
+	RetryDelayMs int `yaml:"retry_delay_ms,omitempty" json:"retry_delay_ms,omitempty"` // 重试间隔（毫秒），默认 1000
+
+	// 批处理配置（用于批量嵌入，当前未使用，保留扩展）
+	BatchSize int `yaml:"batch_size,omitempty" json:"batch_size,omitempty"` // 批量处理大小，0 表示逐个处理
 }
 
 // EmbeddingConfig holds the embedding model configuration.

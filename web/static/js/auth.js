@@ -19,7 +19,7 @@ function saveAuth(token, expiresAt) {
             expiresAt: expiry.toISOString(),
         }));
     } catch (error) {
-        console.warn('Unable to persist authentication info:', error);
+        console.warn('无法持久化认证信息:', error);
     }
 }
 
@@ -29,7 +29,7 @@ function clearAuthStorage() {
     try {
         localStorage.removeItem(AUTH_STORAGE_KEY);
     } catch (error) {
-        console.warn('Unable to clear authentication info:', error);
+        console.warn('无法清除认证信息:', error);
     }
 }
 
@@ -53,7 +53,7 @@ function loadAuthFromStorage() {
         authTokenExpiry = expiry;
         return isTokenValid();
     } catch (error) {
-        console.error('Failed to read authentication info:', error);
+        console.error('读取认证信息失败:', error);
         clearAuthStorage();
         return false;
     }
@@ -123,12 +123,20 @@ async function ensureAuthenticated() {
     return true;
 }
 
-function handleUnauthorized({ message = 'Session expired, please log in again', silent = false } = {}) {
+function handleUnauthorized({ message = null, silent = false } = {}) {
     clearAuthStorage();
     authPromise = null;
     authPromiseResolvers = [];
+    let finalMessage = message;
+    if (!finalMessage) {
+        if (typeof window !== 'undefined' && typeof window.t === 'function') {
+            finalMessage = window.t('auth.sessionExpired');
+        } else {
+            finalMessage = '认证已过期，请重新登录';
+        }
+    }
     if (!silent) {
-        showLoginOverlay(message);
+        showLoginOverlay(finalMessage);
     } else {
         showLoginOverlay();
     }
@@ -147,9 +155,60 @@ async function apiFetch(url, options = {}) {
     const response = await fetch(url, opts);
     if (response.status === 401) {
         handleUnauthorized();
-        throw new Error('Unauthorized access');
+        const msg = (typeof window !== 'undefined' && typeof window.t === 'function')
+            ? window.t('auth.unauthorized')
+            : '未授权访问';
+        throw new Error(msg);
     }
     return response;
+}
+
+/**
+ * multipart POST with XMLHttpRequest so upload progress is available (fetch 无法可靠上报进度).
+ * 返回与 fetch 类似的对象：ok、status、json()、text()
+ */
+async function apiUploadWithProgress(url, formData, options = {}) {
+    await ensureAuthenticated();
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        if (authToken) {
+            xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+        }
+        xhr.upload.onprogress = (e) => {
+            if (!onProgress || !e.lengthComputable) return;
+            const percent = e.total > 0 ? Math.round((e.loaded / e.total) * 100) : 0;
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+        };
+        xhr.onerror = () => {
+            reject(new Error('Network error'));
+        };
+        xhr.onload = () => {
+            if (xhr.status === 401) {
+                handleUnauthorized();
+                const msg = (typeof window !== 'undefined' && typeof window.t === 'function')
+                    ? window.t('auth.unauthorized')
+                    : '未授权访问';
+                reject(new Error(msg));
+                return;
+            }
+            const responseText = xhr.responseText || '';
+            resolve({
+                ok: xhr.status >= 200 && xhr.status < 300,
+                status: xhr.status,
+                text: async () => responseText,
+                json: async () => {
+                    try {
+                        return responseText ? JSON.parse(responseText) : {};
+                    } catch (err) {
+                        throw err;
+                    }
+                },
+            });
+        };
+        xhr.send(formData);
+    });
 }
 
 async function submitLogin(event) {
@@ -165,7 +224,10 @@ async function submitLogin(event) {
     const password = passwordInput.value.trim();
     if (!password) {
         if (errorBox) {
-            errorBox.textContent = 'Please enter your password';
+            const msgEmpty = (typeof window !== 'undefined' && typeof window.t === 'function')
+                ? window.t('auth.enterPassword')
+                : '请输入密码';
+            errorBox.textContent = msgEmpty;
             errorBox.style.display = 'block';
         }
         return;
@@ -186,7 +248,10 @@ async function submitLogin(event) {
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.token) {
             if (errorBox) {
-                errorBox.textContent = result.error || 'Login failed, please check your password';
+                const fallback = (typeof window !== 'undefined' && typeof window.t === 'function')
+                    ? window.t('auth.loginFailedCheck')
+                    : '登录失败，请检查密码';
+                errorBox.textContent = result.error || fallback;
                 errorBox.style.display = 'block';
             }
             return;
@@ -201,9 +266,12 @@ async function submitLogin(event) {
             await refreshAppData();
         }
     } catch (error) {
-        console.error('Login failed:', error);
+        console.error('登录失败:', error);
         if (errorBox) {
-            errorBox.textContent = 'Login failed, please try again later';
+            const fallback = (typeof window !== 'undefined' && typeof window.t === 'function')
+                ? window.t('auth.loginFailedRetry')
+                : '登录失败，请稍后重试';
+            errorBox.textContent = fallback;
             errorBox.style.display = 'block';
         }
     } finally {
@@ -222,21 +290,29 @@ async function refreshAppData(showTaskErrors = false) {
 
 async function bootstrapApp() {
     if (!isAppInitialized) {
+        // 等待 i18n 首包加载完成后再插系统就绪消息，避免清除缓存后语言显示 English 气泡仍是中文
+        try {
+            if (window.i18nReady && typeof window.i18nReady.then === 'function') {
+                await window.i18nReady;
+            }
+        } catch (e) {
+            console.warn('等待 i18n 就绪失败，继续初始化聊天', e);
+        }
         initializeChatUI();
         isAppInitialized = true;
     }
     await refreshAppData();
 }
 
-// General utility functions
+// 通用工具函数
 function getStatusText(status) {
-    const statusMap = {
-        'pending': 'Pending',
-        'running': 'Running',
-        'completed': 'Completed',
-        'failed': 'Failed'
-    };
-    return statusMap[status] || status;
+    if (typeof window.t !== 'function') {
+        const fallback = { pending: '等待中', running: '执行中', completed: '已完成', failed: '失败' };
+        return fallback[status] || status;
+    }
+    const keyMap = { pending: 'mcpDetailModal.statusPending', running: 'mcpDetailModal.statusRunning', completed: 'mcpDetailModal.statusCompleted', failed: 'mcpDetailModal.statusFailed' };
+    const key = keyMap[status];
+    return key ? window.t(key) : status;
 }
 
 function formatDuration(ms) {
@@ -245,11 +321,11 @@ function formatDuration(ms) {
     const hours = Math.floor(minutes / 60);
     
     if (hours > 0) {
-        return `${hours}h ${minutes % 60}m`;
+        return `${hours}小时${minutes % 60}分钟`;
     } else if (minutes > 0) {
-        return `${minutes}m ${seconds % 60}s`;
+        return `${minutes}分钟${seconds % 60}秒`;
     } else {
-        return `${seconds}s`;
+        return `${seconds}秒`;
     }
 }
 
@@ -276,7 +352,7 @@ function formatMarkdown(text) {
                 let parsedContent = marked.parse(text);
                 return DOMPurify.sanitize(parsedContent, sanitizeConfig);
             } catch (e) {
-                console.error('Markdown parsing failed:', e);
+                console.error('Markdown 解析失败:', e);
                 return DOMPurify.sanitize(text, sanitizeConfig);
             }
         } else {
@@ -290,7 +366,7 @@ function formatMarkdown(text) {
             });
             return marked.parse(text);
         } catch (e) {
-            console.error('Markdown parsing failed:', e);
+            console.error('Markdown 解析失败:', e);
             return escapeHtml(text).replace(/\n/g, '<br>');
         }
     } else {
@@ -320,7 +396,7 @@ async function initializeApp() {
                 return;
             }
         } catch (error) {
-            console.warn('Local session has expired, please log in again');
+            console.warn('本地会话已失效，需重新登录');
         }
     }
 
@@ -328,7 +404,7 @@ async function initializeApp() {
     showLoginOverlay();
 }
 
-// User menu control
+// 用户菜单控制
 function toggleUserMenu() {
     const dropdown = document.getElementById('user-menu-dropdown');
     if (!dropdown) return;
@@ -337,7 +413,7 @@ function toggleUserMenu() {
     dropdown.style.display = isVisible ? 'none' : 'block';
 }
 
-// Close the dropdown menu when clicking elsewhere on the page
+// 点击页面其他地方时关闭下拉菜单
 document.addEventListener('click', function(event) {
     const dropdown = document.getElementById('user-menu-dropdown');
     const avatarBtn = document.querySelector('.user-avatar-btn');
@@ -349,16 +425,16 @@ document.addEventListener('click', function(event) {
     }
 });
 
-// Logout
+// 退出登录
 async function logout() {
-    // Close the dropdown menu
+    // 关闭下拉菜单
     const dropdown = document.getElementById('user-menu-dropdown');
     if (dropdown) {
         dropdown.style.display = 'none';
     }
     
     try {
-        // First attempt to call the logout API (if token is valid)
+        // 先尝试调用退出API（如果token有效）
         if (authToken) {
             const headers = new Headers();
             headers.set('Authorization', `Bearer ${authToken}`);
@@ -366,20 +442,20 @@ async function logout() {
                 method: 'POST',
                 headers: headers,
             }).catch(() => {
-                // Ignore errors and continue clearing local auth info
+                // 忽略错误，继续清除本地认证信息
             });
         }
     } catch (error) {
-        console.error('Logout API call failed:', error);
+        console.error('退出登录API调用失败:', error);
     } finally {
-        // Always clear local authentication info
+        // 无论如何都清除本地认证信息
         clearAuthStorage();
         hideLoginOverlay();
-        showLoginOverlay('Logged out successfully');
+        showLoginOverlay(typeof window.t === 'function' ? window.t('auth.loggedOut') : '已退出登录');
     }
 }
 
-// Export functions for HTML use
+// 导出函数供HTML使用
 window.toggleUserMenu = toggleUserMenu;
 window.logout = logout;
 
