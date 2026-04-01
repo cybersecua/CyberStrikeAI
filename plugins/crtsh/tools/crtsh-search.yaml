@@ -1,0 +1,106 @@
+name: "crtsh-search"
+command: "python3"
+args: ["{{PLUGIN_DIR}}/scripts/crtsh_search.py"]
+enabled: true
+short_description: "crt.sh Certificate Transparency — subdomain discovery, cert history, issuer analysis. Free, no API key."
+description: |
+  Search Certificate Transparency logs via crt.sh for subdomain discovery, certificate history,
+  and infrastructure mapping. **Free — no API key required.**
+
+  crt.sh aggregates data from all public CT logs (Google Argon/Xenon, Cloudflare Nimbus, DigiCert,
+  Let's Encrypt Oak, etc.) and provides the most comprehensive certificate database available.
+
+  **Search modes:**
+  - `http` (default) — JSON API, fast, returns certs + extracted subdomains
+  - `subdomains` — fast subdomain-only output (minimal, for chaining with other tools)
+  - `db` — direct PostgreSQL to crt.sh database (slower but supports full SQL, more complete)
+
+  **Why use crt.sh for pentesting:**
+  - **Subdomain discovery** — finds subdomains from wildcard and SAN certificates, including
+    internal/staging hostnames that organizations accidentally expose via CT logs
+  - **Certificate history** — shows all certs ever issued for a domain, revealing:
+    - Internal hostnames (dev.internal.target.com)
+    - Staging environments (staging-api.target.com)
+    - Decommissioned but DNS-resolvable services
+    - Shadow IT (certs issued by employees on unauthorized services)
+  - **Issuer analysis** — reveals which CAs the org uses (Let's Encrypt = automated, DigiCert = enterprise)
+  - **Infrastructure mapping** — cert SANs often list multiple domains on same infrastructure
+
+  **Query patterns:**
+  - `example.com` — exact domain certificates only
+  - `%.example.com` — all subdomains (wildcard match, MOST COMMON for recon)
+  - `%.%.example.com` — deep subdomain discovery (sub.sub.domain)
+  - `%.example.%` — find related TLDs (.com, .net, .org, etc.)
+
+  **Typical recon workflow:**
+  1. `crtsh-search query="%.target.com" mode="subdomains"` — fast subdomain list
+  2. Feed subdomains into `subfinder` / `dnsenum` for DNS resolution
+  3. `crtsh-search query="%.target.com"` — full cert analysis (issuers, dates, history)
+  4. Look for internal hostnames, staging environments, wildcard certs
+  5. Feed discovered hosts into `nmap` / `nuclei` for active scanning
+
+  **Output includes:**
+  - Unique subdomains (deduplicated, wildcard-stripped, sorted)
+  - Certificate details: common name, SAN names, issuer, validity dates
+  - Top issuers analysis (which CAs issued most certs for this domain)
+  - Total certificate count vs unique subdomain count
+
+  **Performance notes:**
+  - Popular domains (google.com, microsoft.com) may return 10,000+ certs — use `subdomains` mode
+  - First query to crt.sh may be slow (10-30s) if domain isn't cached; subsequent queries are fast
+  - DB mode connects to PostgreSQL directly — may timeout during peak hours
+  - HTTP mode is recommended for most use cases
+
+  **Rate limits:** crt.sh is free with no official rate limit, but please be respectful.
+  Aggressive querying may get your IP temporarily blocked.
+
+parameters:
+  - name: "query"
+    type: "string"
+    description: |
+      Domain to search in CT logs (required).
+
+      Use SQL-style wildcards:
+      - `example.com` — exact domain only
+      - `%.example.com` — all subdomains (RECOMMENDED for recon)
+      - `%.%.example.com` — deep subdomain discovery
+
+      Examples:
+      - %.target.com
+      - target.com
+      - %.api.target.com
+    required: true
+    position: 0
+    format: "positional"
+
+  - name: "mode"
+    type: "string"
+    description: |
+      Search mode (optional, default "http").
+
+      - http — JSON API, fast, full cert details + subdomains
+      - subdomains — subdomain list only (minimal output, good for chaining)
+      - db — direct PostgreSQL (complete results, slower)
+    required: false
+    position: 1
+    format: "positional"
+    default: "http"
+
+  - name: "limit"
+    type: "int"
+    description: |
+      Maximum number of certificate results (optional, default 500).
+      Subdomains are always fully extracted regardless of cert limit.
+    required: false
+    position: 2
+    format: "positional"
+    default: 500
+
+  - name: "additional_args"
+    type: "string"
+    description: |
+      Additional flags:
+      - --expired — include expired certificates (reveals historical infrastructure)
+      - --wildcard — auto-prepend % wildcard to query for subdomain discovery
+    required: false
+    format: "positional"
