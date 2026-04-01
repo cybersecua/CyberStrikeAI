@@ -793,7 +793,9 @@
       "externalMCPManagement": "External MCP Management",
       "attackChain": "Attack Chain",
       "knowledgeBase": "Knowledge Base",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "pluginManagement": "Plugin Management",
+      "configuration": "Configuration"
     },
     "summary": {
       "login": "User login",
@@ -893,7 +895,16 @@
       "invokeTool": "Invoke tool",
       "initConnection": "Initialize connection",
       "successResponse": "Success response",
-      "errorResponse": "Error response"
+      "errorResponse": "Error response",
+      "listPlugins": "List Plugins",
+      "enablePlugin": "Enable Plugin",
+      "disablePlugin": "Disable Plugin",
+      "getPluginConfig": "Get Plugin Config",
+      "setPluginConfig": "Set Plugin Config",
+      "installPluginDeps": "Install Plugin Dependencies",
+      "uploadPlugin": "Upload Plugin",
+      "deletePlugin": "Delete Plugin",
+      "testApiEndpoint": "Test API Endpoint"
     },
     "response": {
       "getSuccess": "Success",

@@ -793,7 +793,9 @@
       "externalMCPManagement": "Керування зовнішнім MCP",
       "attackChain": "Ланцюг атаки",
       "knowledgeBase": "База знань",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "pluginManagement": "Керування плагінами",
+      "configuration": "Конфігурація"
     },
     "summary": {
       "login": "Вхід користувача",
@@ -893,7 +895,16 @@
       "invokeTool": "Виклик інструменту",
       "initConnection": "Ініціалізація з'єднання",
       "successResponse": "Успішна відповідь",
-      "errorResponse": "Помилка відповіді"
+      "errorResponse": "Помилка відповіді",
+      "listPlugins": "Список плагінів",
+      "enablePlugin": "Увімкнути плагін",
+      "disablePlugin": "Вимкнути плагін",
+      "getPluginConfig": "Отримати конфігурацію плагіна",
+      "setPluginConfig": "Встановити конфігурацію плагіна",
+      "installPluginDeps": "Встановити залежності плагіна",
+      "uploadPlugin": "Завантажити плагін",
+      "deletePlugin": "Видалити плагін",
+      "testApiEndpoint": "Тестувати API-з'єднання"
     },
     "response": {
       "getSuccess": "Успішно",

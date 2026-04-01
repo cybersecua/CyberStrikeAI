@@ -10,6 +10,7 @@ var apiDocI18nTagToKey = map[string]string{
 	"Role Management": "roleManagement", "Skills Management": "skillsManagement", "Monitoring": "monitoring",
 	"Config Management": "configManagement", "External MCP Management": "externalMCPManagement", "Attack Chain": "attackChain",
 	"Knowledge Base": "knowledgeBase", "MCP": "mcp",
+	"Plugin Management": "pluginManagement", "Configuration": "configuration",
 }
 
 var apiDocI18nSummaryToKey = map[string]string{
@@ -46,6 +47,10 @@ var apiDocI18nSummaryToKey = map[string]string{
 	"Get Retrieval Logs": "getRetrievalLogs", "Delete Retrieval Log": "deleteRetrievalLog",
 	"MCP Endpoint": "mcpEndpoint", "List All Tools": "listAllTools", "Invoke Tool": "invokeTool", "Init Connection": "initConnection",
 	"Success Response": "successResponse", "Error Response": "errorResponse",
+	"List Plugins": "listPlugins", "Enable Plugin": "enablePlugin", "Disable Plugin": "disablePlugin",
+	"Get Plugin Config": "getPluginConfig", "Set Plugin Config": "setPluginConfig",
+	"Install Plugin Dependencies": "installPluginDeps", "Upload Plugin": "uploadPlugin", "Delete Plugin": "deletePlugin",
+	"Test API Endpoint": "testApiEndpoint",
 }
 
 var apiDocI18nResponseDescToKey = map[string]string{
