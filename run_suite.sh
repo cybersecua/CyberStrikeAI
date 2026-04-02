@@ -121,6 +121,27 @@ else
     fi
 fi
 
+# ─── 3d. FlareSolverr (WAF/Cloudflare bypass) ───────────────────
+info "Checking FlareSolverr..."
+if curl -s --connect-timeout 2 http://127.0.0.1:8191/ >/dev/null 2>&1; then
+    log "FlareSolverr: running on :8191"
+elif command -v docker &>/dev/null; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q flaresolverr; then
+        log "FlareSolverr: running (Docker)"
+    else
+        warn "FlareSolverr not running. Starting via Docker..."
+        docker run -d --name flaresolverr --restart unless-stopped \
+            -p 127.0.0.1:8191:8191 \
+            -e LOG_LEVEL=info \
+            ghcr.io/flaresolverr/flaresolverr:latest >/dev/null 2>&1 \
+            && log "FlareSolverr: started on :8191" \
+            || warn "FlareSolverr Docker start failed. WAF bypass tool will not work."
+    fi
+else
+    warn "FlareSolverr not running and Docker not available"
+    warn "  Install Docker and run: docker run -d --name flaresolverr -p 127.0.0.1:8191:8191 ghcr.io/flaresolverr/flaresolverr:latest"
+fi
+
 # ─── 4. Config file ──────────────────────────────────────────────
 info "Checking config.yaml..."
 if [ -f "$DIR/config.yaml" ]; then

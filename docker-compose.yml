@@ -18,3 +18,25 @@ services:
       - ./data:/app/data
       - ./tmp:/app/tmp
       - ./logs:/app/logs
+    depends_on:
+      flaresolverr:
+        condition: service_started
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8191:8191"
+    environment:
+      - LOG_LEVEL=${FLARESOLVERR_LOG_LEVEL:-info}
+      - LOG_HTML=${FLARESOLVERR_LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${FLARESOLVERR_CAPTCHA_SOLVER:-none}
+      - TZ=${TZ:-UTC}
+      # Proxy support — FlareSolverr browser uses this for all requests
+      - PROXY_URL=${FLARESOLVERR_PROXY_URL:-}
+    # Memory limit — Chromium can be hungry
+    deploy:
+      resources:
+        limits:
+          memory: 2G
