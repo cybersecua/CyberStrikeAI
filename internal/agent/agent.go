@@ -239,10 +239,27 @@ func (cm ChatMessage) MarshalJSON() ([]byte, error) {
 
 // OpenAIRequest OpenAI API request
 type OpenAIRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Tools    []Tool        `json:"tools,omitempty"`
-	Stream   bool          `json:"stream,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Tools       []Tool        `json:"tools,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"` // pointer so 0.0 can be explicit vs omitted
+	TopP        *float64      `json:"top_p,omitempty"`
+}
+
+// applySamplingParams sets temperature/top_p on a request from config (if non-zero).
+func (a *Agent) applySamplingParams(req *OpenAIRequest) {
+	if a.config == nil {
+		return
+	}
+	if a.config.Temperature > 0 {
+		t := a.config.Temperature
+		req.Temperature = &t
+	}
+	if a.config.TopP > 0 {
+		p := a.config.TopP
+		req.TopP = &p
+	}
 }
 
 // OpenAIResponse OpenAI API response
@@ -1300,6 +1317,7 @@ func (a *Agent) callOpenAISingle(ctx context.Context, messages []ChatMessage, to
 		Model:    model,
 		Messages: messages,
 	}
+	a.applySamplingParams(&reqBody)
 
 	if len(tools) > 0 {
 		reqBody.Tools = tools
@@ -1337,6 +1355,7 @@ func (a *Agent) callOpenAISingleStreamText(ctx context.Context, messages []ChatM
 		Messages: messages,
 		Stream:   true,
 	}
+	a.applySamplingParams(&reqBody)
 	if len(tools) > 0 {
 		reqBody.Tools = tools
 	}
@@ -1422,6 +1441,7 @@ func (a *Agent) callOpenAISingleStreamWithToolCalls(
 		Messages: messages,
 		Stream:   true,
 	}
+	a.applySamplingParams(&reqBody)
 	if len(tools) > 0 {
 		reqBody.Tools = tools
 	}

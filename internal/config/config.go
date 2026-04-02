@@ -122,8 +122,11 @@ type OpenAIConfig struct {
 	SummaryModel   string `yaml:"summary_model,omitempty" json:"summary_model,omitempty"`
 	SummaryBaseURL string `yaml:"summary_base_url,omitempty" json:"summary_base_url,omitempty"`
 	SummaryAPIKey  string `yaml:"summary_api_key,omitempty" json:"summary_api_key,omitempty"`
-	MaxTotalTokens   int `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
-	RateLimitDelayMs int `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // Min ms between API calls (0=no limit for local models, 2000 for Anthropic free tier)
+	MaxTotalTokens   int     `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
+	RateLimitDelayMs int     `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // Min ms between API calls (0=no limit for local models, 2000 for Anthropic free tier)
+	Temperature      float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`               // Sampling temperature (0.0-2.0, default 0 = provider default). Lower = more deterministic.
+	TopP             float64 `yaml:"top_p,omitempty" json:"top_p,omitempty"`                           // Nucleus sampling (0.0-1.0, default 0 = provider default). Lower = less random.
+	TopK             int     `yaml:"top_k,omitempty" json:"top_k,omitempty"`                           // Top-K sampling (Anthropic only, 0 = provider default).
 }
 
 // ApplyModelDefaults normalizes model fields:

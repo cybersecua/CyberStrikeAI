@@ -1125,6 +1125,15 @@ func updateOpenAIConfig(doc *yaml.Node, cfg config.OpenAIConfig) {
 	setStringInMap(openaiNode, "summary_model", cfg.SummaryModel)
 	setStringInMap(openaiNode, "summary_base_url", cfg.SummaryBaseURL)
 	setStringInMap(openaiNode, "summary_api_key", cfg.SummaryAPIKey)
+	if cfg.Temperature > 0 {
+		setFloatInMap(openaiNode, "temperature", cfg.Temperature)
+	}
+	if cfg.TopP > 0 {
+		setFloatInMap(openaiNode, "top_p", cfg.TopP)
+	}
+	if cfg.TopK > 0 {
+		setIntInMap(openaiNode, "top_k", cfg.TopK)
+	}
 }
 
 func updateFOFAConfig(doc *yaml.Node, cfg config.FofaConfig) {

@@ -152,6 +152,14 @@ async function loadConfig(loadTools = true) {
         const summaryApiKeyEl = document.getElementById('openai-summary-api-key');
         if (summaryApiKeyEl) summaryApiKeyEl.value = currentConfig.openai?.summary_api_key || '';
 
+        // Populate sampling parameters
+        const tempEl = document.getElementById('openai-temperature');
+        if (tempEl) tempEl.value = currentConfig.openai?.temperature || 0;
+        const topPEl = document.getElementById('openai-top-p');
+        if (topPEl) topPEl.value = currentConfig.openai?.top_p || 0;
+        const topKEl = document.getElementById('openai-top-k');
+        if (topKEl) topKEl.value = currentConfig.openai?.top_k || 0;
+
         // populateFOFAconfiguration
         const fofa = currentConfig.fofa || {};
         const fofaEmailEl = document.getElementById('fofa-email');
@@ -879,7 +887,10 @@ async function applySettings() {
                 tool_api_key: document.getElementById('openai-tool-api-key')?.value.trim() || '',
                 summary_model: document.getElementById('openai-summary-model')?.value.trim() || '',
                 summary_base_url: document.getElementById('openai-summary-base-url')?.value.trim() || '',
-                summary_api_key: document.getElementById('openai-summary-api-key')?.value.trim() || ''
+                summary_api_key: document.getElementById('openai-summary-api-key')?.value.trim() || '',
+                temperature: parseFloat(document.getElementById('openai-temperature')?.value) || 0,
+                top_p: parseFloat(document.getElementById('openai-top-p')?.value) || 0,
+                top_k: parseInt(document.getElementById('openai-top-k')?.value) || 0
             },
             fofa: {
                 email: document.getElementById('fofa-email')?.value.trim() || '',

@@ -1317,7 +1317,10 @@
     "summaryModel": "Модель для підсумків",
     "summaryModelHint": "(необов'язково — залиште порожнім для основної моделі)",
     "summaryBaseUrl": "URL для підсумків",
-    "summaryApiKey": "API ключ для підсумків"
+    "summaryApiKey": "API ключ для підсумків",
+    "temperature": "Температура",
+    "topP": "Top P",
+    "topK": "Top K (Anthropic)"
   },
   "settingsTerminal": {
     "title": "Термінал",

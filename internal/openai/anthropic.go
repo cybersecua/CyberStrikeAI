@@ -64,12 +64,15 @@ func (c *Client) doAnthropicWithRetry(ctx context.Context, endpoint string, body
 // ---------- Anthropic API types ----------
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []anthropicMessage `json:"messages"`
-	System    string             `json:"system,omitempty"`
-	MaxTokens int                `json:"max_tokens"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
-	Stream    bool               `json:"stream,omitempty"`
+	Model       string             `json:"model"`
+	Messages    []anthropicMessage `json:"messages"`
+	System      string             `json:"system,omitempty"`
+	MaxTokens   int                `json:"max_tokens"`
+	Tools       []anthropicTool    `json:"tools,omitempty"`
+	Stream      bool               `json:"stream,omitempty"`
+	Temperature *float64           `json:"temperature,omitempty"` // 0.0-1.0
+	TopP        *float64           `json:"top_p,omitempty"`       // 0.0-1.0
+	TopK        *int               `json:"top_k,omitempty"`       // Anthropic-specific
 }
 
 type anthropicMessage struct {
@@ -189,15 +192,20 @@ func openaiToAnthropicRequest(payload interface{}) (*anthropicRequest, error) {
 		Stream      bool              `json:"stream,omitempty"`
 		MaxTokens   int               `json:"max_tokens,omitempty"`
 		Temperature *float64          `json:"temperature,omitempty"`
+		TopP        *float64          `json:"top_p,omitempty"`
+		TopK        *int              `json:"top_k,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &oai); err != nil {
 		return nil, fmt.Errorf("unmarshal openai payload: %w", err)
 	}
 
 	req := &anthropicRequest{
-		Model:     oai.Model,
-		MaxTokens: oai.MaxTokens,
-		Stream:    oai.Stream,
+		Model:       oai.Model,
+		MaxTokens:   oai.MaxTokens,
+		Stream:      oai.Stream,
+		Temperature: oai.Temperature,
+		TopP:        oai.TopP,
+		TopK:        oai.TopK,
 	}
 	if req.MaxTokens <= 0 {
 		req.MaxTokens = 8192

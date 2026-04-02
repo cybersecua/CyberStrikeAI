@@ -1317,7 +1317,10 @@
     "summaryModel": "Summary Model",
     "summaryModelHint": "(optional — leave empty to use main model)",
     "summaryBaseUrl": "Summary Base URL",
-    "summaryApiKey": "Summary API Key"
+    "summaryApiKey": "Summary API Key",
+    "temperature": "Temperature",
+    "topP": "Top P",
+    "topK": "Top K (Anthropic)"
   },
   "settingsTerminal": {
     "title": "Terminal",
