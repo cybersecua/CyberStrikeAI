@@ -91,6 +91,36 @@ else
     warn "Could not set network capabilities — run with sudo once, or pcap tools will fail"
 fi
 
+# ─── 3c. Tor and proxychains (for proxy routing) ────────────────
+info "Checking Tor and proxychains..."
+TOR_OK=0
+PC_OK=0
+if command -v tor &>/dev/null; then
+    log "Tor: installed ($(tor --version | head -1))"
+    TOR_OK=1
+else
+    warn "Tor not installed"
+    if [ "$(id -u)" -eq 0 ] || [ -n "$SUDO_USER" ]; then
+        apt-get install -y -qq tor 2>/dev/null && TOR_OK=1 && log "Tor: installed" || warn "Tor install failed"
+    else
+        warn "  Install with: sudo apt install tor"
+    fi
+fi
+if command -v proxychains4 &>/dev/null; then
+    log "proxychains4: installed"
+    PC_OK=1
+elif command -v proxychains &>/dev/null; then
+    log "proxychains: installed (proxychains4 preferred)"
+    PC_OK=1
+else
+    warn "proxychains4 not installed"
+    if [ "$(id -u)" -eq 0 ] || [ -n "$SUDO_USER" ]; then
+        apt-get install -y -qq proxychains4 2>/dev/null && PC_OK=1 && log "proxychains4: installed" || warn "proxychains4 install failed"
+    else
+        warn "  Install with: sudo apt install proxychains4"
+    fi
+fi
+
 # ─── 4. Config file ──────────────────────────────────────────────
 info "Checking config.yaml..."
 if [ -f "$DIR/config.yaml" ]; then

@@ -78,8 +78,11 @@ func NewAgent(cfg *config.OpenAIConfig, agentCfg *config.AgentConfig, mcpServer 
 		// temporarily set to nil, initialize when needed
 	}
 
-	// configure HTTP Transport, optimize connection management and timeout settings
+	// configure HTTP Transport for LLM inference calls.
+	// IMPORTANT: Proxy is explicitly nil — inference MUST go direct to the LLM provider.
+	// Tool traffic is proxied separately via executor subprocess env vars.
 	transport := &http.Transport{
+		Proxy: nil, // NEVER proxy inference calls — breaks auth with cloud providers
 		DialContext: (&net.Dialer{
 			Timeout:   300 * time.Second,
 			KeepAlive: 300 * time.Second,
@@ -88,8 +91,8 @@ func NewAgent(cfg *config.OpenAIConfig, agentCfg *config.AgentConfig, mcpServer 
 		MaxIdleConnsPerHost:   10,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   30 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Minute, // response header timeout: increased to 15 min for large responses
-		DisableKeepAlives:     false,            // enable connection reuse
+		ResponseHeaderTimeout: 60 * time.Minute,
+		DisableKeepAlives:     false,
 	}
 
 	// increase timeout to 30 minutes to support long-running AI inference

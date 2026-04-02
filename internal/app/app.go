@@ -259,7 +259,8 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		}
 
 		httpClient := &http.Client{
-			Timeout: 30 * time.Minute,
+			Timeout:   30 * time.Minute,
+			Transport: &http.Transport{Proxy: nil}, // inference/embedding calls must bypass proxy
 		}
 		openAIClient := openai.NewClient(&cfg.OpenAI, httpClient, log.Logger)
 		embedder := knowledge.NewEmbedder(&cfg.Knowledge, &cfg.OpenAI, openAIClient, log.Logger)

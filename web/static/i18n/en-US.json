@@ -1615,6 +1615,21 @@
     "nextPage": "Next",
     "lastPage": "Last"
   },
+  "settingsProxy": {
+    "title": "Proxy",
+    "description": "Route tool traffic through Tor, SOCKS5, or HTTP proxy",
+    "enable": "Enable Proxy",
+    "type": "Proxy Type",
+    "host": "Host",
+    "port": "Port",
+    "username": "Username (optional)",
+    "password": "Password (optional)",
+    "noProxy": "Bypass List",
+    "proxychains": "Wrap nmap/masscan with proxychains4",
+    "dnsProxy": "Route DNS through proxy",
+    "torAutoStart": "Auto-start Tor service",
+    "healthCheck": "Verify proxy at startup"
+  },
   "settingsPlugins": {
     "title": "Plugins",
     "description": "Manage plugin extensions — enable/disable, configure API keys, install dependencies",

@@ -1615,6 +1615,21 @@
     "nextPage": "Наступна",
     "lastPage": "Остання"
   },
+  "settingsProxy": {
+    "title": "Проксі",
+    "description": "Маршрутизація трафіку інструментів через Tor, SOCKS5 або HTTP проксі",
+    "enable": "Увімкнути проксі",
+    "type": "Тип проксі",
+    "host": "Хост",
+    "port": "Порт",
+    "username": "Логін (необов'язково)",
+    "password": "Пароль (необов'язково)",
+    "noProxy": "Список обходу",
+    "proxychains": "Обгортати nmap/masscan через proxychains4",
+    "dnsProxy": "Маршрутизувати DNS через проксі",
+    "torAutoStart": "Автозапуск сервісу Tor",
+    "healthCheck": "Перевірка проксі при запуску"
+  },
   "settingsPlugins": {
     "title": "Плагіни",
     "description": "Керування плагінами — увімкнути/вимкнути, налаштувати API ключі, встановити залежності",

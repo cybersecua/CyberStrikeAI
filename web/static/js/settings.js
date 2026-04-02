@@ -260,7 +260,43 @@ async function loadConfig(loadTools = true) {
         if (tgToken) tgToken.value = telegram.bot_token || '';
         const tgAllowed = document.getElementById('robot-telegram-allowed-users');
         if (tgAllowed) tgAllowed.value = (telegram.allowed_user_ids || []).join(',');
-        
+
+        // Proxy settings
+        const proxy = currentConfig.agent?.proxy || {};
+        const proxyEnabled = document.getElementById('proxy-enabled');
+        if (proxyEnabled) proxyEnabled.checked = proxy.enabled || false;
+        const proxyType = document.getElementById('proxy-type');
+        if (proxyType) proxyType.value = proxy.type || 'tor';
+        const proxyHost = document.getElementById('proxy-host');
+        if (proxyHost) proxyHost.value = proxy.host || '127.0.0.1';
+        const proxyPort = document.getElementById('proxy-port');
+        if (proxyPort) proxyPort.value = proxy.port || 9050;
+        const proxyUsername = document.getElementById('proxy-username');
+        if (proxyUsername) proxyUsername.value = proxy.username || '';
+        const proxyPassword = document.getElementById('proxy-password');
+        if (proxyPassword) proxyPassword.value = proxy.password || '';
+        const proxyNoProxy = document.getElementById('proxy-no-proxy');
+        if (proxyNoProxy) proxyNoProxy.value = proxy.no_proxy || 'localhost,127.0.0.1,*.local';
+        const proxyProxychains = document.getElementById('proxy-proxychains');
+        if (proxyProxychains) proxyProxychains.checked = proxy.proxychains || false;
+        const proxyDns = document.getElementById('proxy-dns');
+        if (proxyDns) proxyDns.checked = proxy.dns_proxy !== undefined ? proxy.dns_proxy : true;
+        const proxyTorAutostart = document.getElementById('proxy-tor-autostart');
+        if (proxyTorAutostart) proxyTorAutostart.checked = proxy.tor_auto_start || false;
+        const proxyHealthCheck = document.getElementById('proxy-health-check');
+        if (proxyHealthCheck) proxyHealthCheck.checked = proxy.health_check !== undefined ? proxy.health_check : true;
+
+        // Auto-set port when proxy type changes
+        document.getElementById('proxy-type')?.addEventListener('change', function() {
+            const portEl = document.getElementById('proxy-port');
+            if (!portEl) return;
+            switch(this.value) {
+                case 'tor': portEl.value = '9050'; break;
+                case 'socks5': case 'socks5h': portEl.value = '1080'; break;
+                case 'http': case 'https': portEl.value = '8080'; break;
+            }
+        });
+
         // onlyhasatneedwhenonly loadtoollist（MCPmanagement pageneed，systemsettingspagenotneed）
         if (loadTools) {
             // settingsPer pagecount（willatpaginationcontrolsrenderwhensettings）
@@ -829,7 +865,20 @@ async function applySettings() {
                 base_url: document.getElementById('fofa-base-url')?.value.trim() || ''
             },
             agent: {
-                max_iterations: parseInt(document.getElementById('agent-max-iterations').value) || 30
+                max_iterations: parseInt(document.getElementById('agent-max-iterations').value) || 30,
+                proxy: {
+                    enabled: document.getElementById('proxy-enabled')?.checked || false,
+                    type: document.getElementById('proxy-type')?.value || 'tor',
+                    host: document.getElementById('proxy-host')?.value?.trim() || '127.0.0.1',
+                    port: parseInt(document.getElementById('proxy-port')?.value) || 9050,
+                    username: document.getElementById('proxy-username')?.value?.trim() || '',
+                    password: document.getElementById('proxy-password')?.value?.trim() || '',
+                    no_proxy: document.getElementById('proxy-no-proxy')?.value?.trim() || 'localhost,127.0.0.1',
+                    proxychains: document.getElementById('proxy-proxychains')?.checked || false,
+                    dns_proxy: document.getElementById('proxy-dns')?.checked || false,
+                    tor_auto_start: document.getElementById('proxy-tor-autostart')?.checked || false,
+                    health_check: document.getElementById('proxy-health-check')?.checked || false
+                }
             },
             multi_agent: {
                 enabled: document.getElementById('multi-agent-enabled')?.checked === true,

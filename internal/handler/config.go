@@ -951,6 +951,7 @@ func (h *ConfigHandler) saveConfig() error {
 	}
 
 	updateAgentConfig(root, h.config.Agent.MaxIterations)
+	updateProxyConfig(root, h.config.Agent.Proxy)
 	updateMCPConfig(root, h.config.MCP)
 	updateOpenAIConfig(root, h.config.OpenAI)
 	updateFOFAConfig(root, h.config.FOFA)
@@ -1082,6 +1083,23 @@ func updateAgentConfig(doc *yaml.Node, maxIterations int) {
 	root := doc.Content[0]
 	agentNode := ensureMap(root, "agent")
 	setIntInMap(agentNode, "max_iterations", maxIterations)
+}
+
+func updateProxyConfig(doc *yaml.Node, cfg config.ProxyConfig) {
+	root := doc.Content[0]
+	agentNode := ensureMap(root, "agent")
+	proxyNode := ensureMap(agentNode, "proxy")
+	setBoolInMap(proxyNode, "enabled", cfg.Enabled)
+	setStringInMap(proxyNode, "type", cfg.Type)
+	setStringInMap(proxyNode, "host", cfg.Host)
+	setIntInMap(proxyNode, "port", cfg.Port)
+	setStringInMap(proxyNode, "username", cfg.Username)
+	setStringInMap(proxyNode, "password", cfg.Password)
+	setStringInMap(proxyNode, "no_proxy", cfg.NoProxy)
+	setBoolInMap(proxyNode, "proxychains", cfg.ProxyChains)
+	setBoolInMap(proxyNode, "dns_proxy", cfg.DNSProxy)
+	setBoolInMap(proxyNode, "tor_auto_start", cfg.TorAutoStart)
+	setBoolInMap(proxyNode, "health_check", cfg.HealthCheck)
 }
 
 func updateMCPConfig(doc *yaml.Node, cfg config.MCPConfig) {

@@ -1355,6 +1355,9 @@
                                 <div class="settings-nav-item" data-section="terminal" onclick="switchSettingsSection('terminal')">
  <span data-i18n="settings.nav.terminal"></span>
                                 </div>
+                                <div class="settings-nav-item" data-section="proxy" onclick="switchSettingsSection('proxy')">
+                                    <span data-i18n="settingsProxy.title">Proxy</span>
+                                </div>
                                 <div class="settings-nav-item" data-section="security" onclick="switchSettingsSection('security')">
  <span data-i18n="settings.nav.security"></span>
                                 </div>
@@ -1660,6 +1663,84 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div id="settings-section-proxy" class="settings-section-content">
+                                <div class="settings-section-header">
+                                    <h3 data-i18n="settingsProxy.title">Proxy</h3>
+                                    <p class="settings-section-desc" data-i18n="settingsProxy.description">Route tool traffic through Tor, SOCKS5, or HTTP proxy</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="proxy-enabled" class="modern-checkbox" />
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text" data-i18n="settingsProxy.enable">Enable Proxy</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label for="proxy-type" data-i18n="settingsProxy.type">Proxy Type</label>
+                                    <select id="proxy-type">
+                                        <option value="tor">Tor (SOCKS5 on 9050, anonymous)</option>
+                                        <option value="socks5h">SOCKS5 + DNS proxy (recommended)</option>
+                                        <option value="socks5">SOCKS5 (local DNS)</option>
+                                        <option value="http">HTTP Proxy</option>
+                                        <option value="https">HTTPS Proxy</option>
+                                    </select>
+                                </div>
+                                <div class="info-collect-form-row">
+                                    <div class="form-group">
+                                        <label for="proxy-host" data-i18n="settingsProxy.host">Host</label>
+                                        <input type="text" id="proxy-host" value="127.0.0.1" placeholder="127.0.0.1" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="proxy-port" data-i18n="settingsProxy.port">Port</label>
+                                        <input type="number" id="proxy-port" value="9050" placeholder="9050" />
+                                    </div>
+                                </div>
+                                <div class="info-collect-form-row">
+                                    <div class="form-group">
+                                        <label for="proxy-username" data-i18n="settingsProxy.username">Username (optional)</label>
+                                        <input type="text" id="proxy-username" placeholder="" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="proxy-password" data-i18n="settingsProxy.password">Password (optional)</label>
+                                        <input type="password" id="proxy-password" placeholder="" />
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="proxy-no-proxy" data-i18n="settingsProxy.noProxy">Bypass List</label>
+                                    <input type="text" id="proxy-no-proxy" value="localhost,127.0.0.1,*.local" placeholder="localhost,127.0.0.1" />
+                                    <small class="form-hint">Comma-separated hosts/patterns that bypass proxy</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="proxy-proxychains" class="modern-checkbox" />
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text" data-i18n="settingsProxy.proxychains">Wrap nmap/masscan with proxychains4</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="proxy-dns" class="modern-checkbox" checked />
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text" data-i18n="settingsProxy.dnsProxy">Route DNS through proxy</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="proxy-tor-autostart" class="modern-checkbox" />
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text" data-i18n="settingsProxy.torAutoStart">Auto-start Tor service</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="proxy-health-check" class="modern-checkbox" checked />
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text" data-i18n="settingsProxy.healthCheck">Verify proxy at startup</span>
+                                    </label>
+                                </div>
+                                <div id="proxy-status" style="margin-top: 12px; font-size: 12px;"></div>
                             </div>
 
  <!-- -->
