@@ -281,6 +281,10 @@
                             </div>
                         </div>
                         <div class="dashboard-content">
+                            <div id="dashboard-model-status" style="margin-bottom:12px;padding:10px 16px;border-radius:8px;background:var(--card-bg, #1e1e2e);border:1px solid var(--border-color, #333);display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:13px;color:var(--text-secondary, #aaa);">Model Status</span>
+                                <span id="dashboard-model-status-value" style="font-size:13px;">Checking...</span>
+                            </div>
  <!-- ： KPI（：） -->
                             <div class="dashboard-kpi-row" id="dashboard-cards">
  <div class="dashboard-kpi-card" role="button" tabindex="0" onclick="switchPage('tasks')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('tasks'); }" data-i18n="dashboard.clickToViewTasks" data-i18n-attr="title" title=""> <div class="dashboard-kpi-value" id="dashboard-running-tasks">-</div><div class="dashboard-kpi-label" data-i18n="dashboard.runningTasks"></div></div>

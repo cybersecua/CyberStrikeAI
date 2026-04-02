@@ -1717,3 +1717,180 @@ func classifyHTTPError(err error) TestAPIResponse {
 	}
 	return TestAPIResponse{Status: "error", Error: err.Error()}
 }
+
+// ModelHealthResponse is the JSON returned by the model health check endpoint.
+type ModelHealthResponse struct {
+	Status    string `json:"status"`               // "ok", "error", "unconfigured"
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model,omitempty"`
+	BaseURL   string `json:"base_url,omitempty"`
+	Message   string `json:"message,omitempty"`
+	LatencyMs int64  `json:"latency_ms,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"` // "auth_failed", "dns_error", "timeout", "unconfigured"
+}
+
+// ModelHealthCheck tests the configured AI model endpoint and returns status.
+// Returns: {status: "ok"|"error"|"unconfigured", provider, model, message, details}
+func (h *ConfigHandler) ModelHealthCheck(c *gin.Context) {
+	h.mu.RLock()
+	cfg := h.config
+	h.mu.RUnlock()
+
+	if cfg == nil {
+		c.JSON(http.StatusOK, ModelHealthResponse{
+			Status:    "error",
+			Message:   "Configuration not loaded",
+			ErrorCode: "unconfigured",
+		})
+		return
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(cfg.OpenAI.Provider))
+	apiKey := strings.TrimSpace(cfg.OpenAI.APIKey)
+	baseURL := strings.TrimSpace(cfg.OpenAI.BaseURL)
+	model := strings.TrimSpace(cfg.OpenAI.Model)
+
+	// Auto-detect provider from key prefix
+	if provider == "" {
+		if strings.HasPrefix(apiKey, "sk-ant-") {
+			provider = "anthropic"
+		} else {
+			provider = "openai"
+		}
+	}
+
+	if provider == "anthropic" && baseURL == "" {
+		baseURL = "https://api.anthropic.com/v1"
+	} else if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	// Check for unconfigured API key
+	if apiKey == "" || apiKey == "YOUR_API_KEY_HERE" || apiKey == "sk-xxxxxx" || apiKey == "sk-xxx" {
+		c.JSON(http.StatusOK, ModelHealthResponse{
+			Status:    "unconfigured",
+			Provider:  provider,
+			Model:     model,
+			BaseURL:   baseURL,
+			Message:   "API key not set. Go to Settings to configure.",
+			ErrorCode: "unconfigured",
+		})
+		return
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	start := time.Now()
+
+	var resp *http.Response
+	var reqErr error
+
+	switch provider {
+	case "anthropic":
+		body := []byte(fmt.Sprintf(`{"model":%q,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}`, model))
+		endpoint := strings.TrimRight(baseURL, "/") + "/messages"
+		var httpReq *http.Request
+		httpReq, reqErr = http.NewRequestWithContext(c.Request.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
+		if reqErr == nil {
+			httpReq.Header.Set("x-api-key", apiKey)
+			httpReq.Header.Set("anthropic-version", "2023-06-01")
+			httpReq.Header.Set("Content-Type", "application/json")
+			resp, reqErr = httpClient.Do(httpReq)
+		}
+	default:
+		body := []byte(fmt.Sprintf(`{"model":%q,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}`, model))
+		endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
+		var httpReq *http.Request
+		httpReq, reqErr = http.NewRequestWithContext(c.Request.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
+		if reqErr == nil {
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+			resp, reqErr = httpClient.Do(httpReq)
+		}
+	}
+
+	latencyMs := time.Since(start).Milliseconds()
+
+	if reqErr != nil {
+		result := classifyModelHealthError(reqErr)
+		result.Provider = provider
+		result.Model = model
+		result.BaseURL = baseURL
+		result.LatencyMs = latencyMs
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	switch {
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		c.JSON(http.StatusOK, ModelHealthResponse{
+			Status:    "error",
+			Provider:  provider,
+			Model:     model,
+			BaseURL:   baseURL,
+			Message:   fmt.Sprintf("Authentication failed (%d %s)", resp.StatusCode, http.StatusText(resp.StatusCode)),
+			LatencyMs: latencyMs,
+			ErrorCode: "auth_failed",
+		})
+	case resp.StatusCode >= 400:
+		c.JSON(http.StatusOK, ModelHealthResponse{
+			Status:    "error",
+			Provider:  provider,
+			Model:     model,
+			BaseURL:   baseURL,
+			Message:   fmt.Sprintf("API returned %d %s", resp.StatusCode, http.StatusText(resp.StatusCode)),
+			LatencyMs: latencyMs,
+			ErrorCode: "api_error",
+		})
+	default:
+		c.JSON(http.StatusOK, ModelHealthResponse{
+			Status:    "ok",
+			Provider:  provider,
+			Model:     model,
+			BaseURL:   baseURL,
+			Message:   "Model endpoint reachable",
+			LatencyMs: latencyMs,
+		})
+	}
+}
+
+// classifyModelHealthError converts a net/http error into a ModelHealthResponse.
+func classifyModelHealthError(err error) ModelHealthResponse {
+	if err == nil {
+		return ModelHealthResponse{Status: "ok", Message: "Model endpoint reachable"}
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return ModelHealthResponse{
+			Status:    "error",
+			Message:   "Request timed out (10s)",
+			ErrorCode: "timeout",
+		}
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		var dnsErr *net.DNSError
+		if errors.As(urlErr.Err, &dnsErr) {
+			return ModelHealthResponse{
+				Status:    "error",
+				Message:   "DNS resolution failed. Check your network or base URL.",
+				ErrorCode: "dns_error",
+			}
+		}
+		var opErr *net.OpError
+		if errors.As(urlErr.Err, &opErr) {
+			return ModelHealthResponse{
+				Status:    "error",
+				Message:   "Cannot reach endpoint. Check your network or base URL.",
+				ErrorCode: "network_error",
+			}
+		}
+	}
+	return ModelHealthResponse{
+		Status:    "error",
+		Message:   err.Error(),
+		ErrorCode: "network_error",
+	}
+}

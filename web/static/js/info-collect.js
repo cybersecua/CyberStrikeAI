@@ -144,8 +144,10 @@ function initInfoCollectPage() {
     bindFofaTableEvents();
     updateSelectedMeta();
 
-    // Load dynamic recon panels from plugins
-    loadReconPanels();
+    // Load dynamic recon panels from plugins (once)
+    if (!window._reconPanelsLoaded) {
+        loadReconPanels();
+    }
 }
 
 function applyFofaQueryPreset(preset) {
@@ -1163,9 +1165,8 @@ async function loadReconPanels() {
                     if (formResp.ok) {
                         const html = await formResp.text();
                         const panelDiv = document.createElement('div');
-                        panelDiv.id = `recon-panel-${panel.id}`;
-                        panelDiv.className = 'recon-panel';
-                        panelDiv.style.display = 'none';
+                        panelDiv.id = 'recon-panel-' + panel.id;
+                        panelDiv.className = 'recon-panel'; // no .active = hidden by CSS
                         panelDiv.innerHTML = html;
                         panelContainer.appendChild(panelDiv);
                     }
@@ -1185,6 +1186,7 @@ async function loadReconPanels() {
                 }
             }
         }
+        window._reconPanelsLoaded = true;
     } catch (e) {
         console.warn('Failed to load recon panels:', e);
     }
@@ -1194,14 +1196,17 @@ var currentReconTab = 'fofa';
 
 function switchReconTab(panelId) {
     currentReconTab = panelId;
-    // Hide all panels
-    document.querySelectorAll('.recon-panel').forEach(p => p.style.display = 'none');
+    // Hide all panels (use class, not inline style — CSS uses .active for display)
+    document.querySelectorAll('.recon-panel').forEach(p => {
+        p.classList.remove('active');
+        p.removeAttribute('style'); // clear any inline display overrides
+    });
     // Show selected
     const panel = document.getElementById('recon-panel-' + panelId);
-    if (panel) panel.style.display = '';
+    if (panel) panel.classList.add('active');
     // Update tab active state
     document.querySelectorAll('.recon-tab').forEach(t => t.classList.remove('active'));
-    const tab = document.querySelector(`.recon-tab[data-panel="${panelId}"]`);
+    const tab = document.querySelector('.recon-tab[data-panel="' + panelId + '"]');
     if (tab) tab.classList.add('active');
 }
 

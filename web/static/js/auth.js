@@ -265,6 +265,8 @@ async function submitLogin(event) {
         } else {
             await refreshAppData();
         }
+        // After successful login, check model health and start periodic polling
+        startModelHealthPolling();
     } catch (error) {
         console.error('Login failed:', error);
         if (errorBox) {
@@ -393,6 +395,7 @@ async function initializeApp() {
                 hideLoginOverlay();
                 resolveAuthPromises(true);
                 await bootstrapApp();
+                startModelHealthPolling();
                 return;
             }
         } catch (error) {
@@ -403,6 +406,83 @@ async function initializeApp() {
     clearAuthStorage();
     showLoginOverlay();
 }
+
+// ---- Model endpoint health check ----
+
+let modelHealthInterval = null;
+
+async function checkModelHealth() {
+    try {
+        const resp = await apiFetch('/api/health/model');
+        const data = await resp.json();
+        updateModelStatusIndicator(data);
+
+        if (data.status === 'unconfigured') {
+            showModelConfigBanner('API key not configured. The AI agent cannot function without it.', 'warning');
+        } else if (data.status === 'error') {
+            showModelConfigBanner('Model endpoint error: ' + (data.message || 'unknown'), 'error');
+        } else {
+            hideModelConfigBanner();
+        }
+    } catch (e) {
+        // Server itself is down or network issue — do not show banner
+    }
+}
+
+function showModelConfigBanner(message, type) {
+    var banner = document.getElementById('model-config-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'model-config-banner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;padding:10px 20px;text-align:center;font-size:13px;display:flex;align-items:center;justify-content:center;gap:12px;';
+        document.body.appendChild(banner);
+    }
+
+    var isWarning = type === 'warning';
+    banner.style.background = isWarning ? '#f59e0b' : '#ef4444';
+    banner.style.color = '#fff';
+    banner.innerHTML = '<span>' + message + '</span>' +
+        '<button onclick="switchPage(\'settings\');hideModelConfigBanner();" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Go to Settings</button>' +
+        '<button onclick="hideModelConfigBanner()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px;">\u00d7</button>';
+    banner.style.display = 'flex';
+}
+
+function hideModelConfigBanner() {
+    var banner = document.getElementById('model-config-banner');
+    if (banner) banner.style.display = 'none';
+}
+
+function updateModelStatusIndicator(data) {
+    var indicator = document.getElementById('model-status-dot');
+    if (!indicator) {
+        var header = document.querySelector('.header-right') || document.querySelector('.header');
+        if (!header) return;
+        indicator = document.createElement('span');
+        indicator.id = 'model-status-dot';
+        indicator.style.cssText = 'width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;cursor:help;';
+        header.prepend(indicator);
+    }
+
+    if (data.status === 'ok') {
+        indicator.style.background = '#22c55e';
+        indicator.title = 'Model: ' + (data.model || 'connected') + ' (' + (data.latency_ms || '?') + 'ms)';
+    } else if (data.status === 'unconfigured') {
+        indicator.style.background = '#f59e0b';
+        indicator.title = 'API key not configured';
+    } else {
+        indicator.style.background = '#ef4444';
+        indicator.title = 'Model error: ' + (data.message || 'unknown');
+    }
+}
+
+function startModelHealthPolling() {
+    if (modelHealthInterval) clearInterval(modelHealthInterval);
+    checkModelHealth();
+    modelHealthInterval = setInterval(checkModelHealth, 60000);
+}
+
+window.checkModelHealth = checkModelHealth;
+window.hideModelConfigBanner = hideModelConfigBanner;
 
 // usemenucontrol
 function toggleUserMenu() {

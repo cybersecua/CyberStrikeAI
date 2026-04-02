@@ -743,6 +743,7 @@ func setupRoutes(
 		protected.PUT("/config", configHandler.UpdateConfig)
 		protected.POST("/config/apply", configHandler.ApplyConfig)
 		protected.POST("/config/test-api", configHandler.TestAPIEndpoint)
+		protected.GET("/health/model", configHandler.ModelHealthCheck)
 
 		// system settings - terminal（，）
 		protected.POST("/terminal/run", terminalHandler.RunCommand)

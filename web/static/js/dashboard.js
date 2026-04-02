@@ -29,6 +29,9 @@ async function refreshDashboard() {
     }
 
     try {
+        // Load model health status in parallel (fire-and-forget, doesn't block dashboard)
+        loadModelStatus();
+
         const [tasksRes, vulnRes, batchRes, monitorRes, knowledgeRes, skillsRes] = await Promise.all([
             apiFetch('/api/agent-loop/tasks').then(r => r.ok ? r.json() : null).catch(() => null),
             apiFetch('/api/vulnerabilities/stats').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -362,4 +365,28 @@ function dashboardBarTooltipOnOut(ev) {
     clearTimeout(dashboardBarTooltipTimer);
     dashboardBarTooltipTimer = null;
     if (dashboardBarTooltipEl) dashboardBarTooltipEl.style.display = 'none';
+}
+
+// ---- Model health status on dashboard ----
+async function loadModelStatus() {
+    try {
+        var resp = await apiFetch('/api/health/model');
+        var data = await resp.json();
+        var el = document.getElementById('dashboard-model-status-value');
+        if (!el) return;
+        if (data.status === 'ok') {
+            el.innerHTML = '<span style="color:#22c55e;">\u25cf Connected</span> \u2014 ' +
+                (data.provider || '') + ' / ' + (data.model || '') +
+                ' (' + (data.latency_ms || '?') + 'ms)';
+        } else if (data.status === 'unconfigured') {
+            el.innerHTML = '<span style="color:#f59e0b;">\u25cf Not Configured</span> \u2014 ' +
+                '<a href="#" onclick="switchPage(\'settings\');return false;" style="color:#4f8ef7;">Set API Key</a>';
+        } else {
+            el.innerHTML = '<span style="color:#ef4444;">\u25cf Error</span> \u2014 ' +
+                (data.message || 'Connection failed');
+        }
+    } catch (e) {
+        var el = document.getElementById('dashboard-model-status-value');
+        if (el) el.textContent = 'Check failed';
+    }
 }
