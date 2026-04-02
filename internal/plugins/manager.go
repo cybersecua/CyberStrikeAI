@@ -28,12 +28,23 @@ type PluginManifest struct {
 	Frontend     PluginFrontend    `yaml:"frontend" json:"frontend"`
 }
 
+// PluginReconPanel describes a recon tab that a plugin registers in the info-collect page.
+type PluginReconPanel struct {
+	ID     string `yaml:"id" json:"id"`         // unique panel ID (e.g. "censys")
+	Label  string `yaml:"label" json:"label"`   // tab label text
+	Icon   string `yaml:"icon" json:"icon"`     // emoji or icon
+	I18n   string `yaml:"i18n" json:"i18n"`     // i18n key for label
+	Form   string `yaml:"form" json:"form"`     // HTML file in web/recon/ (e.g. "censys-form.html")
+	Script string `yaml:"script" json:"script"` // JS file in web/recon/ (e.g. "censys-recon.js")
+}
+
 // PluginFrontend describes frontend assets a plugin provides.
 type PluginFrontend struct {
-	NavItems []PluginNavItem `yaml:"nav_items" json:"nav_items"` // sidebar nav items
-	Pages    []string        `yaml:"pages" json:"pages"`         // HTML page files in web/pages/
-	Scripts  []string        `yaml:"scripts" json:"scripts"`     // JS files in web/js/
-	Styles   []string        `yaml:"styles" json:"styles"`       // CSS files in web/css/
+	NavItems    []PluginNavItem    `yaml:"nav_items" json:"nav_items"`       // sidebar nav items
+	Pages       []string           `yaml:"pages" json:"pages"`              // HTML page files in web/pages/
+	Scripts     []string           `yaml:"scripts" json:"scripts"`          // JS files in web/js/
+	Styles      []string           `yaml:"styles" json:"styles"`            // CSS files in web/css/
+	ReconPanels []PluginReconPanel `yaml:"recon_panels" json:"recon_panels"` // recon tab panels
 }
 
 // PluginNavItem describes a sidebar navigation item added by a plugin.
@@ -407,6 +418,27 @@ func (m *Manager) GetPlugin(name string) *PluginState {
 	}
 	copy := *ps
 	return &copy
+}
+
+// GetReconPanels returns all recon panels from enabled plugins.
+// Each entry is a map with "plugin" (name) and "panel" (PluginReconPanel).
+func (m *Manager) GetReconPanels() []map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []map[string]interface{}
+	for _, state := range m.plugins {
+		if !state.Enabled || state.Error != "" {
+			continue
+		}
+		for _, panel := range state.Manifest.Frontend.ReconPanels {
+			result = append(result, map[string]interface{}{
+				"plugin": state.Manifest.Name,
+				"panel":  panel,
+			})
+		}
+	}
+	return result
 }
 
 // GetPluginTools loads tool configs from a plugin's tools/ directory. It

@@ -663,6 +663,7 @@ func setupRoutes(
 
 	// Plugin static assets (no auth — loaded on page init before login)
 	if pluginsHandler != nil {
+		api.GET("/plugins/recon-panels", pluginsHandler.GetReconPanels)
 		api.GET("/plugins/:name/i18n/:lang", pluginsHandler.GetPluginI18n)
 		api.GET("/plugins/:name/web/*filepath", pluginsHandler.ServePluginStatic)
 	}

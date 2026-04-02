@@ -143,6 +143,9 @@ function initInfoCollectPage() {
  // bindtableevent（event，onlybindtime）
     bindFofaTableEvents();
     updateSelectedMeta();
+
+    // Load dynamic recon panels from plugins
+    loadReconPanels();
 }
 
 function applyFofaQueryPreset(preset) {
@@ -1124,6 +1127,108 @@ window.hideAllFofaColumns = hideAllFofaColumns;
 window.toggleFofaColumn = toggleFofaColumn;
 window.exportFofaResults = exportFofaResults;
 window.batchScanSelectedFofaRows = batchScanSelectedFofaRows;
+
+// ═══════════════════════════════════════════════
+// Dynamic Recon Panel Loading from Plugins
+// ═══════════════════════════════════════════════
+
+async function loadReconPanels() {
+    try {
+        const resp = await fetch('/api/plugins/recon-panels');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.panels || data.panels.length === 0) return;
+
+        const tabBar = document.getElementById('recon-tabs');
+        const panelContainer = document.getElementById('recon-plugin-panels');
+        if (!tabBar || !panelContainer) return;
+
+        for (const entry of data.panels) {
+            const panel = entry.panel;
+            const pluginName = entry.plugin;
+
+            // Add tab button
+            const tab = document.createElement('button');
+            tab.className = 'recon-tab';
+            tab.setAttribute('data-panel', panel.id);
+            tab.onclick = () => switchReconTab(panel.id);
+            tab.innerHTML = (panel.icon ? panel.icon + ' ' : '') +
+                           (panel.i18n && window.t ? window.t(panel.i18n) : panel.label);
+            tabBar.appendChild(tab);
+
+            // Load form HTML
+            if (panel.form) {
+                try {
+                    const formResp = await fetch(`/api/plugins/${pluginName}/web/recon/${panel.form}`);
+                    if (formResp.ok) {
+                        const html = await formResp.text();
+                        const panelDiv = document.createElement('div');
+                        panelDiv.id = `recon-panel-${panel.id}`;
+                        panelDiv.className = 'recon-panel';
+                        panelDiv.style.display = 'none';
+                        panelDiv.innerHTML = html;
+                        panelContainer.appendChild(panelDiv);
+                    }
+                } catch (e) {
+                    console.warn(`Plugin ${pluginName}: failed to load recon form`, e);
+                }
+            }
+
+            // Load script
+            if (panel.script) {
+                try {
+                    const script = document.createElement('script');
+                    script.src = `/api/plugins/${pluginName}/web/recon/${panel.script}`;
+                    document.body.appendChild(script);
+                } catch (e) {
+                    console.warn(`Plugin ${pluginName}: failed to load recon script`, e);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load recon panels:', e);
+    }
+}
+
+var currentReconTab = 'fofa';
+
+function switchReconTab(panelId) {
+    currentReconTab = panelId;
+    // Hide all panels
+    document.querySelectorAll('.recon-panel').forEach(p => p.style.display = 'none');
+    // Show selected
+    const panel = document.getElementById('recon-panel-' + panelId);
+    if (panel) panel.style.display = '';
+    // Update tab active state
+    document.querySelectorAll('.recon-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.recon-tab[data-panel="${panelId}"]`);
+    if (tab) tab.classList.add('active');
+}
+
+function resetCurrentReconForm() {
+    if (currentReconTab === 'fofa') {
+        resetFofaForm();
+    } else {
+        // Plugin panels handle their own reset via window['reset_' + panelId]
+        const fn = window['reset_' + currentReconTab];
+        if (typeof fn === 'function') fn();
+    }
+}
+
+function submitCurrentReconSearch() {
+    if (currentReconTab === 'fofa') {
+        submitFofaSearch();
+    } else {
+        const fn = window['submit_' + currentReconTab];
+        if (typeof fn === 'function') fn();
+    }
+}
+
+// Export
+window.switchReconTab = switchReconTab;
+window.resetCurrentReconForm = resetCurrentReconForm;
+window.submitCurrentReconSearch = submitCurrentReconSearch;
+window.loadReconPanels = loadReconPanels;
 
 document.addEventListener('languagechange', function () {
     updateSelectedMeta();

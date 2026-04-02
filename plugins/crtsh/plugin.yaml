@@ -8,3 +8,11 @@ url: "https://github.com/crtsh"
 config: []
 
 requirements: "requirements.txt"
+
+frontend:
+  recon_panels:
+    - id: "crtsh"
+      label: "crt.sh"
+      icon: "\U0001F4DC"
+      form: "crtsh-form.html"
+      script: "crtsh-recon.js"

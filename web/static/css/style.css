@@ -13666,6 +13666,40 @@ header {
     color: var(--text-secondary);
 }
 
+/* ==================== Recon tab bar (info-collect page) ==================== */
+.info-collect-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+.recon-tab {
+    padding: 6px 16px;
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+}
+.recon-tab.active {
+    background: var(--bg-primary, #1a1a2e);
+    color: var(--text-primary);
+    border-color: var(--primary-color, #4f8ef7);
+    border-bottom: 2px solid var(--bg-primary, #1a1a2e);
+}
+.recon-tab:hover:not(.active) {
+    background: var(--bg-tertiary, #222);
+}
+.recon-panel {
+    display: block;
+}
+.recon-panel:not(.active) {
+    display: none;
+}
+
 /* ==================== 信息收集（FOFA）页面 ==================== */
 .info-collect-panel {
     background: var(--bg-primary);

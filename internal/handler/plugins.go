@@ -323,6 +323,13 @@ func (h *PluginsHandler) ServePluginStatic(c *gin.Context) {
 	c.File(fullPath)
 }
 
+// GetReconPanels returns recon panels from all enabled plugins.
+// GET /api/plugins/recon-panels
+func (h *PluginsHandler) GetReconPanels(c *gin.Context) {
+	panels := h.manager.GetReconPanels()
+	c.JSON(http.StatusOK, gin.H{"panels": panels})
+}
+
 // extractPluginZip extracts a plugin zip to the plugins directory. Returns the
 // plugin name (top-level directory in the zip).
 func (h *PluginsHandler) extractPluginZip(zipPath string) (string, error) {

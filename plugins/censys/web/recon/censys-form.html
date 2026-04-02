@@ -1,0 +1,33 @@
+<div class="info-collect-panel">
+    <div class="info-collect-form">
+        <div class="form-group">
+            <label for="censys-query">Censys Query (CQL)</label>
+            <textarea id="censys-query" class="info-collect-query-input" rows="1" placeholder='services.port: 443 AND location.country: "UA"'></textarea>
+            <div class="info-collect-presets">
+                <button class="preset-chip" onclick="document.getElementById('censys-query').value='services.port: 22'">SSH</button>
+                <button class="preset-chip" onclick="document.getElementById('censys-query').value='services.http.response.html_title: &quot;Dashboard&quot;'">Dashboards</button>
+                <button class="preset-chip" onclick="document.getElementById('censys-query').value='labels: &quot;c2&quot;'">C2</button>
+                <button class="preset-chip" onclick="document.getElementById('censys-query').value='services.software.product: &quot;OpenSSH&quot; AND services.software.version: &quot;7.*&quot;'">Old SSH</button>
+            </div>
+        </div>
+        <div class="info-collect-form-row">
+            <div class="form-group">
+                <label for="censys-type">Resource</label>
+                <select id="censys-type"><option value="host">Hosts</option><option value="certificate">Certificates</option></select>
+            </div>
+            <div class="form-group">
+                <label for="censys-limit">Limit</label>
+                <input type="number" id="censys-limit" min="1" max="100" value="50" />
+            </div>
+        </div>
+    </div>
+</div>
+<div class="info-collect-results">
+    <div class="info-collect-results-header">
+        <div class="info-collect-results-title">Censys Results</div>
+        <div class="info-collect-results-meta" id="censys-results-meta">-</div>
+    </div>
+    <div id="censys-results-body" style="padding: 12px;">
+        <p class="muted">Enter a query and click Search.</p>
+    </div>
+</div>

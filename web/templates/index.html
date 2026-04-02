@@ -854,11 +854,18 @@
                     <div class="page-header">
  <h2 data-i18n="infoCollectPage.title"></h2>
                         <div class="page-header-actions">
- <button class="btn-secondary" onclick="resetFofaForm()" data-i18n="infoCollectPage.reset"></button>
- <button class="btn-primary" onclick="submitFofaSearch()" data-i18n="infoCollectPage.confirm"></button>
+ <button class="btn-secondary" onclick="resetCurrentReconForm()" data-i18n="infoCollectPage.reset"></button>
+ <button class="btn-primary" onclick="submitCurrentReconSearch()" data-i18n="infoCollectPage.confirm"></button>
                         </div>
                     </div>
+                    <!-- Recon source tabs — FOFA is built-in, plugins add more -->
+                    <div class="info-collect-tabs" id="recon-tabs">
+                        <button class="recon-tab active" data-panel="fofa" onclick="switchReconTab('fofa')">FOFA</button>
+                        <!-- Plugin tabs injected here by JS -->
+                    </div>
                     <div class="page-content">
+                        <!-- FOFA panel (built-in, always present) -->
+                        <div id="recon-panel-fofa" class="recon-panel active">
                         <div class="info-collect-panel">
                             <div class="info-collect-form">
                                 <div class="form-group">
@@ -946,6 +953,9 @@
                                 </table>
                             </div>
                         </div>
+                        </div><!-- end recon-panel-fofa -->
+                        <!-- Plugin recon panels injected here by JS -->
+                        <div id="recon-plugin-panels"></div>
                     </div>
                 </div>
 

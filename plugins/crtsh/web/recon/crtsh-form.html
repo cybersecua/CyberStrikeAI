@@ -1,0 +1,28 @@
+<div class="info-collect-panel">
+    <div class="info-collect-form">
+        <div class="form-group">
+            <label for="crtsh-query">Domain (CT Log Search)</label>
+            <textarea id="crtsh-query" class="info-collect-query-input" rows="1" placeholder="%.example.com"></textarea>
+            <small class="form-hint">Use % wildcard for subdomain discovery: %.target.com</small>
+            <div class="info-collect-presets">
+                <button class="preset-chip" onclick="document.getElementById('crtsh-query').value='%.'+prompt('Domain:','example.com')">% Wildcard</button>
+                <button class="preset-chip" onclick="document.getElementById('crtsh-mode').value='subdomains'">Subdomains Only</button>
+            </div>
+        </div>
+        <div class="info-collect-form-row">
+            <div class="form-group">
+                <label for="crtsh-mode">Mode</label>
+                <select id="crtsh-mode"><option value="http">Full (certs + subdomains)</option><option value="subdomains">Subdomains only</option></select>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="info-collect-results">
+    <div class="info-collect-results-header">
+        <div class="info-collect-results-title">crt.sh Results</div>
+        <div class="info-collect-results-meta" id="crtsh-results-meta">-</div>
+    </div>
+    <div id="crtsh-results-body" style="padding: 12px;">
+        <p class="muted">Enter a domain and click Search. No API key needed.</p>
+    </div>
+</div>
