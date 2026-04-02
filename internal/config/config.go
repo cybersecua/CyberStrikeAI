@@ -123,10 +123,17 @@ type OpenAIConfig struct {
 	SummaryBaseURL string `yaml:"summary_base_url,omitempty" json:"summary_base_url,omitempty"`
 	SummaryAPIKey  string `yaml:"summary_api_key,omitempty" json:"summary_api_key,omitempty"`
 	MaxTotalTokens   int     `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
-	RateLimitDelayMs int     `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // Min ms between API calls (0=no limit for local models, 2000 for Anthropic free tier)
-	Temperature      float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`               // Sampling temperature (0.0-2.0, default 0 = provider default). Lower = more deterministic.
-	TopP             float64 `yaml:"top_p,omitempty" json:"top_p,omitempty"`                           // Nucleus sampling (0.0-1.0, default 0 = provider default). Lower = less random.
-	TopK             int     `yaml:"top_k,omitempty" json:"top_k,omitempty"`                           // Top-K sampling (Anthropic only, 0 = provider default).
+	RateLimitDelayMs int     `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"`
+	// Main model sampling (orchestrator/planner — creative, exploratory)
+	Temperature      float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`               // 0.0-2.0 (0=default). Higher = more creative planning.
+	TopP             float64 `yaml:"top_p,omitempty" json:"top_p,omitempty"`                           // 0.0-1.0 (0=default).
+	TopK             int     `yaml:"top_k,omitempty" json:"top_k,omitempty"`                           // Anthropic only.
+	// Tool model sampling (executor — precise, deterministic)
+	ToolTemperature  float64 `yaml:"tool_temperature,omitempty" json:"tool_temperature,omitempty"`     // 0.0-2.0 (0=inherit main). Lower = more precise tool args.
+	ToolTopP         float64 `yaml:"tool_top_p,omitempty" json:"tool_top_p,omitempty"`                 // 0.0-1.0 (0=inherit main).
+	// Summary model sampling (compressor — factual, concise)
+	SummaryTemperature float64 `yaml:"summary_temperature,omitempty" json:"summary_temperature,omitempty"` // 0.0-2.0 (0=inherit main). Low recommended for accurate summaries.
+	SummaryTopP        float64 `yaml:"summary_top_p,omitempty" json:"summary_top_p,omitempty"`             // 0.0-1.0 (0=inherit main).
 }
 
 // ApplyModelDefaults normalizes model fields:

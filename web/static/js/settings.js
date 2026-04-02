@@ -143,6 +143,10 @@ async function loadConfig(loadTools = true) {
         if (toolBaseUrlEl) toolBaseUrlEl.value = currentConfig.openai?.tool_base_url || '';
         const toolApiKeyEl = document.getElementById('openai-tool-api-key');
         if (toolApiKeyEl) toolApiKeyEl.value = currentConfig.openai?.tool_api_key || '';
+        const toolTempEl = document.getElementById('openai-tool-temperature');
+        if (toolTempEl) toolTempEl.value = currentConfig.openai?.tool_temperature || 0;
+        const toolTopPEl = document.getElementById('openai-tool-top-p');
+        if (toolTopPEl) toolTopPEl.value = currentConfig.openai?.tool_top_p || 0;
 
         // Populate summary model fields
         const summaryModelEl = document.getElementById('openai-summary-model');
@@ -151,6 +155,10 @@ async function loadConfig(loadTools = true) {
         if (summaryBaseUrlEl) summaryBaseUrlEl.value = currentConfig.openai?.summary_base_url || '';
         const summaryApiKeyEl = document.getElementById('openai-summary-api-key');
         if (summaryApiKeyEl) summaryApiKeyEl.value = currentConfig.openai?.summary_api_key || '';
+        const summaryTempEl = document.getElementById('openai-summary-temperature');
+        if (summaryTempEl) summaryTempEl.value = currentConfig.openai?.summary_temperature || 0;
+        const summaryTopPEl = document.getElementById('openai-summary-top-p');
+        if (summaryTopPEl) summaryTopPEl.value = currentConfig.openai?.summary_top_p || 0;
 
         // Populate sampling parameters
         const tempEl = document.getElementById('openai-temperature');
@@ -888,6 +896,10 @@ async function applySettings() {
                 summary_model: document.getElementById('openai-summary-model')?.value.trim() || '',
                 summary_base_url: document.getElementById('openai-summary-base-url')?.value.trim() || '',
                 summary_api_key: document.getElementById('openai-summary-api-key')?.value.trim() || '',
+                tool_temperature: parseFloat(document.getElementById('openai-tool-temperature')?.value) || 0,
+                tool_top_p: parseFloat(document.getElementById('openai-tool-top-p')?.value) || 0,
+                summary_temperature: parseFloat(document.getElementById('openai-summary-temperature')?.value) || 0,
+                summary_top_p: parseFloat(document.getElementById('openai-summary-top-p')?.value) || 0,
                 temperature: parseFloat(document.getElementById('openai-temperature')?.value) || 0,
                 top_p: parseFloat(document.getElementById('openai-top-p')?.value) || 0,
                 top_k: parseInt(document.getElementById('openai-top-k')?.value) || 0

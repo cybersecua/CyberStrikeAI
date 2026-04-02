@@ -247,18 +247,33 @@ type OpenAIRequest struct {
 	TopP        *float64      `json:"top_p,omitempty"`
 }
 
-// applySamplingParams sets temperature/top_p on a request from config (if non-zero).
+// applySamplingParams sets temperature/top_p on a request.
+// When tools are present and tool-specific params are set, uses those (precise mode).
+// Otherwise falls back to main params (creative mode).
 func (a *Agent) applySamplingParams(req *OpenAIRequest) {
 	if a.config == nil {
 		return
 	}
-	if a.config.Temperature > 0 {
-		t := a.config.Temperature
-		req.Temperature = &t
+
+	// Determine if this is a tool call (has tools in request)
+	hasTool := len(req.Tools) > 0
+
+	// Select temperature: tool-specific → main → omit
+	temp := a.config.Temperature
+	if hasTool && a.config.ToolTemperature > 0 {
+		temp = a.config.ToolTemperature
 	}
-	if a.config.TopP > 0 {
-		p := a.config.TopP
-		req.TopP = &p
+	if temp > 0 {
+		req.Temperature = &temp
+	}
+
+	// Select top_p: tool-specific → main → omit
+	topP := a.config.TopP
+	if hasTool && a.config.ToolTopP > 0 {
+		topP = a.config.ToolTopP
+	}
+	if topP > 0 {
+		req.TopP = &topP
 	}
 }
 

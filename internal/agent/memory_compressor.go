@@ -86,7 +86,9 @@ type MemoryCompressor struct {
 	minRecentMessage int
 	maxImages        int
 	chunkSize        int
-	summaryModel     string
+	summaryModel       string
+	summaryTemperature float64
+	summaryTopP        float64
 	timeout          time.Duration
 
 	tokenCounter     TokenCounter
@@ -176,7 +178,9 @@ func NewMemoryCompressor(cfg MemoryCompressorConfig) (*MemoryCompressor, error) 
 		minRecentMessage: cfg.MinRecentMessage,
 		maxImages:        cfg.MaxImages,
 		chunkSize:        cfg.ChunkSize,
-		summaryModel:     cfg.SummaryModel,
+		summaryModel:       cfg.SummaryModel,
+		summaryTemperature: cfg.OpenAIConfig.SummaryTemperature,
+		summaryTopP:        cfg.OpenAIConfig.SummaryTopP,
 		timeout:          cfg.Timeout,
 		tokenCounter:     cfg.TokenCounter,
 		completionClient: cfg.CompletionClient,
@@ -196,6 +200,9 @@ func (mc *MemoryCompressor) UpdateConfig(cfg *config.OpenAIConfig) {
 	} else if cfg.Model != "" {
 		mc.summaryModel = cfg.Model
 	}
+	// Update summary sampling params
+	mc.summaryTemperature = cfg.SummaryTemperature
+	mc.summaryTopP = cfg.SummaryTopP
 
 	// Update config in completionClient (if it is an OpenAICompletionClient).
 	// When a summary-specific endpoint is configured, pass it through so the
@@ -695,6 +702,23 @@ func (c *OpenAICompletionClient) Complete(ctx context.Context, model string, pro
 		Messages: []ChatMessage{
 			{Role: "user", Content: prompt},
 		},
+	}
+	// Apply summary-specific sampling (low temperature for factual compression)
+	if c.config != nil {
+		st := c.config.SummaryTemperature
+		if st <= 0 {
+			st = c.config.Temperature // fallback to main
+		}
+		if st > 0 {
+			reqBody.Temperature = &st
+		}
+		sp := c.config.SummaryTopP
+		if sp <= 0 {
+			sp = c.config.TopP
+		}
+		if sp > 0 {
+			reqBody.TopP = &sp
+		}
 	}
 
 	requestCtx := ctx
