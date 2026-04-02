@@ -85,15 +85,16 @@ func NewAgent(cfg *config.OpenAIConfig, agentCfg *config.AgentConfig, mcpServer 
 	transport := &http.Transport{
 		Proxy: nil, // NEVER proxy inference calls — breaks auth with cloud providers
 		DialContext: (&net.Dialer{
-			Timeout:   300 * time.Second,
-			KeepAlive: 300 * time.Second,
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   30 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Minute,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   2,
+		IdleConnTimeout:       30 * time.Second, // CDN drops idle connections after ~60s
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Minute,
 		DisableKeepAlives:     false,
+		ForceAttemptHTTP2:     true, // HTTP/2 handles multiplexing better
 	}
 
 	// increase timeout to 30 minutes to support long-running AI inference

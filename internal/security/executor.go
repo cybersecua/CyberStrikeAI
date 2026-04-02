@@ -675,10 +675,13 @@ func looksMalformedArgValue(value interface{}) bool {
 		return false
 	}
 	trimmed := strings.TrimSpace(s)
+	// Skip multiline values — these are likely script content, not malformed args
+	if strings.Count(trimmed, "\n") > 2 {
+		return false
+	}
 	return strings.Contains(trimmed, "<parameter=") ||
 		strings.Contains(trimmed, "</parameter") ||
-		strings.Contains(trimmed, `{"`) ||
-		strings.Contains(trimmed, `"`)
+		strings.Contains(trimmed, `{"`)
 }
 
 func repairMalformedStringArg(currentKey, raw string, knownKeys []string, paramIndex map[string]config.ParameterConfig) (interface{}, map[string]interface{}, bool) {

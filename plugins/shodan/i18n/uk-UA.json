@@ -1,0 +1,31 @@
+{
+  "shodan": {
+    "tabLabel": "Shodan",
+    "title": "Shodan Пошук",
+    "queryPlaceholder": "apache port:443 country:UA",
+    "command": "Команда",
+    "search": "Пошук",
+    "hostLookup": "Пошук хоста",
+    "dnsResolve": "DNS резолв",
+    "reverseDns": "Зворотний DNS",
+    "domainDns": "DNS домену",
+    "count": "Лише кількість",
+    "exploits": "Експлойти",
+    "validate": "Перевірити ключ",
+    "limit": "Ліміт",
+    "results": "Результати",
+    "noResults": "Результатів не знайдено",
+    "loading": "Завантаження...",
+    "error": "Помилка",
+    "done": "Готово",
+    "searching": "Пошук...",
+    "presetSSH": "SSH сервери",
+    "presetRDP": "RDP сервери",
+    "presetDashboards": "Веб-панелі",
+    "presetDatabases": "Відкриті бази даних",
+    "presetIoT": "IoT/ICS пристрої",
+    "presetVulnerable": "Вразливі хости",
+    "apiKeyRequired": "Потрібен API ключ у Налаштуваннях.",
+    "queryHint": "Синтаксис Shodan: ключове слово, port:N, org:\"Назва\", country:XX, net:CIDR, vuln:CVE-..."
+  }
+}

@@ -1,0 +1,20 @@
+name: shodan
+version: "1.0.0"
+description: "Shodan internet search engine — host discovery, service fingerprinting, vulnerability detection, network intelligence"
+author: "cybersecua"
+url: "https://developer.shodan.io"
+
+config:
+  - name: SHODAN_API_KEY
+    description: "Shodan API Key (from https://account.shodan.io)"
+    required: true
+
+requirements: "requirements.txt"
+
+frontend:
+  recon_panels:
+    - id: "shodan"
+      label: "Shodan"
+      icon: "\U0001F50E"
+      form: "shodan-form.html"
+      script: "shodan-recon.js"

@@ -1,0 +1,31 @@
+{
+  "shodan": {
+    "tabLabel": "Shodan",
+    "title": "Shodan Search",
+    "queryPlaceholder": "apache port:443 country:UA",
+    "command": "Command",
+    "search": "Search",
+    "hostLookup": "Host Lookup",
+    "dnsResolve": "DNS Resolve",
+    "reverseDns": "Reverse DNS",
+    "domainDns": "Domain DNS",
+    "count": "Count Only",
+    "exploits": "Exploits",
+    "validate": "Validate Key",
+    "limit": "Limit",
+    "results": "Results",
+    "noResults": "No results found",
+    "loading": "Loading...",
+    "error": "Error",
+    "done": "Done",
+    "searching": "Searching...",
+    "presetSSH": "SSH Servers",
+    "presetRDP": "RDP Servers",
+    "presetDashboards": "Web Dashboards",
+    "presetDatabases": "Exposed Databases",
+    "presetIoT": "IoT/ICS Devices",
+    "presetVulnerable": "Vulnerable Hosts",
+    "apiKeyRequired": "Requires API key configured in Settings.",
+    "queryHint": "Shodan search syntax: keyword, port:N, org:\"Name\", country:XX, net:CIDR, vuln:CVE-..."
+  }
+}

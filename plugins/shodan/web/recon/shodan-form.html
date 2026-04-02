@@ -1,0 +1,45 @@
+<div class="info-collect-panel">
+    <div class="info-collect-form">
+        <div class="form-group">
+            <label for="shodan-query">Shodan Query</label>
+            <textarea id="shodan-query" class="info-collect-query-input" rows="1" placeholder="apache port:443 country:UA"></textarea>
+            <small class="form-hint">Shodan search syntax: keyword, port:N, org:"Name", country:XX, net:CIDR, vuln:CVE-...</small>
+            <div class="info-collect-presets">
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='port:22 product:\"OpenSSH\"'">SSH</button>
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='port:3389'">RDP</button>
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='http.title:\"Dashboard\" -http.title:\"Cloudflare\"'">Dashboards</button>
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='port:3306 OR port:5432 OR port:27017 OR port:6379'">Databases</button>
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='tag:\"ics\" OR port:502 OR port:47808'">IoT/ICS</button>
+                <button class="preset-chip" onclick="document.getElementById('shodan-query').value='has_vuln:true'">Vulnerable</button>
+            </div>
+        </div>
+        <div class="info-collect-form-row">
+            <div class="form-group">
+                <label for="shodan-command">Command</label>
+                <select id="shodan-command">
+                    <option value="search">Search</option>
+                    <option value="host">Host Lookup</option>
+                    <option value="count">Count Only</option>
+                    <option value="dns">DNS Resolve</option>
+                    <option value="reverse">Reverse DNS</option>
+                    <option value="domain">Domain DNS</option>
+                    <option value="exploits">Exploits</option>
+                    <option value="validate">Validate Key</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="shodan-limit">Limit</label>
+                <input type="number" id="shodan-limit" min="1" max="100" value="50" />
+            </div>
+        </div>
+    </div>
+</div>
+<div class="info-collect-results">
+    <div class="info-collect-results-header">
+        <div class="info-collect-results-title">Shodan Results</div>
+        <div class="info-collect-results-meta" id="shodan-results-meta">-</div>
+    </div>
+    <div id="shodan-results-body" style="padding: 12px;">
+        <p class="muted">Enter a query and click Search. Requires API key configured in Settings.</p>
+    </div>
+</div>
