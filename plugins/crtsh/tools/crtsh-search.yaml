@@ -1,4 +1,4 @@
-name: "crtsh-search"
+name: "crtsh_search"
 command: "python3"
 args: ["{{PLUGIN_DIR}}/scripts/crtsh_search.py"]
 enabled: true

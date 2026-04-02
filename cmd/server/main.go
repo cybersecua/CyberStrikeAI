@@ -6,11 +6,15 @@ import (
 	"cyberstrike-ai/internal/logger"
 	"flag"
 	"fmt"
+	"os"
 )
 
 func main() {
 	var configPath = flag.String("config", "config.yaml", "config file path")
 	flag.Parse()
+
+	// Propagate config path to app layer via env (avoids os.Args re-parsing in Docker)
+	os.Setenv("CYBERSTRIKE_CONFIG_PATH", *configPath)
 
 	// Load configuration
 	cfg, err := config.Load(*configPath)

@@ -1,4 +1,4 @@
-name: "censys-search"
+name: "censys_search"
 command: "python3"
 args: ["{{PLUGIN_DIR}}/scripts/censys_search.py"]
 enabled: true

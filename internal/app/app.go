@@ -335,10 +335,11 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		}()
 	}
 
-	// get config file path
-	configPath := "config.yaml"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
+	// get config file path from environment or default
+	// (CLI flag is parsed in main.go and passed via CYBERSTRIKE_CONFIG_PATH env)
+	configPath := os.Getenv("CYBERSTRIKE_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "config.yaml"
 	}
 
 	// initialize Skills manager

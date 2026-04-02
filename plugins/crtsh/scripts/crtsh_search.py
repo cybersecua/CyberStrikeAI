@@ -32,16 +32,52 @@ def search_http(query, dedupe=True, expired=False, limit=500):
     if not expired:
         params["exclude"] = "expired"
 
-    try:
-        resp = requests.get(url, params=params, timeout=60,
-                           headers={"User-Agent": "CyberStrikeAI/1.0"})
-        if resp.status_code == 404:
-            return {"status": "success", "query": query, "total": 0, "subdomains": [],
-                    "certificates": [], "message": "No results found"}
-        resp.raise_for_status()
-        certs = resp.json()
-    except Exception as e:
-        return {"status": "error", "message": f"crt.sh API error: {str(e)}"}
+    # crt.sh returns 502 on heavy wildcard queries — retry with backoff,
+    # then fallback to exact domain (strip % wildcards) if all retries fail
+    import time as _time
+    certs = None
+    last_err = None
+    original_query = query
+
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, params=params, timeout=60,
+                               headers={"User-Agent": "CyberStrikeAI/1.0"})
+            if resp.status_code == 404:
+                return {"status": "success", "query": query, "total": 0, "subdomains": [],
+                        "certificates": [], "message": "No results found"}
+            if resp.status_code in (502, 503):
+                if "exclude" in params:
+                    del params["exclude"]  # drop filter to reduce server load
+                last_err = f"crt.sh returned {resp.status_code}"
+                _time.sleep(5 * (attempt + 1))
+                continue
+            resp.raise_for_status()
+            certs = resp.json()
+            break
+        except Exception as e:
+            last_err = str(e)
+            _time.sleep(5 * (attempt + 1))
+            continue
+
+    # Fallback: if wildcard query failed 3 times, try without wildcards
+    if certs is None and "%" in original_query:
+        fallback_query = original_query.replace("%.", "").replace("%", "").strip(".")
+        if fallback_query:
+            params["q"] = fallback_query
+            params.pop("exclude", None)
+            try:
+                resp = requests.get(url, params=params, timeout=60,
+                                   headers={"User-Agent": "CyberStrikeAI/1.0"})
+                if resp.status_code == 200:
+                    certs = resp.json()
+                    query = fallback_query  # update for output
+            except Exception:
+                pass
+
+    if certs is None:
+        return {"status": "error", "message": f"crt.sh failed after 3 retries + fallback: {last_err}",
+                "query": original_query, "suggestion": "Try without % wildcard, or try again later"}
 
     if not isinstance(certs, list):
         return {"status": "success", "query": query, "total": 0, "subdomains": [],
