@@ -38,17 +38,24 @@ func main() {
 	manager := mcp.NewExternalMCPManager(log.Logger)
 	manager.LoadConfigs(&cfg.ExternalMCP)
 
-	// Display configuration
+	// Display configuration. Shows the as-written values (with ${VAR} templates
+	// intact - that's how they live in config.yaml) and, when the template
+	// resolves to something different, the as-resolved value that the manager
+	// will actually use at connection time. Makes it easy to catch missing
+	// env vars or wrong ${VAR} names without connecting to the MCP.
 	fmt.Println("=== Configuration ===")
 	for name, srv := range cfg.ExternalMCP.Servers {
+		resolved := srv
+		config.ExpandConfigEnv(&resolved)
+
 		fmt.Printf("\n%s:\n", name)
 		fmt.Printf("  Transport: %s\n", getTransport(srv))
 		if srv.Command != "" {
-			fmt.Printf("  Command: %s\n", srv.Command)
-			fmt.Printf("  Args: %v\n", srv.Args)
+			fmt.Printf("  Command: %s%s\n", srv.Command, resolvedHint(srv.Command, resolved.Command))
+			fmt.Printf("  Args: %v%s\n", srv.Args, resolvedArgsHint(srv.Args, resolved.Args))
 		}
 		if srv.URL != "" {
-			fmt.Printf("  URL: %s\n", srv.URL)
+			fmt.Printf("  URL: %s%s\n", srv.URL, resolvedHint(srv.URL, resolved.URL))
 		}
 		fmt.Printf("  Description: %s\n", srv.Description)
 		fmt.Printf("  Timeout: %d seconds\n", srv.Timeout)
@@ -141,4 +148,26 @@ func getTransport(srv config.ExternalMCPServerConfig) string {
 		return "http"
 	}
 	return "unknown"
+}
+
+// resolvedHint returns a "  -> <resolved>" annotation when the template and
+// the resolved value differ. No annotation when there are no ${VAR} refs.
+func resolvedHint(raw, resolved string) string {
+	if raw == resolved {
+		return ""
+	}
+	return fmt.Sprintf("  -> %s", resolved)
+}
+
+// resolvedArgsHint does the same for []string.
+func resolvedArgsHint(raw, resolved []string) string {
+	if len(raw) != len(resolved) {
+		return fmt.Sprintf("  -> %v", resolved)
+	}
+	for i := range raw {
+		if raw[i] != resolved[i] {
+			return fmt.Sprintf("  -> %v", resolved)
+		}
+	}
+	return ""
 }

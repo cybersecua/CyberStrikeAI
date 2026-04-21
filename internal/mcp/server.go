@@ -70,9 +70,9 @@ func NewServerWithStorage(logger *zap.Logger, storage MonitorStorage) *Server {
 		sseClients:            make(map[string]*sseClient),
 	}
 
-	// initialize default prompts and resources
+	// initialize default prompts (tool resources are created automatically
+	// inside RegisterTool, so no separate resource-init step is needed)
 	s.initDefaultPrompts()
-	s.initDefaultResources()
 
 	return s
 }
@@ -894,12 +894,6 @@ func (s *Server) initDefaultPrompts() {
 			{Name: "scope", Description: "test scope", Required: false},
 		},
 	}
-}
-
-// initDefaultResources initializes default resources.
-// Note: tool resources are now created automatically in RegisterTool; this function is kept for other non-tool resources.
-func (s *Server) initDefaultResources() {
-	// tool resources are now created automatically in RegisterTool; no need to hardcode them here
 }
 
 // handleListPrompts handles the list prompts request

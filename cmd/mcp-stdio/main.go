@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"go.uber.org/zap"
 )
@@ -25,6 +27,10 @@ func main() {
 
 	// Initialize logger (in stdio mode, log to stderr to avoid interfering with JSON-RPC communication)
 	log := logger.New(cfg.Log.Level, "stderr")
+	// Flush the zap buffer on any normal or signal-driven exit so log lines
+	// aren't silently lost when the client (Cursor / Claude Code / VS Code)
+	// closes the stdio pipe or the user hits Ctrl+C.
+	defer func() { _ = log.Logger.Sync() }()
 
 	// Create MCP server
 	mcpServer := mcp.NewServer(log.Logger)
@@ -34,6 +40,19 @@ func main() {
 
 	// Register tools
 	executor.RegisterTools(mcpServer)
+
+	// Handle SIGINT / SIGTERM: log the shutdown signal, let the deferred
+	// log.Sync() flush, then exit. HandleStdio already exits cleanly on
+	// stdin EOF (the normal client-close path), so this only matters for
+	// interactive use where the user Ctrl+C's the process.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		log.Logger.Info("received shutdown signal", zap.String("signal", sig.String()))
+		_ = log.Logger.Sync()
+		os.Exit(0)
+	}()
 
 	log.Logger.Info("MCP server (stdio mode) started, waiting for messages...")
 
