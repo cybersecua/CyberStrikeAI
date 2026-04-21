@@ -549,6 +549,16 @@ MIT License. See [LICENSE](LICENSE).
 
 ## ⚠️ Disclaimer
 
+### Why this exists
+
+AI-assisted research has become mainstream. AI increasingly augments human capability across every feasible industry and turns what used to be ambitions into working reality. Like any technology, AI-augmented research has a dark side and an unavoidable dual-use problem. Under those circumstances it is essential to stay on top of the technology and get ahead of the adversary — not behind.
+
+Penetration testing and legitimate red-teaming are irreplaceable parts of the modern IT stack. Organizations and individuals who are reluctant to acknowledge this tend to acknowledge it later, through breaches and recovery costs. Progress cannot be stopped or replaced; it can only be matched. And information security is the pinnacle of that discipline: whoever holds the information holds the world.
+
+Whether you are a security researcher, ethical hacker, IT professional, or an organization looking to strengthen its security posture, CyberStrikeAI provides the building blocks to compose specialized AI agents that assist with mitigation, vulnerability discovery, exploitation, and security assessment.
+
+### Authorized use only
+
 **This tool is for educational and authorized testing purposes only.**
 
 CyberStrikeAI is a professional security testing platform designed to assist security researchers, penetration testers, and IT professionals in conducting security assessments and vulnerability research **with explicit authorization**.
