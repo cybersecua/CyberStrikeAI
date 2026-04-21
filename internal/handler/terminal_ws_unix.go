@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+// terminalResize is the control message sent by the xterm.js frontend when the
+// browser terminal is resized. Received as a TextMessage with {"type":"resize",
+// "cols":N,"rows":N} and used to resize the backing PTY.
+type terminalResize struct {
+	Type string `json:"type"`
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
+}
 
 // wsUpgrader is used only for the terminal WebSocket in system settings, reusing the existing login protection (JWT middleware in parent route group).
 var wsUpgrader = websocket.Upgrader{
@@ -96,6 +106,15 @@ func (h *TerminalHandler) RunCommandWS(c *gin.Context) {
 		}
 		if len(data) == 0 {
 			continue
+		}
+		// The xterm.js frontend sends JSON-encoded resize messages as TextMessage;
+		// route them to pty.Setsize instead of writing them to the shell as input.
+		if msgType == websocket.TextMessage && data[0] == '{' {
+			var resize terminalResize
+			if json.Unmarshal(data, &resize) == nil && resize.Type == "resize" && resize.Cols > 0 && resize.Rows > 0 {
+				_ = pty.Setsize(ptmx, &pty.Winsize{Cols: resize.Cols, Rows: resize.Rows})
+				continue
+			}
 		}
 		if _, err := ptmx.Write(data); err != nil {
 			_ = cmd.Process.Kill()
