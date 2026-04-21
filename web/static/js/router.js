@@ -52,15 +52,15 @@ function switchPage(pageId) {
         // updateURL hash
         window.location.hash = pageId;
         
-        // updatenavigationstatus
+        // update navigation state
         updateNavState(pageId);
-        
- // page's initialize
+
+        // per-page initialize (async — awaits i18n readiness internally)
         initPage(pageId);
     }
 }
 
-// updatenavigationstatus
+// update navigation state
 function updateNavState(pageId) {
     // removeallactivestatus
     document.querySelectorAll('.nav-item').forEach(item => {
@@ -160,7 +160,7 @@ function toggleSubmenu(menuId) {
     }
 }
 
-// Show menuout
+// Show submenu popup
 function showSubmenuPopup(navItem, menuId) {
     // removeotheralreadyopen's popup menu
     const existingPopup = document.querySelector('.submenu-popup');
@@ -231,8 +231,13 @@ function showSubmenuPopup(navItem, menuId) {
     }, 0);
 }
 
-// initializepage
-function initPage(pageId) {
+// initialize page
+async function initPage(pageId) {
+    // Wait for the i18n catalog to finish loading so fast navigation doesn't
+    // paint raw translation keys before the labels are resolved.
+    if (window.i18nReady && typeof window.i18nReady.then === 'function') {
+        try { await window.i18nReady; } catch (e) { /* ignore — fall through */ }
+    }
     switch(pageId) {
         case 'dashboard':
             if (typeof refreshDashboard === 'function') {
@@ -415,18 +420,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// switchsidebarcollapse/expand
+// toggle sidebar collapse/expand
 function toggleSidebar() {
     const sidebar = document.getElementById('main-sidebar');
     if (sidebar) {
         sidebar.classList.toggle('collapsed');
-        // SavecollapsestatustolocalStorage
+        // persist collapse state to localStorage
         const isCollapsed = sidebar.classList.contains('collapsed');
         localStorage.setItem('sidebarCollapsed', isCollapsed ? 'true' : 'false');
     }
 }
 
-// initializesidebarstatus
+// initialize sidebar state
 function initSidebarState() {
     const sidebar = document.getElementById('main-sidebar');
     if (sidebar) {
@@ -438,7 +443,7 @@ function initSidebarState() {
     initConversationSidebarState();
 }
 
-// switchconversationpageleft sidelistcollapse/expand
+// toggle chat-page left-side list collapse/expand
 function toggleConversationSidebar() {
     const sidebar = document.getElementById('conversation-sidebar');
     if (sidebar) {
@@ -448,7 +453,7 @@ function toggleConversationSidebar() {
     }
 }
 
-// restoreconversationlistcollapsestatus(Enterconversationpagewhentake effect)
+// restore chat-list collapse state on nav into the chat page
 function initConversationSidebarState() {
     const sidebar = document.getElementById('conversation-sidebar');
     if (sidebar) {
