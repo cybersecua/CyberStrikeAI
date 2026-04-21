@@ -45,3 +45,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Editor backup files
+*.bak
