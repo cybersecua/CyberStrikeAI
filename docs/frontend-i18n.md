@@ -1,96 +1,65 @@
-## CyberStrikeAI 前端国际化方案
+## CyberStrikeAI Frontend Internationalization Plan
 
-本文档说明 CyberStrikeAI Web 前端（`web/templates/index.html` + `web/static/js/*.js`）的国际化设计与开发规范，确保在不引入打包工具和不改动后端路由的前提下，实现可扩展、低返工的多语言支持。
+This document describes the i18n design and development conventions for the CyberStrikeAI web frontend (`web/templates/index.html` + `web/static/js/*.js`). The goal is a scalable, low-rework multi-language stack that does not introduce a bundler and does not change any backend routes.
 
-当前目标：
+Current goals:
 
-- **支持中英文切换（zh-CN / en-US）**
-- 后续可方便扩展更多语言（如 ja-JP、ko-KR 等）
-
----
-
-## 一、总体设计原则
-
-- **前端主导的客户端国际化**：所有 UI 文案在浏览器端根据当前语言动态渲染，后端 Go 仅负责结构和数据，不参与语言分发。
-- **单一 HTML 模板**：继续使用一份 `index.html` 模板，不为不同语言复制模板文件。
-- **文案与逻辑分离**：所有可见文本通过「键值表」管理（多语言 JSON），HTML / JS 只写 key，不直接写中文/英文常量。
-- **渐进式改造**：先覆盖 header / 登录 / 侧边栏 / 系统设置等关键区域，其他页面按模块逐步迁移，避免一次性大改动。
-- **可回退默认语言**：即使目标语言未完全翻译，也能回退到默认中文，不出现原始 key。
+- **English / Ukrainian / Chinese switching (`en-US` / `uk-UA` / `zh-CN`)**
+- Easily extendable to more languages later (`ja-JP`, `ko-KR`, etc.)
 
 ---
 
-## 二、技术选型与目录结构
+## 1. Overall Design Principles
 
-### 2.1 技术选型
+- **Frontend-driven client-side i18n**: every UI string is rendered in the browser according to the active language. The Go backend stays agnostic of locale and only serves structure and data.
+- **Single HTML template**: keep one `index.html`; do not fork per-language templates.
+- **Text separated from logic**: every visible string lives in a key/value catalog (per-language JSON). HTML / JS reference keys only — never hard-coded Chinese / English / Ukrainian literals.
+- **Progressive migration**: cover header, login, sidebar, and system settings first, then migrate the remaining pages by module. Avoid one giant rewrite.
+- **Fallback language**: if the target language is incomplete, fall back to the default language instead of exposing raw keys to users.
 
-- **i18n 引擎**：使用 [i18next](https://www.i18next.com/) 的浏览器 UMD 版本（通过 CDN 引入），无需打包器。
-- **资源格式**：每种语言一份 JSON 文件，采用「域 + 语义」的层级 key 方案，例如：
+---
+
+## 2. Technology Choice and Directory Layout
+
+### 2.1 Technology Choice
+
+- **i18n engine**: the browser UMD build of [i18next](https://www.i18next.com/), loaded via CDN — no bundler required.
+- **Resource format**: one JSON file per language with a `domain.semantic` key hierarchy, e.g.
   - `common.ok`
   - `nav.dashboard`
   - `header.apiDocs`
   - `settings.robot.wecom.token`
 
-### 2.2 目录结构
+### 2.2 Directory Layout
 
-- `web/templates/index.html`  
-  - 页面骨架 + 所有静态文案位置，将逐步改为 `data-i18n` 标记。
-- `web/static/js/i18n.js`  
-  - 前端 i18n 初始化与 DOM 应用逻辑（本方案新增）。
-- `web/static/i18n/`（新增目录）
-  - `zh-CN.json`：中文文案（默认语言）
-  - `en-US.json`：英文文案
-  - 未来可新增：`ja-JP.json`、`ko-KR.json` 等。
+- `web/templates/index.html`
+  - Page skeleton plus every static-text location, gradually annotated with `data-i18n` markers.
+- `web/static/js/i18n.js`
+  - Frontend i18n initialization and DOM application logic (introduced by this plan).
+- `web/static/i18n/` (new directory)
+  - `en-US.json` — English (default)
+  - `uk-UA.json` — Ukrainian
+  - `zh-CN.json` — Chinese
+  - Future additions: `ja-JP.json`, `ko-KR.json`, etc.
 
 ---
 
-## 三、文案组织规范
+## 3. String Organization Conventions
 
-### 3.1 Key 命名约定
+### 3.1 Key Naming
 
-- 采用「**模块.语义**」形式，最多 2–3 级，确保可读性：
-  - 导航：`nav.dashboard`、`nav.chat`、`nav.settings`
-  - 头部：`header.title`、`header.apiDocs`、`header.logout`
-  - 登录：`login.title`、`login.subtitle`、`login.passwordLabel`、`login.submit`
-  - 仪表盘：`dashboard.title`、`dashboard.refresh`、`dashboard.runningTasks`
-  - 系统设置：`settings.title`、`settings.nav.basic`、`settings.nav.robot`、`settings.apply`
-  - 机器人配置：`settings.robot.wecom.enabled`、`settings.robot.wecom.token` 等。
-- 尽量按「界面区域」而不是「文件名」划分域，便于非开发人员理解。
+- Use `<module>.<semantic>` with at most 2–3 levels for readability:
+  - Navigation: `nav.dashboard`, `nav.chat`, `nav.settings`
+  - Header: `header.title`, `header.apiDocs`, `header.logout`
+  - Login: `login.title`, `login.subtitle`, `login.passwordLabel`, `login.submit`
+  - Dashboard: `dashboard.title`, `dashboard.refresh`, `dashboard.runningTasks`
+  - System settings: `settings.title`, `settings.nav.basic`, `settings.nav.robot`, `settings.apply`
+  - Chatbot configuration: `settings.robot.wecom.enabled`, `settings.robot.wecom.token`, etc.
+- Group keys by **UI area** rather than by source-file name so non-developers can follow them.
 
-### 3.2 JSON 示例
+### 3.2 JSON Example
 
-`web/static/i18n/zh-CN.json` 示例：
-
-```json
-{
-  "common": {
-    "ok": "确定",
-    "cancel": "取消"
-  },
-  "nav": {
-    "dashboard": "仪表盘",
-    "chat": "对话",
-    "infoCollect": "信息收集",
-    "tasks": "任务管理",
-    "vulnerabilities": "漏洞管理",
-    "settings": "系统设置"
-  },
-  "header": {
-    "title": "CyberStrikeAI",
-    "apiDocs": "API 文档",
-    "logout": "退出登录",
-    "language": "界面语言"
-  },
-  "login": {
-    "title": "登录 CyberStrikeAI",
-    "subtitle": "请输入配置中的访问密码",
-    "passwordLabel": "密码",
-    "passwordPlaceholder": "输入登录密码",
-    "submit": "登录"
-  }
-}
-```
-
-英文文件 `en-US.json` 保持相同 key，不同 value：
+`web/static/i18n/en-US.json`:
 
 ```json
 {
@@ -122,22 +91,41 @@
 }
 ```
 
-> 约定：**新增界面时，必须先定义 i18n key，再在 HTML/JS 中使用 key**，禁止直接写死中文/英文。
+The Chinese file `zh-CN.json` keeps the same keys with different values:
+
+```json
+{
+  "common": {
+    "ok": "确定",
+    "cancel": "取消"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "chat": "对话",
+    "infoCollect": "信息收集",
+    "tasks": "任务管理",
+    "vulnerabilities": "漏洞管理",
+    "settings": "系统设置"
+  }
+}
+```
+
+> Rule: **when adding a new UI element, define the i18n key first, then reference it from HTML/JS** — never hard-code a literal string.
 
 ---
 
-## 四、HTML 标记规范（data-i18n）
+## 4. HTML Markup Convention (`data-i18n`)
 
-### 4.1 基本规则
+### 4.1 Basic Rules
 
-- 使用 `data-i18n` 将元素文本与某个 key 绑定：
+- Bind an element's text to a key with `data-i18n`:
 
 ```html
-<span data-i18n="nav.dashboard">仪表盘</span>
+<span data-i18n="nav.dashboard">Dashboard</span>
 ```
 
-- 默认行为：脚本会替换元素的 `textContent`。
-- 同时翻译属性时，额外使用 `data-i18n-attr`，逗号分隔多个属性名：
+- Default behavior: the loader replaces the element's `textContent`.
+- To translate attributes as well, add `data-i18n-attr` with a comma-separated list of attribute names:
 
 ```html
 <button
@@ -145,78 +133,78 @@
   onclick="window.open('/api-docs', '_blank')"
   data-i18n="header.apiDocs"
   data-i18n-attr="title"
-  title="API 文档">
-  <span data-i18n="header.apiDocs">API 文档</span>
+  title="API Docs">
+  <span data-i18n="header.apiDocs">API Docs</span>
 </button>
 ```
 
-### 4.2 默认文本的作用
+### 4.2 Purpose of the Default Text
 
-- HTML 内的中文默认值作为「**无 JS / 初始化前**」的占位内容：
-  - 页面在 JS 尚未加载完成时不会出现空白或 key。
-  - JS 初始化后会用当前语言覆盖这些文本。
+- The literal text inside the HTML acts as a "no-JS / before-init" placeholder:
+  - The page does not flash blank space or raw keys while JS is still loading.
+  - After initialization, JS overwrites the placeholder with the active language's string.
 
 ---
 
-## 五、JavaScript 中的文案规范
+## 5. JavaScript String Conventions
 
-### 5.1 全局翻译函数 `t()`
+### 5.1 Global Translation Helper `t()`
 
-由 `i18n.js` 暴露以下全局函数：
+`i18n.js` exposes the following globals:
 
-- `window.t(key: string): string`  
-  - 返回当前语言下的翻译文本，若缺失则回退到默认语言，再不行则返回 key 本身。
-- `window.changeLanguage(lang: string): Promise<void>`  
-  - 切换语言并刷新页面文案（不会刷新整页）。
+- `window.t(key: string): string`
+  - Returns the translation in the current language, falling back to the default language, and ultimately to the key itself if no translation exists.
+- `window.changeLanguage(lang: string): Promise<void>`
+  - Switches language and refreshes page strings in place — it does not reload the page.
 
-示例（以 `web/static/js/settings.js` 为例）：
+Example (from `web/static/js/settings.js`):
 
 ```js
-// 之前
-alert('加载配置失败: ' + error.message);
+// Before
+alert('Load config failed: ' + error.message);
 
-// 之后
+// After
 alert(t('settings.loadConfigFailed') + ': ' + error.message);
 ```
 
-> 规范：**JS 内所有面向用户的提示、按钮文字、对话框标题都应通过 `t()` 获取**，不直接写死中文/英文。
+> Rule: **every user-facing alert, button label, and dialog title in JS goes through `t()`** — never hard-code a literal.
 
-### 5.2 渐进迁移建议
+### 5.2 Progressive-Migration Guidance
 
-- 优先改造：
-  - 频繁弹出的错误提示 / 成功提示；
-  - 登录相关、系统设置相关文案。
-- 低优先级：
-  - 仅面向运维人员的调试提示，可以暂时保留英文/中文常量。
+- Prioritize:
+  - Frequently-shown error / success toasts;
+  - Login and system-settings strings.
+- Lower priority:
+  - Diagnostic output intended only for operators can temporarily stay as literal English or Chinese.
 
 ---
 
-## 六、i18n 初始化与语言切换实现
+## 6. i18n Initialization and Language Switching
 
-### 6.1 语言选择策略
+### 6.1 Language-Selection Strategy
 
-- 默认语言：`zh-CN`。
-- 优先级（从高到低）：
-  1. `localStorage` 中的用户选择（key：`csai_lang`）。
-  2. 浏览器 `navigator.language`（`zh` 开头 → `zh-CN`，否则 `en-US`）。
-  3. 默认 `zh-CN`。
+- Default language: `en-US`.
+- Priority (highest to lowest):
+  1. User's explicit choice stored in `localStorage` (key: `csai_lang`).
+  2. Browser `navigator.language` (`uk*` → `uk-UA`, `zh*` → `zh-CN`, otherwise `en-US`).
+  3. Default `en-US`.
 
-### 6.2 初始化流程（`i18n.js`）
+### 6.2 Initialization Flow (`i18n.js`)
 
-1. 读取初始语言。
-2. 初始化 i18next：
-   - `lng` 为当前语言；
-   - `fallbackLng` 为 `zh-CN`；
-   - 资源先留空，采用按需加载。
-3. 通过 `fetch` 拉取 `/static/i18n/{lng}.json` 并 `i18next.addResources`。
-4. 更新：
-   - `<html lang="...">` 属性；
-   - 所有带 `data-i18n` / `data-i18n-attr` 的元素。
-5. 暴露 `window.t` 与 `window.changeLanguage`。
+1. Determine the initial language.
+2. Initialize i18next:
+   - `lng` is the current language;
+   - `fallbackLng` is `en-US`;
+   - Resources are empty initially — loaded on demand.
+3. `fetch` `/static/i18n/{lng}.json` and call `i18next.addResources`.
+4. Update:
+   - The `<html lang="...">` attribute;
+   - Every element carrying `data-i18n` / `data-i18n-attr`.
+5. Expose `window.t` and `window.changeLanguage`.
 
-### 6.3 DOM 应用逻辑
+### 6.3 DOM Application Logic
 
-伪代码：
+Pseudo-code:
 
 ```js
 function applyTranslations(root = document) {
@@ -241,36 +229,37 @@ function applyTranslations(root = document) {
 }
 ```
 
-> 对于由 JS 动态插入的元素，需要在插入后再次调用 `applyTranslations(新容器)`。
+> For elements that JS inserts dynamically, call `applyTranslations(newContainer)` again after insertion.
 
 ---
 
-## 七、语言切换 UI 规范
+## 7. Language-Switcher UI Convention
 
-### 7.1 位置与形态
+### 7.1 Placement and Shape
 
-- 位置：`index.html` header 右侧 `API 文档` 按钮附近（靠近用户头像）。
-- 交互形式：
-  - 一个紧凑的语言切换组件，例如：
-    - `🌐` 图标 + 当前语言文本（`中文` / `English`）的下拉按钮；
-    - 下拉内容列出所有可用语言。
+- Location: `index.html` header, near the **API Docs** button and the user avatar on the right.
+- Interaction:
+  - A compact switcher, for example:
+    - A `🌐` icon + current-language label (`English` / `Українська` / `中文`) in a dropdown button;
+    - Dropdown lists every available language.
 
-### 7.2 示例结构
+### 7.2 Example Structure
 
 ```html
 <div class="lang-switcher">
   <button class="btn-secondary lang-switcher-btn" onclick="toggleLangDropdown()" data-i18n="header.language">
     <span class="lang-switcher-icon">🌐</span>
-    <span id="current-lang-label">中文</span>
+    <span id="current-lang-label">English</span>
   </button>
   <div id="lang-dropdown" class="lang-dropdown" style="display: none;">
-    <div class="lang-option" data-lang="zh-CN" onclick="onLanguageSelect('zh-CN')">中文</div>
     <div class="lang-option" data-lang="en-US" onclick="onLanguageSelect('en-US')">English</div>
+    <div class="lang-option" data-lang="uk-UA" onclick="onLanguageSelect('uk-UA')">Українська</div>
+    <div class="lang-option" data-lang="zh-CN" onclick="onLanguageSelect('zh-CN')">中文</div>
   </div>
 </div>
 ```
 
-对应 JS（在 `i18n.js` 中）：
+Matching JS (in `i18n.js`):
 
 ```js
 function onLanguageSelect(lang) {
@@ -281,55 +270,56 @@ function onLanguageSelect(lang) {
 function updateLangLabel() {
   const labelEl = document.getElementById('current-lang-label');
   if (!labelEl) return;
-  const lang = i18next.language || 'zh-CN';
-  labelEl.textContent = lang.startsWith('zh') ? '中文' : 'English';
+  const lang = i18next.language || 'en-US';
+  if (lang.startsWith('uk')) { labelEl.textContent = 'Українська'; return; }
+  if (lang.startsWith('zh')) { labelEl.textContent = '中文'; return; }
+  labelEl.textContent = 'English';
 }
 ```
 
-> 规范：**语言切换只更新文案，不刷新整页，也不修改 URL hash**。
+> Rule: **language switch only updates strings** — no full-page reload, no URL-hash mutation.
 
 ---
 
-## 八、开发流程建议
+## 8. Development Workflow
 
-### 8.1 新增 / 修改界面的流程
+### 8.1 Adding or Changing a UI Surface
 
-1. 设计界面时，先列出所有文案。
-2. 在对应语言 JSON 中补充/修改 key 与翻译。
-3. 在 HTML 中使用 `data-i18n`，在 JS 中使用 `t('...')`。
-4. 在浏览器中切换中英文，确认两种语言显示都正确。
+1. List every user-facing string while designing the surface.
+2. Add / modify keys and translations in every language JSON.
+3. In HTML, reference them via `data-i18n`; in JS, via `t('...')`.
+4. Switch languages in the browser and confirm all locales render correctly.
 
-### 8.2 渐进式改造顺序（推荐）
+### 8.2 Suggested Progressive-Migration Order
 
-1. **阶段 1（已规划）**
-   - 引入 i18next 与 `i18n.js`。
-   - 新建 `zh-CN.json` / `en-US.json`（先覆盖 header / 登录 / 左侧导航）。
-   - 实现 header 区域语言切换组件。
-2. **阶段 2**（已完成）
-   - 系统设置页面（包括机器人配置页面）全部文案 i18n 化。
-   - `settings.js` 中的提示与错误信息改用 `t()`。
-3. **阶段 3**（进行中）
-   - 仪表盘、任务管理、漏洞管理、MCP、Skills、Roles 等页面按模块逐步迁移。
-4. **阶段 4**
-   - 清理 JS / HTML 中残留的硬编码中文，统一通过 i18n。
-
----
-
-## 九、后续扩展新语言
-
-当需要新增语言时：
-
-1. 在 `web/static/i18n/` 中新增 `{lang}.json`，复制现有英文/中文文件结构，补充对应翻译。
-2. 在语言切换下拉中添加对应选项，例如：
-   - `data-lang="ja-JP"` / 文本 `日本語`
-3. 无需修改 `i18n.js` 或现有 HTML/JS 逻辑，即可支持新语言。
+1. **Phase 1 (done)**
+   - Introduce i18next and `i18n.js`.
+   - Create `en-US.json` / `zh-CN.json` / `uk-UA.json` (header, login, left nav covered first).
+   - Build the header language-switcher component.
+2. **Phase 2 (done)**
+   - All strings on the system-settings page (including the chatbot-configuration subpage) moved to i18n.
+   - `settings.js` alerts and error toasts routed through `t()`.
+3. **Phase 3 (in progress)**
+   - Dashboard, Task Management, Vulnerability Management, MCP, Skills, Roles — migrated module by module.
+4. **Phase 4**
+   - Sweep out any remaining hard-coded strings in JS / HTML and route them through i18n.
 
 ---
 
-## 十、注意事项与坑点
+## 9. Adding Another Language Later
 
-- **不要复制多份 HTML 模板** 来做多语言，那样维护成本极高，本方案统一由前端 i18n 控制。
-- **避免 key 直接用中文/英文句子**，统一采用「模块.语义」短 key，便于 diff 与搜索。
-- 避免在 CSS 中写死文本（如 `content: "xxx"`），如确有需要，应通过 JS 设置并走 i18n。
-- 对于后端返回的可本地化错误文本（未来可能支持），优先由后端根据 `Accept-Language` 返回对应语言，前端只负责展示。
+When a new language is needed:
 
+1. Add `web/static/i18n/{lang}.json`, copying the structure of an existing locale and filling in translations.
+2. Add the matching option in the language-switcher dropdown, e.g.
+   - `data-lang="ja-JP"` / label `日本語`.
+3. No changes are required in `i18n.js` or in existing HTML/JS — the new language just works.
+
+---
+
+## 10. Gotchas and Pitfalls
+
+- **Do not fork the HTML template** to implement multiple languages — maintenance cost explodes; the i18n layer is the single source of truth.
+- **Never use Chinese/English sentences as keys** — keep `module.semantic` short keys for easy diffing and searching.
+- Avoid hard-coded text in CSS (`content: "xxx"`). If you truly need it, set the text from JS via i18n.
+- For backend-returned error messages (possibly localizable in the future), prefer letting the backend pick a language based on `Accept-Language` and let the frontend just display what it receives.

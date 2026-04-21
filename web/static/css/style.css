@@ -51,13 +51,13 @@ body {
     flex: 1;
     overflow: hidden;
     min-height: 0;
-    /* 主侧边栏与右侧内容之间预留水平间距，避免导航项文字贴到内容边框 */
+    /* Horizontal gap between main sidebar and right-hand content so nav labels don't hug the content border */
     column-gap: 0px;
 }
 
-/* 主侧边栏样式 - 紧凑宽度，参考常见后台 200~220px */
+/* Main sidebar styles — compact width, following typical admin UIs at 200–220px */
 .main-sidebar {
-    /* 稍微拉宽侧边栏，给多语言菜单文案更多缓冲空间 */
+    /* Slightly widen the sidebar to give multi-language menu labels more breathing room */
     width: 224px;
     background: linear-gradient(180deg, #fafbfc 0%, #f5f7fa 100%);
     color: var(--text-primary);
@@ -141,7 +141,7 @@ body {
     padding-top: 56px;
 }
 
-/* 侧边栏滚动条样式 */
+/* Sidebar scrollbar styles */
 .main-sidebar-nav::-webkit-scrollbar {
     width: 6px;
 }
@@ -167,7 +167,7 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    /* 侧边栏导航项：左 16px 对齐图标，右 32px 预留更大安全间距，避免长文案贴边 */
+    /* Sidebar nav items: 16px left padding aligns icons, 32px right padding buffers long labels from the edge */
     padding: 10px 32px 10px 16px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -244,7 +244,7 @@ body {
     font-size: 0.9375rem;
     font-weight: 400;
     white-space: nowrap;
-    /* 防止长标题顶到边界：在右侧内边距内做省略而不是越界 */
+    /* Prevent long titles from hitting the edge — ellipsis inside the right padding instead of overflowing */
     overflow: hidden;
     text-overflow: ellipsis;
     opacity: 1;
@@ -313,7 +313,7 @@ body {
     display: none;
 }
 
-/* 子菜单弹出框样式 */
+/* Submenu popover styles */
 .submenu-popup {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -372,7 +372,7 @@ body {
     font-weight: 500;
 }
 
-/* 内容区域 */
+/* Content area */
 .content-area {
     flex: 1;
     display: flex;
@@ -382,7 +382,7 @@ body {
     background: #f5f7fa;
 }
 
-/* 对话页面不需要page-header */
+/* Chat page doesn't need page-header */
 #page-chat .page-header {
     display: none;
 }
@@ -436,15 +436,15 @@ body {
     min-height: 0;
 }
 
-/* 任务管理页面内容区域底部圆角 */
+/* Task-management content area: rounded bottom corners */
 #page-tasks .page-content {
-    /* 确保底部左右角都是圆角 */
+    /* Ensure both bottom corners are rounded */
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
     overflow: hidden;
 }
 
-/* 对话页面布局 */
+/* Chat page layout */
 .chat-page-layout {
     display: flex;
     flex: 1;
@@ -468,12 +468,12 @@ body {
     transition: width 0.2s ease;
 }
 
-/* 对话页左侧列表折叠（腾出空间给主对话区） */
+/* Chat-page left list collapsed (frees space for the main chat area) */
 .conversation-sidebar.collapsed {
     width: 56px;
 }
 
-/* 对话列表头部：折叠 + 新对话同一行，不重叠 */
+/* Chat-list header: collapse toggle and "New chat" on the same row without overlap */
 .conversation-sidebar-header {
     display: flex;
     flex-direction: row;
@@ -485,11 +485,11 @@ body {
 .conversation-sidebar-header .new-chat-btn {
     flex: 1;
     min-width: 0;
-    width: auto; /* 覆盖 .new-chat-btn 的 width:100%，让 flex 分配剩余空间 */
+    width: auto; /* Override .new-chat-btn width:100% so flex can distribute the remaining space */
 }
 
 .conversation-sidebar-collapse-btn {
-    /* 不再使用 absolute，避免盖住「新对话」 */
+    /* Don't use absolute positioning — would overlap "New chat" */
     position: static;
     flex-shrink: 0;
     align-self: center;
@@ -515,7 +515,7 @@ body {
     border-color: var(--accent-color);
 }
 
-/* 折叠后箭头朝右表示「展开」 */
+/* After collapse, arrow points right to indicate "expand" */
 .conversation-sidebar.collapsed .conversation-sidebar-collapse-btn {
     transform: rotate(180deg);
 }
@@ -543,7 +543,7 @@ body {
 }
 
 .conversation-sidebar.collapsed .new-chat-btn {
-    order: 1; /* 窄条：先「+」再折叠，纵向排列 */
+    order: 1; /* Narrow rail: "+" first, then collapse, stacked vertically */
     width: 40px;
     height: 40px;
     min-width: 40px;
@@ -554,7 +554,7 @@ body {
     flex: none;
 }
 
-/* 折叠时只保留「+」，隐藏「新对话」文案 */
+/* When collapsed, keep only the "+" and hide the "New chat" label */
 .conversation-sidebar.collapsed .new-chat-btn span:last-child {
     display: none;
 }
@@ -794,7 +794,7 @@ header {
     color: var(--text-muted);
 }
 
-/* 用户菜单样式 */
+/* User menu styles */
 .user-menu-container {
     position: relative;
 }
@@ -882,7 +882,7 @@ header {
     min-width: 44px;
 }
 
-/* 设置页面样式 */
+/* Settings page styles */
 .settings-actions {
     margin-top: 32px;
     padding-top: 24px;
@@ -892,7 +892,7 @@ header {
     gap: 12px;
 }
 
-/* 旧侧边栏样式（保留用于对话页面内的历史对话侧边栏） */
+/* Legacy sidebar styles (kept for the chat page's history sidebar) */
 .sidebar {
     width: 280px;
     background: var(--bg-secondary);
@@ -1155,7 +1155,7 @@ header {
     opacity: 1;
 }
 
-/* 对话界面样式 */
+/* Chat interface styles */
 .chat-container {
     display: flex;
     flex-direction: column;
@@ -1166,7 +1166,7 @@ header {
     height: 100%;
 }
 
-/* 会话顶部栏样式 */
+/* Chat top-bar styles */
 .conversation-header {
     background: transparent;
     padding: 8px 24px;
@@ -1291,7 +1291,7 @@ header {
     position: relative;
 }
 
-/* Markdown 样式 */
+/* Markdown styles */
 .message-bubble p {
     margin: 0.5em 0;
 }
@@ -1416,15 +1416,15 @@ header {
     text-decoration: underline;
 }
 
-/* Markdown 表格样式 */
-/* 表格包装容器，为每个表格提供独立的横向滚动 */
+/* Markdown table styles */
+/* Table wrapper — gives each table its own horizontal scroll */
 .message-bubble .table-wrapper {
     width: 100%;
     overflow-x: auto;
     overflow-y: visible;
     margin: 1em 0;
     -webkit-overflow-scrolling: touch;
-    /* 自定义滚动条样式 */
+    /* Custom scrollbar styles */
     scrollbar-width: thin;
     scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
@@ -1447,7 +1447,7 @@ header {
     background: rgba(0, 0, 0, 0.3);
 }
 
-/* 表格本身，允许根据内容自动扩展宽度 */
+/* The table itself — allow width to auto-expand based on content */
 .message-bubble table {
     width: auto;
     min-width: 100%;
@@ -1458,12 +1458,12 @@ header {
     table-layout: auto;
 }
 
-/* 确保表格能够超出容器宽度 */
+/* Allow the table to exceed the container width */
 .message-bubble table * {
     box-sizing: border-box;
 }
 
-/* 确保表格内容不会被压缩 */
+/* Keep table content from being compressed */
 .message-bubble table colgroup,
 .message-bubble table col {
     width: auto;
@@ -1491,7 +1491,7 @@ header {
     min-width: 120px;
     max-width: none;
     vertical-align: top;
-    /* 允许文字换行，避免重叠和溢出 */
+    /* Allow text wrapping to avoid overlap and overflow */
     white-space: normal;
     word-wrap: break-word;
     word-break: break-word;
@@ -1509,12 +1509,12 @@ header {
     border-bottom: none;
 }
 
-/* 消息气泡相对定位，用于放置复制按钮 */
+/* Message bubble relatively positioned so the copy button can be placed */
 .message-bubble {
     position: relative;
 }
 
-/* 消息复制按钮 - 位于消息气泡右下角 */
+/* Message copy button — bottom-right of the message bubble */
 .message-copy-btn {
     position: absolute;
     bottom: 12px;
@@ -1573,7 +1573,7 @@ header {
     letter-spacing: 0.01em;
 }
 
-/* 用户消息中的表格样式 */
+/* Table styles inside user messages */
 .message.user .message-bubble .table-wrapper {
     scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
@@ -1648,7 +1648,7 @@ header {
     font-weight: 400;
 }
 
-/* MCP调用区域 */
+/* MCP call area */
 .mcp-call-section {
     margin-top: 12px;
     padding-top: 12px;
@@ -1881,32 +1881,32 @@ header {
     overflow-y: auto;
     box-sizing: border-box;
     vertical-align: middle;
-    /* 隐藏滚动条但保留滚动功能 */
+    /* Hide the scrollbar while keeping scrolling functional */
     scrollbar-width: thin; /* Firefox */
-    scrollbar-color: transparent transparent; /* Firefox - 隐藏滚动条 */
+    scrollbar-color: transparent transparent; /* Firefox — hide scrollbar */
 }
 
-/* WebKit 浏览器（Chrome, Safari, Edge）的滚动条样式 - 隐藏但保留功能 */
+/* WebKit browsers (Chrome, Safari, Edge) — hide scrollbar while keeping scrolling */
 .chat-input-container textarea::-webkit-scrollbar {
-    width: 4px; /* 最窄的滚动条 */
+    width: 4px; /* Narrowest scrollbar */
 }
 
 .chat-input-container textarea::-webkit-scrollbar-track {
-    background: transparent; /* 隐藏轨道 */
+    background: transparent; /* Hide the track */
 }
 
 .chat-input-container textarea::-webkit-scrollbar-thumb {
-    background: transparent; /* 默认隐藏滑块 */
+    background: transparent; /* Hide the thumb by default */
     border-radius: 2px;
 }
 
-/* 鼠标悬停时显示滚动条 */
+/* Show scrollbar on mouse hover */
 .chat-input-container textarea:hover::-webkit-scrollbar-thumb {
-    background: var(--text-muted); /* 悬停时显示 */
+    background: var(--text-muted); /* Show on hover */
 }
 
 .chat-input-container textarea:focus::-webkit-scrollbar-thumb {
-    background: var(--text-muted); /* 聚焦时显示 */
+    background: var(--text-muted); /* Show on focus */
 }
 
 .chat-input-container textarea:focus {
@@ -1943,7 +1943,7 @@ header {
     box-shadow: 0 2px 8px rgba(0, 102, 255, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-/* 按钮光效动画 */
+/* Button glow animation */
 .chat-input-container .send-btn::before {
     content: '';
     position: absolute;
@@ -2163,7 +2163,7 @@ header {
     color: var(--text-muted);
 }
 
-/* MCP调用详情按钮 */
+/* MCP call details button */
 .mcp-detail-btn {
     display: inline-flex;
     align-items: center;
@@ -2191,7 +2191,7 @@ header {
     transform: translateY(0);
 }
 
-/* 登录遮罩 */
+/* Login overlay */
 .login-overlay {
     position: fixed;
     inset: 0;
@@ -2343,7 +2343,7 @@ header {
     transform: translateX(3px);
 }
 
-/* 模态框样式 */
+/* Modal styles */
 .modal {
     display: none;
     position: fixed;
@@ -2406,7 +2406,7 @@ header {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    /* 允许标题在 flex 中收缩/换行，避免把右侧按钮挤压变形 */
+    /* Allow the title to shrink/wrap inside flex so right-side buttons aren't squashed or deformed */
     flex: 1 1 auto;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -2624,7 +2624,7 @@ header {
     color: var(--accent-hover);
 }
 
-/* 滚动条样式 */
+/* Scrollbar styles */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -2644,7 +2644,7 @@ header {
     background: var(--text-secondary);
 }
 
-/* 响应式设计 */
+/* Responsive design */
 @media (max-width: 768px) {
     body {
         height: 100vh;
@@ -2675,7 +2675,7 @@ header {
         min-height: 0;
     }
     
-    /* 主侧边栏在移动设备上可以折叠或调整 */
+    /* Main sidebar collapses or adapts on mobile devices */
     .main-sidebar {
         width: 200px;
     }
@@ -2709,7 +2709,7 @@ header {
         overflow: hidden;
     }
 
-    /* 对话列表折叠态在窄屏下仍保持窄条，避免被 240px 覆盖 */
+    /* Collapsed chat list keeps its narrow rail on narrow screens — don't let the 240px rule override it */
     .conversation-sidebar.collapsed {
         width: 56px;
     }
@@ -2756,7 +2756,7 @@ header {
     }
 }
 
-/* 进度展示样式 */
+/* Progress display styles */
 .progress-container {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -2841,7 +2841,7 @@ header {
     color: var(--text-primary);
 }
 
-/* 详情区底部「收起/展开」，流式输出过长时无需滚回顶部即可折叠 */
+/* Details-area bottom "collapse/expand" — lets users fold long streamed output without scrolling back to the top */
 .progress-footer {
     display: flex;
     justify-content: flex-end;
@@ -2881,7 +2881,7 @@ header {
     background: rgba(0, 102, 255, 0.05);
 }
 
-/* Eino 多代理：主编排器 vs 子代理时间线区分 */
+/* Multi-agent: distinguish orchestrator vs sub-agent timelines */
 .timeline-eino-role-orchestrator {
     border-left-color: #5c6bc0 !important;
     background: rgba(92, 107, 192, 0.09) !important;
@@ -3042,7 +3042,7 @@ header {
     color: var(--text-secondary);
 }
 
-/* 工具调用状态徽章 */
+/* Tool-call status badge */
 .tool-status-badge {
     display: inline-flex;
     align-items: center;
@@ -3095,7 +3095,7 @@ header {
     border: 1px solid rgba(220, 53, 69, 0.3);
 }
 
-/* 工具调用项状态样式 */
+/* Tool-call item status styles */
 .timeline-item-tool_call.tool-call-running {
     border-left-color: var(--accent-color);
     background: rgba(0, 102, 255, 0.08);
@@ -3111,7 +3111,7 @@ header {
     background: rgba(220, 53, 69, 0.08);
 }
 
-/* 活跃任务栏 */
+/* Active-task bar */
 .active-tasks-bar {
     display: none;
     align-items: center;
@@ -3207,7 +3207,7 @@ header {
     color: var(--error-color);
 }
 
-/* 设置模态框样式 */
+/* Settings modal styles */
 .settings-modal-content {
     max-width: 800px;
     max-height: 90vh;
@@ -3221,7 +3221,7 @@ header {
     padding: 24px;
 }
 
-/* 设置页面布局 */
+/* Settings page layout */
 .settings-layout {
     display: flex;
     flex: 1;
@@ -3229,7 +3229,7 @@ header {
     background: var(--bg-primary);
 }
 
-/* 设置侧边栏 */
+/* Settings sidebar */
 .settings-sidebar {
     width: 200px;
     background: var(--bg-primary);
@@ -3267,7 +3267,7 @@ header {
     border-left-color: var(--accent-color);
 }
 
-/* 设置内容区域 */
+/* Settings content area */
 .settings-content {
     flex: 1;
     overflow-y: auto;
@@ -3335,7 +3335,7 @@ header {
     line-height: 1.6;
 }
 
-/* 系统设置 - 终端 */
+/* System settings — terminal */
 .terminal-wrapper {
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -3485,7 +3485,7 @@ header {
 
 .terminal-container .xterm-viewport {
     border-radius: 0;
-    /* 与 WebShell 终端一致：细窄、深色，避免系统默认浅色粗滚动条 */
+    /* Matches the WebShell terminal: thin and dark, avoiding the default chunky light scrollbar */
     scrollbar-width: thin;
     scrollbar-color: rgba(110, 118, 129, 0.5) transparent;
 }
@@ -3596,7 +3596,7 @@ header {
     box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.2);
 }
 
-/* 现代化复选框样式 */
+/* Modern checkbox styles */
 .checkbox-label {
     display: flex !important;
     align-items: center;
@@ -3928,12 +3928,12 @@ header {
     margin-top: 0;
 }
 
-/* 漏洞管理页面的分页栏间距优化 */
+/* Vulnerability-management page: pagination-bar spacing polish */
 #vulnerability-pagination.pagination-fixed {
     margin-top: 12px;
 }
 
-/* Skills管理页面分页优化 */
+/* Skills management page pagination polish */
 .page-content-with-pagination {
     display: flex;
     flex-direction: column;
@@ -3947,7 +3947,7 @@ header {
     overflow-y: auto;
     overflow-x: hidden;
     min-height: 0;
-    /* 为分页组件预留空间，确保视觉连接自然 */
+    /* Reserve space for the pagination component so the visual connection stays natural */
     padding-bottom: 0;
 }
 
@@ -3955,19 +3955,19 @@ header {
     background: var(--bg-primary);
     margin-top: 0;
     padding: 0;
-    /* 确保分页组件宽度与内容区域一致，不包括滚动条 */
+    /* Pagination width matches the content area — scrollbar excluded */
     width: 100%;
     box-sizing: border-box;
-    /* 确保分页组件不延伸到滚动条区域 */
+    /* Keep the pagination component from extending into the scrollbar area */
     overflow: hidden;
-    /* 当列表有滚动条时，分页组件应该与内容区域对齐 */
+    /* When the list has a scrollbar the pagination component should align with the content area */
     position: relative;
-    /* 添加四个角的圆角，与上方卡片保持一致 */
+    /* Add rounded corners on all four sides to match the card above */
     border-radius: 8px;
-    /* 确保底部左右角都是圆角 */
+    /* Ensure both bottom corners are rounded */
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
-    /* 添加边框和阴影，使圆角更明显 */
+    /* Border and shadow make the rounded corners more visible */
     border: 1px solid var(--border-color);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
@@ -3981,21 +3981,21 @@ header {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    /* 确保分页内容与列表内容对齐 */
+    /* Align pagination content with the list content */
     width: 100%;
     box-sizing: border-box;
-    /* 柔和的顶部边框，与列表自然分离 */
+    /* Soft top border that separates naturally from the list */
     border-top-color: rgba(233, 236, 239, 0.6);
-    /* 添加四个角的圆角，与上方卡片保持一致 */
+    /* Add rounded corners on all four sides to match the card above */
     border-radius: 8px;
-    /* 确保底部左右角都是圆角 */
+    /* Ensure both bottom corners are rounded */
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
-    /* 移除顶部边框，因为外层容器已有边框 */
+    /* Remove top border — the outer container already has one */
     border-top: none;
 }
 
-/* 左侧：信息显示和每页数量选择器 - 更自然的设计 */
+/* Left side: info display and per-page selector — more natural design */
 .pagination-fixed .pagination-info {
     font-size: 0.8125rem;
     color: var(--text-secondary);
@@ -4003,7 +4003,7 @@ header {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    /* 去掉背景色和边框，更自然 */
+    /* Drop background color and border for a more natural look */
     padding: 0;
     background: transparent;
     border-radius: 0;
@@ -4037,14 +4037,14 @@ header {
     min-width: 60px;
     max-width: 80px;
     font-weight: 500;
-    /* 更柔和的边框 */
+    /* Softer border */
     border-color: rgba(233, 236, 239, 0.8);
-    /* 确保四个角都是圆角 */
+    /* Ensure all four corners are rounded */
     border-radius: 8px !important;
-    /* 确保下拉框不被拉伸 */
+    /* Keep the dropdown from stretching */
     flex-shrink: 0;
     box-sizing: border-box;
-    /* 确保下拉箭头正确显示 */
+    /* Ensure the dropdown arrow renders correctly */
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -4066,7 +4066,7 @@ header {
     background: var(--bg-secondary);
 }
 
-/* 右侧：分页按钮组 - 更统一的设计 */
+/* Right side: pagination button group — more uniform design */
 .pagination-fixed .pagination-controls {
     display: flex;
     align-items: center;
@@ -4081,9 +4081,9 @@ header {
     transition: all 0.2s ease;
     font-weight: 500;
     border-radius: 6px;
-    /* 更柔和的边框 */
+    /* Softer border */
     border-color: rgba(233, 236, 239, 0.8);
-    /* 确保四个角都是圆角 */
+    /* Ensure all four corners are rounded */
     border-radius: 8px !important;
 }
 
@@ -4114,7 +4114,7 @@ header {
     padding: 5px 10px;
     white-space: nowrap;
     font-weight: 400;
-    /* 添加圆角设计，四个角都是圆的 */
+    /* Rounded-corner design — all four corners rounded */
     border-radius: 8px !important;
     background: var(--bg-secondary) !important;
     border: 1px solid var(--border-color) !important;
@@ -4123,7 +4123,7 @@ header {
     justify-content: center;
 }
 
-/* 响应式优化 */
+/* Responsive polish */
 @media (max-width: 768px) {
     .pagination-fixed .pagination {
         flex-direction: column;
@@ -4334,7 +4334,7 @@ header {
     border-color: var(--accent-color);
 }
 
-/* 通用按钮加载态（用于耗时请求：AI 解析等） */
+/* Generic button loading state (for slow requests: AI parsing, etc.) */
 .btn-loading {
     opacity: 0.9;
     cursor: progress;
@@ -4689,14 +4689,14 @@ header {
     display: inline-block;
 }
 
-/* 确保复选框单元格垂直居中 */
+/* Vertically center the checkbox cell */
 .monitor-table td:first-child,
 .monitor-table th:first-child {
     text-align: center;
     vertical-align: middle;
 }
 
-/* 统一表头复选框大小 */
+/* Unify the header checkbox size */
 #monitor-select-all {
     width: 18px;
     height: 18px;
@@ -4707,7 +4707,7 @@ header {
     display: inline-block;
 }
 
-/* 移除第一列的特殊样式，让表格更灵活 */
+/* Remove special styling from the first column for a more flexible table */
 
 .monitor-vuln-container {
     display: grid;
@@ -4811,7 +4811,7 @@ header {
     border-radius: 12px;
 }
 
-/* 外部MCP配置样式 */
+/* External MCP configuration styles */
 .external-mcp-controls {
     display: flex;
     flex-direction: column;
@@ -5185,7 +5185,7 @@ header {
     box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
 }
 
-/* 响应式优化 */
+/* Responsive polish */
 @media (max-width: 768px) {
     .tools-actions {
         gap: 6px;
@@ -5256,7 +5256,7 @@ header {
     }
 }
 
-/* ==================== 攻击链可视化样式 ==================== */
+/* ==================== Attack-chain visualization styles ==================== */
 
 .attack-chain-modal-content {
     max-width: 95vw;
@@ -5448,7 +5448,7 @@ header {
     border-radius: 12px;
 }
 
-/* 攻击链筛选器样式 */
+/* Attack-chain filter styles */
 .attack-chain-filters {
     display: flex;
     gap: 8px;
@@ -5854,7 +5854,7 @@ header {
     padding: 20px;
 }
 
-/* ==================== 知识管理样式 ==================== */
+/* ==================== Knowledge-management styles ==================== */
 
 .knowledge-controls {
     display: flex;
@@ -5891,7 +5891,7 @@ header {
     color: var(--accent-color);
 }
 
-/* 索引进度显示 */
+/* Indexing-progress display */
 .knowledge-index-progress {
     padding: 16px 20px;
     background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 193, 7, 0.05) 100%);
@@ -6006,7 +6006,7 @@ header {
     box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);
 }
 
-/* 自定义下拉组件样式 */
+/* Custom dropdown component styles */
 .custom-select-wrapper {
     position: relative;
     min-width: 160px;
@@ -6096,7 +6096,7 @@ header {
     background: var(--accent-hover);
 }
 
-/* 自定义下拉组件滚动条样式 */
+/* Custom dropdown scrollbar styles */
 .custom-select-dropdown::-webkit-scrollbar {
     width: 6px;
 }
@@ -6374,7 +6374,7 @@ header {
     border-radius: 12px;
 }
 
-/* ==================== 检索历史样式 ==================== */
+/* ==================== Retrieval-history styles ==================== */
 
 .retrieval-logs-controls {
     display: flex;
@@ -6662,7 +6662,7 @@ header {
     color: var(--text-secondary);
 }
 
-/* 响应式设计 */
+/* Responsive design */
 @media (max-width: 768px) {
     .knowledge-items-grid {
         grid-template-columns: 1fr;
@@ -6722,7 +6722,7 @@ header {
     }
 }
 
-/* 旋转动画 */
+/* Spin animation */
 @keyframes spin {
     from {
         transform: rotate(0deg);
@@ -6732,7 +6732,7 @@ header {
     }
 }
 
-/* 对话分组和最近对话样式 */
+/* Conversation-group and recent-chats styles */
 .conversation-groups-section,
 .recent-conversations-section {
     margin-bottom: 24px;
@@ -6915,7 +6915,7 @@ header {
     opacity: 1;
 }
 
-/* 分组详情页面 */
+/* Group details page */
 .group-detail-page {
     display: flex;
     flex-direction: column;
@@ -7149,7 +7149,7 @@ header {
     word-break: break-word;
 }
 
-/* 批量管理模态框 */
+/* Batch-management modal */
 .batch-manage-modal-content {
     max-width: 800px;
     width: 90vw;
@@ -7249,7 +7249,7 @@ header {
     text-overflow: clip;
     white-space: nowrap;
     word-break: keep-all;
-    /* 完全依赖JavaScript截断，禁用CSS的ellipsis以避免在UTF-8多字节字符中间截断 */
+    /* Rely entirely on JavaScript truncation; disable CSS ellipsis to avoid cutting through the middle of a UTF-8 multi-byte character */
 }
 
 .batch-table-col-time {
@@ -7306,7 +7306,7 @@ header {
     gap: 12px;
 }
 
-/* 创建分组模态框 */
+/* Create-group modal */
 .create-group-modal-content {
     max-width: 640px;
     width: 60vw;
@@ -7403,7 +7403,7 @@ header {
     background: #ddd;
 }
 
-/* 图标选择器面板 */
+/* Icon-picker panel */
 .group-icon-picker {
     position: absolute;
     top: calc(100% + 8px);
@@ -7581,7 +7581,7 @@ header {
     background: #ddd;
 }
 
-/* 上下文菜单 */
+/* Context menu */
 .context-menu {
     position: fixed;
     background: var(--bg-primary);
@@ -7699,7 +7699,7 @@ header {
     background: rgba(0, 102, 255, 0.1);
 }
 
-/* 任务管理页面样式 */
+/* Task-management page styles */
 .tasks-stats-bar {
     display: flex;
     gap: 24px;
@@ -8116,11 +8116,11 @@ header {
     }
 }
 
-/* 批量任务相关样式 */
+/* Batch-task styles */
 .batch-queues-section {
     margin-top: 0;
     padding-top: 0;
-    /* 确保底部左右角都是圆角 */
+    /* Ensure both bottom corners are rounded */
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
     overflow: hidden;
@@ -8318,7 +8318,7 @@ header {
     color: var(--accent-color);
 }
 
-/* 批量队列详情弹窗：标题很长时避免挤压右侧按钮 */
+/* Batch-queue details popover: stop a long title from squashing the right-side buttons */
 #batch-queue-detail-modal .modal-header {
     align-items: flex-start;
     gap: 12px;
@@ -8383,7 +8383,7 @@ header {
 }
 
 .batch-task-header .batch-task-edit-btn {
-    /* 仅把“编辑”(首个操作按钮)推到最右，避免多个按钮都 margin-left:auto 导致挤压/错位 */
+    /* Push only "Edit" (the first action button) to the right edge; giving every button margin-left:auto would squash and misalign them */
     margin-left: auto;
 }
 
@@ -8502,7 +8502,7 @@ header {
     }
 }
 
-/* 漏洞管理页面样式 */
+/* Vulnerability-management page styles */
 .vulnerability-dashboard {
     margin-bottom: 24px;
 }
@@ -8561,7 +8561,7 @@ header {
     color: var(--text-primary);
 }
 
-/* WebShell 管理页面样式 - 美化版 */
+/* WebShell management page styles — polished */
 .webshell-page-content {
     height: calc(100vh - 140px);
     overflow: hidden;
@@ -8593,7 +8593,7 @@ header {
     background: linear-gradient(180deg, #fafbfd 0%, #f5f7fa 100%);
 }
 
-/* 可拖拽调整连接列表宽度 */
+/* Draggable handle to resize the connection-list width */
 .webshell-resize-handle {
     position: relative;
     width: 6px;
@@ -8997,7 +8997,7 @@ header {
     flex-direction: column;
 }
 
-/* 仅外框圆角，内部不做额外装饰，避免挡住文字 */
+/* Rounded outer frame only — no extra inner decoration that would cover text */
 .webshell-terminal-shell {
     flex: 1;
     min-height: 360px;
@@ -9028,7 +9028,7 @@ header {
     overflow: hidden;
 }
 
-/* 防止 xterm 辅助层（.xterm-helper-textarea）遮挡终端文字：移出视口并缩小 */
+/* Prevent xterm's helper textarea (.xterm-helper-textarea) from covering terminal text: move off-screen and shrink */
 .webshell-terminal-container .xterm .xterm-helper-textarea {
     left: -9999em !important;
     width: 1px !important;
@@ -9039,7 +9039,7 @@ header {
     position: absolute !important;
     z-index: -10 !important;
 }
-/* 确保光标层不超出单元格，避免整行被蓝条挡住 */
+/* Keep the caret layer inside the cell so the entire row isn't covered by a blue bar */
 .webshell-terminal-container .xterm-screen {
     overflow: hidden;
 }
@@ -9048,7 +9048,7 @@ header {
     overflow: hidden;
 }
 
-/* WebShell 终端滚动条：深色主题、细窄、圆角，弱化存在感 */
+/* WebShell terminal scrollbar: dark theme, thin, rounded, low-profile */
 .webshell-terminal-container .xterm-viewport {
     scrollbar-width: thin;
     scrollbar-color: rgba(110, 118, 129, 0.5) transparent;
@@ -9458,7 +9458,7 @@ header {
     background: rgba(220, 53, 69, 0.08);
 }
 
-/* WebShell 行内“操作”下拉菜单（替代一堆按钮） */
+/* Inline "Actions" dropdown menu for a WebShell row (replaces a stack of buttons) */
 .webshell-conn-actions,
 .webshell-row-actions {
     display: inline-block;
@@ -9631,14 +9631,14 @@ header {
     min-width: 72px;
 }
 
-/* WebShell AI 助手 Tab：仅在此 pane 激活时显示；左右布局 = 左侧栏 + 右侧主区（与对话页一致） */
+/* WebShell AI assistant tab: visible only when this pane is active; left sidebar + right main area (matches chat page) */
 #webshell-pane-ai {
     flex-direction: row;
     flex: 1;
     min-height: 0;
     overflow: hidden;
 }
-/* 不设 display，避免覆盖 .webshell-pane 的 display:none（否则终端/文件管理页会露出 AI 面板）。左右布局由 #webshell-pane-ai 的 flex-direction:row 提供 */
+/* No explicit display here so we don't override .webshell-pane { display:none } (otherwise the AI panel leaks onto the terminal / file-manager tabs). Row layout comes from #webshell-pane-ai's flex-direction:row */
 .webshell-pane-ai-with-sidebar {
     flex: 1;
     min-height: 0;
@@ -9880,11 +9880,11 @@ header {
     margin-bottom: 8px;
 }
 .webshell-ai-process-block.process-details-container {
-    /* 让“渗透测试详情”视觉上跟随助手气泡宽度，而不是强行 100% 宽 */
+    /* Let "Pentest details" visually follow the assistant bubble width rather than forcing 100% width */
     width: auto;
     max-width: 80%;
     align-self: flex-start;
-    /* 覆盖通用 .process-details-container 的边框/内边距，避免重复一层“边框卡片” */
+    /* Override the generic .process-details-container border/padding — avoids a double "border-card" layer */
     border-top: none;
     padding-top: 0;
     margin-top: 10px;
@@ -9911,7 +9911,7 @@ header {
     transition: max-height 0.3s ease;
 }
 .webshell-ai-process-block .process-details-content .progress-timeline {
-    /* 避免与外层卡片重复背景/边框 */
+    /* Avoid duplicating the outer card's background/border */
     background: transparent;
     border: none;
     padding: 0;
@@ -9932,7 +9932,7 @@ header {
     overflow-y: auto;
 }
 
-/* 展开后才把宽度撑满；未展开时保持折叠按钮“缩回去”的视觉 */
+/* Stretch to full width only when expanded; keep the "retracted" look when collapsed */
 .webshell-ai-process-block.process-details-container:has(.progress-timeline.expanded) {
     width: 100%;
     max-width: 80%;
@@ -9977,7 +9977,7 @@ header {
     gap: 12px;
 }
 
-/* 让 timeline item 更“像条目”而不是松散的分隔块 */
+/* Make timeline items feel like "items" instead of loose separator blocks */
 .webshell-ai-process-block .webshell-ai-timeline-item {
     border-left: 3px solid transparent;
     padding: 10px 0 10px 12px;
@@ -9987,7 +9987,7 @@ header {
     border-bottom: none;
 }
 .webshell-ai-process-block .webshell-ai-timeline-msg {
-    /* 避免每条详情都出现内层滚动条（体验会显得很“碎”） */
+    /* Avoid a nested scrollbar on every detail entry — makes the UX feel "fragmented" */
     max-height: none;
     overflow-y: visible;
 }
@@ -10058,9 +10058,9 @@ header {
     white-space: pre-wrap;
     word-break: break-word;
 }
-/* AI 助手 markdown 渲染优化：避免行间距离过大和内容横向溢出 */
+/* AI assistant markdown rendering: avoid oversized line spacing and horizontal overflow */
 .webshell-ai-msg.assistant {
-    /* markdown 里已经有块级元素，不需要再整体 pre-wrap，否则容易在块之间产生“空行”感 */
+    /* markdown already has block-level elements; don't apply pre-wrap globally or it feels like blank lines between blocks */
     white-space: normal;
 }
 .webshell-ai-msg.assistant p,
@@ -10138,7 +10138,7 @@ header {
     border-radius: 10px;
     border: 1px solid var(--border-color);
     font-size: 0.95rem;
-    /* 更柔和的滚动条样式 */
+    /* Softer scrollbar styles */
     scrollbar-width: thin;
     scrollbar-color: rgba(15, 23, 42, 0.25) transparent;
 }
@@ -10169,7 +10169,7 @@ header {
     justify-content: center;
 }
 
-/* WebShell 数据库管理 Tab */
+/* WebShell database management tab */
 .webshell-pane-db {
     flex: 1;
     min-height: 0;
@@ -10628,7 +10628,7 @@ header {
     }
 }
 
-/* 仪表盘页面样式（最佳实践布局 + 视觉增强） */
+/* Dashboard page styles (best-practice layout + visual polish) */
 .dashboard-page {
     height: 100%;
     display: flex;
@@ -10671,7 +10671,7 @@ header {
     box-sizing: border-box;
 }
 
-/* 第一行：核心 KPI（视觉层次 + 色块强调） */
+/* First row: core KPIs (visual hierarchy + color-block emphasis) */
 .dashboard-kpi-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -10730,7 +10730,7 @@ header {
     font-weight: 500;
 }
 
-/* 两列主内容网格 */
+/* Two-column main content grid */
 .dashboard-grid {
     display: grid;
     grid-template-columns: 1fr 380px;
@@ -10840,7 +10840,7 @@ header {
     color: var(--text-primary);
 }
 
-/* 运行概览优化样式 */
+/* Run-overview polish */
 .dashboard-overview-content {
     flex: 1;
     min-width: 0;
@@ -11030,7 +11030,7 @@ header {
     margin: 0 2px;
 }
 
-/* 不同模块的图标颜色 */
+/* Per-module icon colors */
 .dashboard-overview-icon-batch {
     background: rgba(245, 158, 11, 0.1);
     color: #d97706;
@@ -11051,7 +11051,7 @@ header {
     color: #db2777;
 }
 
-/* 悬停效果增强 */
+/* Hover effect enhancements */
 .dashboard-overview-item:hover .dashboard-overview-icon {
     transform: scale(1.1);
     transition: transform 0.2s ease;
@@ -11082,7 +11082,7 @@ header {
     background: linear-gradient(135deg, rgba(236,72,153,0.06) 0%, rgba(236,72,153,0.08) 100%);
 }
 
-/* 响应式优化 */
+/* Responsive polish */
 @media (max-width: 768px) {
     .dashboard-overview-stats {
         gap: 12px;
@@ -11132,7 +11132,7 @@ header {
     border-radius: 0 14px 14px 0;
 }
 
-/* 严重→信息：柔和连续色阶，红→橙→黄→绿→蓝，无灰沉感 */
+/* Critical → info: smooth continuous palette, red → orange → yellow → green → blue, no muddy grey */
 .dashboard-bar-seg.seg-critical { background: linear-gradient(90deg, #f87171, #fca5a5); }
 .dashboard-bar-seg.seg-high { background: linear-gradient(90deg, #fb923c, #fdba74); }
 .dashboard-bar-seg.seg-medium { background: linear-gradient(90deg, #facc15, #fde047); }
@@ -11169,7 +11169,7 @@ header {
     box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
 }
 
-/* 与条形图同色系，图例与条形视觉一致 */
+/* Same palette as the bar chart so legend and bars match visually */
 .dashboard-legend-dot.critical { background: #f87171; }
 .dashboard-legend-dot.high { background: #fb923c; }
 .dashboard-legend-dot.medium { background: #facc15; }
@@ -11192,7 +11192,7 @@ header {
     gap: 10px;
 }
 
-/* 主内容区：快捷入口横向排列，按钮保持自然宽度不拉伸 */
+/* Main area: quick links laid out horizontally; buttons keep their natural width without stretching */
 .dashboard-quick-links-row {
     display: flex;
     flex-wrap: wrap;
@@ -11206,7 +11206,7 @@ header {
     padding: 8px 14px;
 }
 
-/* 主内容区快捷入口：去掉图标外层的“涂层”，降低按钮高度 */
+/* Main-area quick links: drop the outer icon "coating" and shrink button height */
 .dashboard-quick-inline .dashboard-quick-icon {
     width: auto;
     height: auto;
@@ -11282,7 +11282,7 @@ header {
     box-shadow: 0 2px 8px rgba(3, 105, 161, 0.15);
 }
 
-/* 工具执行次数（仅柱状图） */
+/* Tool execution count (bar chart only) */
 .dashboard-section-tools .dashboard-section-title {
     margin-bottom: 12px;
 }
@@ -11472,7 +11472,7 @@ header {
     outline-offset: 2px;
 }
 
-/* 尊重用户“减少动效”偏好（无障碍最佳实践） */
+/* Honor the user's "reduce motion" preference (accessibility best practice) */
 @media (prefers-reduced-motion: reduce) {
     .dashboard-kpi-card,
     .dashboard-overview-item,
@@ -11777,7 +11777,7 @@ header {
     font-size: 1rem;
 }
 
-/* ==================== 攻击链可视化响应式样式 ==================== */
+/* ==================== Attack-chain visualization — responsive styles ==================== */
 @media (max-width: 1200px) {
     .attack-chain-modal-content {
         width: 98vw;
@@ -11903,7 +11903,7 @@ header {
         gap: 6px;
     }
 
-    /* 批量队列详情弹窗：即使在窄屏也保持按钮不“变形” */
+    /* Batch-queue details popover: keep buttons from "deforming" even on narrow screens */
     #batch-queue-detail-modal .modal-header-actions {
         flex-direction: row;
         width: auto;
@@ -11918,7 +11918,7 @@ header {
     }
 }
 
-/* 角色选择器样式 */
+/* Role-selector styles */
 .role-selector-btn {
     display: flex;
     align-items: center;
@@ -11988,7 +11988,7 @@ header {
     color: rgba(0, 102, 255, 0.6);
 }
 
-/* 角色选择器包装器 */
+/* Role-selector wrapper */
 .role-selector-wrapper {
     position: relative;
     flex-shrink: 0;
@@ -12000,13 +12000,13 @@ header {
     flex-shrink: 0;
 }
 
-/* 与角色选择器共用 .role-selector-btn；此处仅包一层用于定位浮层 */
+/* Shares .role-selector-btn with the role selector; the wrapper only exists to anchor the popover */
 .agent-mode-inner {
     position: relative;
     flex-shrink: 0;
 }
 
-/* 单/多代理面板：与「选择角色」浮层同一视觉语言（白底、圆角、阴影） */
+/* Single/multi-agent panel: same visual language as the "Select role" popover (white background, rounded corners, shadow) */
 .agent-mode-panel {
     position: absolute;
     bottom: calc(100% + 8px);
@@ -12041,7 +12041,7 @@ header {
     gap: 6px;
 }
 
-/* 选项为 <button>，浏览器默认 text-align:center 会继承到文案，强制左对齐与角色列表一致 */
+/* Options are <button> elements, whose default text-align:center would propagate to the label; force left-align to match the role list */
 .agent-mode-option.role-selection-item-main {
     text-align: left;
     justify-content: flex-start;
@@ -12054,7 +12054,7 @@ header {
 }
 
 
-/* 选项内勾选：未选中时隐藏（与角色列表一致） */
+/* In-option check mark: hidden when unselected (matches the role list) */
 .agent-mode-option .agent-mode-check {
     display: none !important;
 }
@@ -12063,7 +12063,7 @@ header {
     display: flex !important;
 }
 
-/* 主内容区域角色选择面板样式（下拉菜单形式） */
+/* Main-area role-selection panel styles (dropdown form) */
 .role-selection-panel {
     position: absolute;
     bottom: calc(100% + 8px);
@@ -12145,7 +12145,7 @@ header {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    /* 限制显示8个角色：每个角色约70px高度 + gap，8个角色约580px */
+    /* Show at most 8 roles: ~70px per role + gap → ~580px for 8 */
     max-height: 580px;
     overflow-y: auto;
     padding-right: 6px;
@@ -12435,7 +12435,7 @@ header {
     text-overflow: ellipsis;
 }
 
-/* 角色管理页面样式 */
+/* Role-management page styles */
 .roles-controls {
     margin-bottom: 24px;
 }
@@ -12472,7 +12472,7 @@ header {
     gap: 12px;
 }
 
-/* 角色搜索框样式 */
+/* Role search-box styles */
 .roles-search-box {
     position: relative;
     margin-bottom: 20px;
@@ -12515,7 +12515,7 @@ header {
     color: var(--text-primary);
 }
 
-/* 角色卡片网格布局 */
+/* Role card grid layout */
 .roles-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -12523,7 +12523,7 @@ header {
     padding: 0;
 }
 
-/* 角色卡片样式 */
+/* Role card styles */
 .role-card {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -12722,7 +12722,7 @@ header {
     font-size: 0.9375rem;
 }
 
-/* 角色MCP选择列表样式 */
+/* Role MCP-selection list styles */
 .role-mcps-list {
     margin-top: 8px;
     border: 1px solid var(--border-color);
@@ -12841,7 +12841,7 @@ header {
     color: var(--error-color);
 }
 
-/* 角色工具选择列表样式 */
+/* Role tool-selection list styles */
 .role-tools-controls {
     margin-bottom: 12px;
 }
@@ -13039,7 +13039,7 @@ header {
     color: var(--error-color);
 }
 
-/* 默认角色提示信息样式 */
+/* Default role hint message styles */
 .role-tools-default-hint {
     margin-top: 8px;
     padding: 16px;
@@ -13079,7 +13079,7 @@ header {
     line-height: 1.5;
 }
 
-/* 角色选择面板响应式样式 */
+/* Role-selection panel — responsive styles */
 @media (max-width: 768px) {
     .role-selection-panel,
     .agent-mode-panel {
@@ -13101,7 +13101,7 @@ header {
     }
 
     .role-selection-list-main {
-        /* 在移动设备上限制显示8个角色，每个约60px，总计约480px */
+        /* On mobile show at most 8 roles, ~60px each → ~480px total */
         max-height: 480px;
         gap: 5px;
     }
@@ -13138,7 +13138,7 @@ header {
     }
 
     .role-selection-list-main {
-        /* 在小屏幕上限制显示8个角色，每个约55px，总计约450px */
+        /* On small screens show at most 8 roles, ~55px each → ~450px total */
         max-height: 450px;
         gap: 5px;
     }
@@ -13164,7 +13164,7 @@ header {
     }
 }
 
-/* Skills选择相关样式 */
+/* Skill-selector styles */
 .role-skills-controls {
     margin-bottom: 12px;
 }
@@ -13276,7 +13276,7 @@ header {
     color: var(--error-color);
 }
 
-/* Skills管理页面样式 */
+/* Skills management page styles */
 .skills-controls {
     margin-bottom: 8px;
 }
@@ -13332,7 +13332,7 @@ header {
     margin-bottom: 16px;
 }
 
-/* 技能搜索框样式 */
+/* Skill search-box styles */
 .skills-search-box {
     position: relative;
     margin-bottom: 12px;
@@ -13390,20 +13390,20 @@ header {
     word-break: break-all;
 }
 
-/* 技能列表布局 */
+/* Skill-list layout */
 .skills-grid {
     display: flex;
     flex-direction: column;
     gap: 12px;
     padding: 0;
-    /* 确保列表可以滚动，不会把分页栏推出视口 */
+    /* Ensure the list can scroll without pushing the pagination bar out of the viewport */
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
     min-height: 0;
 }
 
-/* 技能列表项样式 */
+/* Skill-list item styles */
 .skill-card {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -13490,7 +13490,7 @@ header {
     flex-shrink: 0;
 }
 
-/* 技能列表响应式布局优化 */
+/* Skill-list responsive layout polish */
 @media (max-width: 768px) {
     .skill-card {
         padding: 14px;
@@ -13592,7 +13592,7 @@ header {
     align-items: center;
 }
 
-/* Skills监控页面样式 */
+/* Skills monitor page styles */
 .skills-monitor-controls {
     margin-bottom: 24px;
 }
@@ -13700,7 +13700,7 @@ header {
     display: none;
 }
 
-/* ==================== 信息收集（FOFA）页面 ==================== */
+/* ==================== Info-collection (FOFA) page ==================== */
 .info-collect-panel {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -13710,14 +13710,14 @@ header {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 }
 
-/* 表单整体增加纵向留白，避免“挤在一起” */
+/* Add vertical whitespace to the form so fields don't feel "crammed together" */
 .info-collect-form {
     display: flex;
     flex-direction: column;
     gap: 14px;
 }
 
-/* 将每个表单块做成轻量卡片分组（只作用于 info-collect 顶层 form-group） */
+/* Turn each form block into a lightweight card group (applies only to the top-level form-group under info-collect) */
 .info-collect-form > .form-group,
 .info-collect-form > .info-collect-form-row {
     padding: 14px 14px;
@@ -13726,11 +13726,11 @@ header {
     background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
 }
 
-/* 覆盖全局 .form-group textarea(min-height:200px) 的默认大留白 */
+/* Override the global .form-group textarea min-height:200px default */
 .form-group textarea.info-collect-query-input {
     min-height: 36px;
     max-height: 96px;
-    overflow: hidden; /* 配合 JS 自动增高 */
+    overflow: hidden; /* Works with JS auto-grow */
     resize: none;
     padding: 10px 12px;
 }
@@ -13743,7 +13743,7 @@ header {
 
 .info-collect-nl-row .info-collect-query-input {
     flex: 1 1 auto;
-    min-width: 0; /* 允许在 flex 中收缩，避免撑破布局 */
+    min-width: 0; /* Allow shrinking inside flex so the layout doesn't blow out */
 }
 
 .info-collect-nl-row button {
@@ -13876,7 +13876,7 @@ header {
     color: var(--text-secondary);
 }
 
-/* 操作列：放到最右侧并固定，避免横向滚动找不到 */
+/* Actions column: pin to the far right so it stays reachable even when scrolling horizontally */
 .info-collect-col-actions {
     width: 150px;
     text-align: left;
@@ -13894,13 +13894,13 @@ header {
 .info-collect-table thead th.info-collect-col-actions {
     background: var(--bg-secondary);
     z-index: 3;
-    text-align: center; /* 表头“操作”居中 */
+    text-align: center; /* Center the header "Actions" label */
 }
 
 .info-collect-actions {
     display: flex;
     gap: 8px;
-    justify-content: flex-start; /* 按钮向左 */
+    justify-content: flex-start; /* Button aligned left */
 }
 
 .info-collect-actions .btn-icon {
@@ -13919,7 +13919,7 @@ header {
     min-height: 40px;
     max-height: 110px;
     line-height: 1.45;
-    overflow: hidden; /* 配合 JS 自动增高 */
+    overflow: hidden; /* Works with JS auto-grow */
     resize: none;
 }
 
@@ -13951,7 +13951,7 @@ header {
     border-bottom-color: rgba(0, 102, 255, 0.75);
 }
 
-/* 勾选列（左侧固定） */
+/* Checkbox column (pinned left) */
 .info-collect-col-select {
     width: 44px;
     text-align: center;
@@ -13971,7 +13971,7 @@ header {
     z-index: 4;
 }
 
-/* 单元格点击展开提示（非强制） */
+/* Cell click-to-expand hint (non-intrusive) */
 .info-collect-cell {
     cursor: pointer;
 }
@@ -13984,7 +13984,7 @@ header {
     vertical-align: top;
 }
 
-/* 字段显示/隐藏面板 */
+/* Field show/hide panel */
 .info-collect-columns-panel {
     position: sticky;
     top: 0;
@@ -14042,7 +14042,7 @@ header {
     white-space: nowrap;
 }
 
-/* 单元格详情弹窗 */
+/* Cell details popover */
 .info-collect-cell-modal {
     position: fixed;
     inset: 0;
@@ -14112,7 +14112,7 @@ header {
     }
 }
 
-/* 对话附件文件管理 */
+/* Chat-attachment file management */
 .chat-files-intro {
     color: var(--text-secondary);
     font-size: 0.9rem;
@@ -14131,14 +14131,14 @@ header {
     border-radius: 8px;
 }
 
-/* 分组视图：外层不再套一层大边框，由各分组卡片承担 */
+/* Group view: drop the outer wrapping border; each group card provides its own */
 .chat-files-table-wrap.chat-files-table-wrap--grouped {
     border: none;
     background: transparent;
     overflow: visible;
 }
 
-/* GitHub 式：单表 + 首列缩进，无嵌套子表、无重复表头 */
+/* GitHub style: single table with first-column indent, no nested subtables, no repeated headers */
 .chat-files-table-wrap.chat-files-table-wrap--tree {
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -14491,7 +14491,7 @@ header {
     z-index: 400;
 }
 
-/* JS 使用 fixed 定位时覆盖 absolute，避免被表格区域 overflow 裁切 */
+/* JS switches to fixed positioning to override absolute so the table's overflow doesn't clip this */
 .chat-files-dropdown.chat-files-dropdown-fixed {
     position: fixed;
     right: auto;
@@ -14561,7 +14561,7 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     width: 100%;
 }
 
-/* 新建文件夹弹窗：层次清晰、留白舒适，无强装饰 */
+/* New-folder popover: clear hierarchy, comfortable whitespace, no heavy decoration */
 .chat-files-mkdir-modal-content {
     max-width: 480px;
 }
@@ -14666,8 +14666,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     transform: translateX(-50%) translateY(0);
 }
 
-/* 对话附件读取 / 文件管理上传 进度条 */
-/* [hidden] 默认会被本类的 display:flex 覆盖，须显式隐藏否则空闲时仍露出灰条 */
+/* Chat-attachment read / file-manager upload progress bar */
+/* [hidden] is overridden by this class's display:flex; hide explicitly or the grey bar leaks through when idle */
 .chat-upload-progress-row[hidden] {
     display: none !important;
 }

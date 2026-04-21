@@ -1,6 +1,6 @@
 # CyberStrikeAI Robot / Chatbot Guide
 
-[中文](robot.md)
+[Chinese](robot.md)
 
 This document explains how to chat with CyberStrikeAI from **DingTalk**, **Lark (Feishu)**, and **WeCom (Enterprise WeChat)** using long-lived connections or HTTP callbacks—no need to open a browser on the server. Following the steps below helps avoid common mistakes.
 
