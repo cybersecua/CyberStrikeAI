@@ -18,13 +18,13 @@ import (
 type FileType string
 
 const (
-	FileTypeReport       FileType = "report"       // external tool output, scan results
-	FileTypeAPIDocs      FileType = "api_docs"      // API documentation
-	FileTypeProjectFile  FileType = "project_file"  // file from the project being worked on
-	FileTypeTargetFile   FileType = "target_file"   // file obtained from target
-	FileTypeReversing    FileType = "reversing"      // binary/file to reverse engineer
-	FileTypeExfiltrated  FileType = "exfiltrated"    // exfiltrated data
-	FileTypeOther        FileType = "other"
+	FileTypeReport      FileType = "report"       // external tool output, scan results
+	FileTypeAPIDocs     FileType = "api_docs"     // API documentation
+	FileTypeProjectFile FileType = "project_file" // file from the project being worked on
+	FileTypeTargetFile  FileType = "target_file"  // file obtained from target
+	FileTypeReversing   FileType = "reversing"    // binary/file to reverse engineer
+	FileTypeExfiltrated FileType = "exfiltrated"  // exfiltrated data
+	FileTypeOther       FileType = "other"
 )
 
 // FileStatus tracks processing state.
@@ -33,9 +33,9 @@ type FileStatus string
 const (
 	FileStatusPending    FileStatus = "pending"     // uploaded, not yet processed
 	FileStatusProcessing FileStatus = "processing"  // model is working on it
-	FileStatusAnalyzed   FileStatus = "analyzed"     // initial analysis complete
-	FileStatusInProgress FileStatus = "in_progress"  // ongoing work
-	FileStatusCompleted  FileStatus = "completed"    // work finished
+	FileStatusAnalyzed   FileStatus = "analyzed"    // initial analysis complete
+	FileStatusInProgress FileStatus = "in_progress" // ongoing work
+	FileStatusCompleted  FileStatus = "completed"   // work finished
 	FileStatusArchived   FileStatus = "archived"
 )
 
@@ -48,13 +48,13 @@ type ManagedFile struct {
 	MimeType       string     `json:"mime_type,omitempty"`
 	FileType       FileType   `json:"file_type"`
 	Status         FileStatus `json:"status"`
-	Summary        string     `json:"summary"`         // model-generated summary of what the file is
-	Location       string     `json:"location"`         // where the file is stored (relative path)
-	HandlePlan     string     `json:"handle_plan"`      // how model plans to handle this file
-	Progress       string     `json:"progress"`         // current progress notes
-	Findings       string     `json:"findings"`         // discoveries/findings from processing
-	Logs           string     `json:"logs"`             // processing log entries
-	Tags           string     `json:"tags,omitempty"`   // comma-separated tags
+	Summary        string     `json:"summary"`        // model-generated summary of what the file is
+	Location       string     `json:"location"`       // where the file is stored (relative path)
+	HandlePlan     string     `json:"handle_plan"`    // how model plans to handle this file
+	Progress       string     `json:"progress"`       // current progress notes
+	Findings       string     `json:"findings"`       // discoveries/findings from processing
+	Logs           string     `json:"logs"`           // processing log entries
+	Tags           string     `json:"tags,omitempty"` // comma-separated tags
 	ConversationID string     `json:"conversation_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`

@@ -836,11 +836,11 @@ LANGUAGE: You MUST respond ONLY in English. All output - including todo lists, t
 						return
 					}
 					sendProgress("tool_result_delta", chunk, map[string]interface{}{
-						"toolName":    toolCall.Function.Name,
-						"toolCallId":  toolCall.ID,
-						"index":       idx + 1,
-						"total":       len(choice.Message.ToolCalls),
-						"iteration":   i + 1,
+						"toolName":   toolCall.Function.Name,
+						"toolCallId": toolCall.ID,
+						"index":      idx + 1,
+						"total":      len(choice.Message.ToolCalls),
+						"iteration":  i + 1,
 						// success is determined by success/isError flag in final tool_result event
 					})
 				}))
@@ -923,7 +923,7 @@ LANGUAGE: You MUST respond ONLY in English. All output - including todo lists, t
 				// streaming OpenAI call for summary (no tools provided, forcing AI to reply directly)
 				sendProgress("response_start", "", map[string]interface{}{
 					"conversationId":     conversationID,
-					"mcpExecutionIds":   result.MCPExecutionIDs,
+					"mcpExecutionIds":    result.MCPExecutionIDs,
 					"messageGeneratedBy": "summary",
 				})
 				streamText, _ := a.callOpenAIStreamText(ctx, messages, []Tool{}, func(delta string) error {
@@ -970,7 +970,7 @@ LANGUAGE: You MUST respond ONLY in English. All output - including todo lists, t
 			// streaming OpenAI call for summary (no tools provided, forcing AI to reply directly)
 			sendProgress("response_start", "", map[string]interface{}{
 				"conversationId":     conversationID,
-				"mcpExecutionIds":   result.MCPExecutionIDs,
+				"mcpExecutionIds":    result.MCPExecutionIDs,
 				"messageGeneratedBy": "summary",
 			})
 			streamText, _ := a.callOpenAIStreamText(ctx, messages, []Tool{}, func(delta string) error {
@@ -1017,7 +1017,7 @@ LANGUAGE: You MUST respond ONLY in English. All output - including todo lists, t
 	// streaming OpenAI call for summary (no tools provided, forcing AI to reply directly)
 	sendProgress("response_start", "", map[string]interface{}{
 		"conversationId":     conversationID,
-		"mcpExecutionIds":   result.MCPExecutionIDs,
+		"mcpExecutionIds":    result.MCPExecutionIDs,
 		"messageGeneratedBy": "max_iter_summary",
 	})
 	streamText, _ := a.callOpenAIStreamText(ctx, messages, []Tool{}, func(delta string) error {
@@ -1310,12 +1310,12 @@ func (a *Agent) callOpenAI(ctx context.Context, messages []ChatMessage, tools []
 				zap.Duration("backoff", backoff),
 			)
 
-			// 
+			//
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("context cancelled during retry: %w", ctx.Err())
 			case <-time.After(backoff):
-				// 
+				//
 			}
 		}
 	}
@@ -1589,11 +1589,11 @@ func (a *Agent) callOpenAIStreamWithToolCalls(
 	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
 }
 
-// ToolExecutionResult 
+// ToolExecutionResult
 type ToolExecutionResult struct {
 	Result      string
 	ExecutionID string
-	IsError bool // 
+	IsError     bool //
 }
 
 // executeToolViaMCP MCP
@@ -1698,14 +1698,14 @@ func (a *Agent) executeToolViaMCP(ctx context.Context, toolName string, args map
 	resultStr := resultText.String()
 	resultSize := len(resultStr)
 
-	// 
+	//
 	a.mu.RLock()
 	threshold := a.largeResultThreshold
 	storage := a.resultStorage
 	a.mu.RUnlock()
 
 	if resultSize > threshold && storage != nil {
-		// 
+		//
 		go func() {
 			if err := storage.SaveResult(executionID, toolName, resultStr); err != nil {
 				a.logger.Warn("",
@@ -1844,7 +1844,7 @@ func (a *Agent) UpdateConfig(cfg *config.OpenAIConfig) {
 	)
 }
 
-// UpdateMaxIterations 
+// UpdateMaxIterations
 func (a *Agent) UpdateMaxIterations(maxIterations int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -2099,7 +2099,7 @@ func (a *Agent) ExecuteMCPToolForConversation(ctx context.Context, conversationI
 	return a.executeToolViaMCP(ctx, toolName, args)
 }
 
-// extractQuotedToolName 
+// extractQuotedToolName
 func extractQuotedToolName(errMsg string) string {
 	start := strings.Index(errMsg, "\"")
 	if start == -1 {

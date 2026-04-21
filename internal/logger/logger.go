@@ -55,14 +55,14 @@ func New(level, output string) *Logger {
 }
 
 func (l *Logger) Fatal(msg string, fields ...interface{}) {
-    zapFields := make([]zap.Field, 0, len(fields))
-    for _, f := range fields {
-        switch v := f.(type) {
-        case error:
-            zapFields = append(zapFields, zap.Error(v))
-        default:
-            zapFields = append(zapFields, zap.Any("field", v))
-        }
-    }
-    l.Logger.Fatal(msg, zapFields...)
+	zapFields := make([]zap.Field, 0, len(fields))
+	for _, f := range fields {
+		switch v := f.(type) {
+		case error:
+			zapFields = append(zapFields, zap.Error(v))
+		default:
+			zapFields = append(zapFields, zap.Any("field", v))
+		}
+	}
+	l.Logger.Fatal(msg, zapFields...)
 }

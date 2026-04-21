@@ -18,28 +18,28 @@ import (
 
 // Indexer indexer,responsible for chunking and vectorizing knowledge items
 type Indexer struct {
-	db             *sql.DB
-	embedder       *Embedder
-	logger         *zap.Logger
-	chunkSize      int // max tokens per chunk (estimated)
-	overlap        int // overlap tokens between chunks
-	maxChunks      int // max chunks per knowledge item (0 means unlimited)
+	db        *sql.DB
+	embedder  *Embedder
+	logger    *zap.Logger
+	chunkSize int // max tokens per chunk (estimated)
+	overlap   int // overlap tokens between chunks
+	maxChunks int // max chunks per knowledge item (0 means unlimited)
 
 	// error
 	mu            sync.RWMutex
-	lastError string // error
+	lastError     string    // error
 	lastErrorTime time.Time // error
-	errorCount int // error
+	errorCount    int       // error
 
 	// rebuild indexstatus
-	rebuildMu          sync.RWMutex
-	isRebuilding       bool      // whether index is being rebuilt
-	rebuildTotalItems  int       // total rebuild items
-	rebuildCurrent int // current
-	rebuildFailed      int       // rebuild failed items
-	rebuildStartTime   time.Time // rebuild start time
-	rebuildLastItemID  string    // last processed item ID
-	rebuildLastChunks  int       // last processed item chunk count
+	rebuildMu         sync.RWMutex
+	isRebuilding      bool      // whether index is being rebuilt
+	rebuildTotalItems int       // total rebuild items
+	rebuildCurrent    int       // current
+	rebuildFailed     int       // rebuild failed items
+	rebuildStartTime  time.Time // rebuild start time
+	rebuildLastItemID string    // last processed item ID
+	rebuildLastChunks int       // last processed item chunk count
 }
 
 // NewIndexer creates a new indexer
@@ -239,14 +239,16 @@ type Section struct {
 // title,for vector retrieval
 //
 // , Markdown:
-//   # Prompt Injection
-//   introduction content
-//   ## Summary
-//   table of contents
+//
+//	# Prompt Injection
+//	introduction content
+//	## Summary
+//	table of contents
 //
 // returns:
-//   [{HeaderPath: ["# Prompt Injection"], Content: "# Prompt Injection\nintroduction content"},
-//    {HeaderPath: ["# Prompt Injection", "## Summary"], Content: "## Summary\ntable of contents"}]
+//
+//	[{HeaderPath: ["# Prompt Injection"], Content: "# Prompt Injection\nintroduction content"},
+//	 {HeaderPath: ["# Prompt Injection", "## Summary"], Content: "## Summary\ntable of contents"}]
 func (idx *Indexer) splitByMarkdownHeadersWithContent(text string) []Section {
 	// match Markdown title (# ## ### )
 	headerRegex := regexp.MustCompile(`(?m)^#{1,6}\s+.+$`)

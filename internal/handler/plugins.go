@@ -86,7 +86,7 @@ func (h *PluginsHandler) EnablePlugin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":    fmt.Sprintf("plugin %q enabled", name),
+		"message":      fmt.Sprintf("plugin %q enabled", name),
 		"tools_loaded": len(tools),
 	})
 }
@@ -168,7 +168,7 @@ func (h *PluginsHandler) SetPluginConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("config updated for plugin %q", name),
+		"message":  fmt.Sprintf("config updated for plugin %q", name),
 		"keys_set": len(body),
 	})
 }

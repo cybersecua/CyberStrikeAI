@@ -1,15 +1,12 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
 func TestExpandEnvVar(t *testing.T) {
-	os.Setenv("TEST_MCP_VAR", "hello")
-	os.Setenv("TEST_MCP_PATH", "/usr/local/bin")
-	defer os.Unsetenv("TEST_MCP_VAR")
-	defer os.Unsetenv("TEST_MCP_PATH")
+	t.Setenv("TEST_MCP_VAR", "hello")
+	t.Setenv("TEST_MCP_PATH", "/usr/local/bin")
 
 	tests := []struct {
 		name   string
@@ -42,10 +39,8 @@ func TestExpandEnvVar(t *testing.T) {
 }
 
 func TestExpandConfigEnv(t *testing.T) {
-	os.Setenv("TEST_MCP_CMD", "python3")
-	os.Setenv("TEST_MCP_TOKEN", "secret123")
-	defer os.Unsetenv("TEST_MCP_CMD")
-	defer os.Unsetenv("TEST_MCP_TOKEN")
+	t.Setenv("TEST_MCP_CMD", "python3")
+	t.Setenv("TEST_MCP_TOKEN", "secret123")
 
 	cfg := &ExternalMCPServerConfig{
 		Command: "${TEST_MCP_CMD}",

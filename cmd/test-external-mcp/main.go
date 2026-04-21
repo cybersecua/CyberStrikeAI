@@ -142,4 +142,3 @@ func getTransport(srv config.ExternalMCPServerConfig) string {
 	}
 	return "unknown"
 }
-

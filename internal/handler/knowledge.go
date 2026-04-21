@@ -54,7 +54,7 @@ func (h *KnowledgeHandler) GetCategories(c *gin.Context) {
 // GetItems get knowledge itemlist(paginate by category,defaultreturns)
 func (h *KnowledgeHandler) GetItems(c *gin.Context) {
 	category := c.Query("category")
-	searchKeyword := c.Query("search") // 
+	searchKeyword := c.Query("search") //
 
 	// ,(search across all data)
 	if searchKeyword != "" {
@@ -65,7 +65,7 @@ func (h *KnowledgeHandler) GetItems(c *gin.Context) {
 			return
 		}
 
-		// 
+		//
 		groupedByCategory := make(map[string][]*knowledge.KnowledgeItemSummary)
 		for _, item := range items {
 			cat := item.Category
@@ -130,7 +130,7 @@ func (h *KnowledgeHandler) GetItems(c *gin.Context) {
 			return
 		}
 
-		// 
+		//
 		categoriesWithItems := []*knowledge.CategoryWithItems{
 			{
 				Category:  category,
@@ -141,7 +141,7 @@ func (h *KnowledgeHandler) GetItems(c *gin.Context) {
 
 		c.JSON(http.StatusOK, gin.H{
 			"categories": categoriesWithItems,
-			"total": 1, // 
+			"total":      1, //
 			"limit":      limit,
 			"offset":     offset,
 		})
@@ -150,9 +150,9 @@ func (h *KnowledgeHandler) GetItems(c *gin.Context) {
 
 	if categoryPageMode {
 		// paginate by category(default)
-		// limit , 5-10 
+		// limit , 5-10
 		if limit <= 0 || limit > 100 {
-			limit = 10 // default 10 
+			limit = 10 // default 10
 		}
 
 		categoriesWithItems, totalCategories, err := h.manager.GetCategoriesWithItems(limit, offset)
@@ -249,7 +249,7 @@ func (h *KnowledgeHandler) CreateItem(c *gin.Context) {
 		return
 	}
 
-	// 
+	//
 	go func() {
 		ctx := context.Background()
 		if err := h.indexer.IndexItem(ctx, item.ID); err != nil {
@@ -282,7 +282,7 @@ func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
 		return
 	}
 
-	// 
+	//
 	go func() {
 		ctx := context.Background()
 		if err := h.indexer.IndexItem(ctx, item.ID); err != nil {
@@ -388,7 +388,7 @@ func (h *KnowledgeHandler) ScanKnowledgeBase(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("scan, %d add", len(itemsToIndex)),
+		"message":        fmt.Sprintf("scan, %d add", len(itemsToIndex)),
 		"items_to_index": len(itemsToIndex),
 	})
 }
@@ -397,7 +397,7 @@ func (h *KnowledgeHandler) ScanKnowledgeBase(c *gin.Context) {
 func (h *KnowledgeHandler) GetRetrievalLogs(c *gin.Context) {
 	conversationID := c.Query("conversationId")
 	messageID := c.Query("messageId")
-	limit := 50 // default 50 
+	limit := 50 // default 50
 
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if parsed, err := parseInt(limitStr); err == nil && parsed > 0 {
@@ -464,7 +464,7 @@ func (h *KnowledgeHandler) GetIndexStatus(c *gin.Context) {
 			}
 			// ,is_complete false
 			status["is_complete"] = false
-			// 
+			//
 			if totalItems > 0 {
 				status["progress_percent"] = float64(current) / float64(totalItems) * 100
 			}

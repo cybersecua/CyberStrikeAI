@@ -33,7 +33,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// App 
+// App
 type App struct {
 	config             *config.Config
 	logger             *logger.Logger
@@ -43,19 +43,19 @@ type App struct {
 	agent              *agent.Agent
 	executor           *security.Executor
 	db                 *database.DB
-	knowledgeDB *database.DB // knowledge basedatabase connection()
+	knowledgeDB        *database.DB // knowledge basedatabase connection()
 	auth               *security.AuthManager
-	knowledgeManager *knowledge.Manager // knowledge base manager()
-	knowledgeRetriever *knowledge.Retriever // knowledge base retriever()
-	knowledgeIndexer *knowledge.Indexer // knowledge base indexer()
-	knowledgeHandler *handler.KnowledgeHandler // knowledge base handler()
-	agentHandler *handler.AgentHandler // Agent handler(knowledge base manager)
+	knowledgeManager   *knowledge.Manager        // knowledge base manager()
+	knowledgeRetriever *knowledge.Retriever      // knowledge base retriever()
+	knowledgeIndexer   *knowledge.Indexer        // knowledge base indexer()
+	knowledgeHandler   *handler.KnowledgeHandler // knowledge base handler()
+	agentHandler       *handler.AgentHandler     // Agent handler(knowledge base manager)
 	robotHandler       *handler.RobotHandler     // robot handler (Telegram)
 	robotMu            sync.Mutex                // Telegram cancel guard
 	telegramCancel     context.CancelFunc        // Telegram bot cancel
 }
 
-// New 
+// New
 func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
@@ -346,7 +346,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 				return
 			}
 
-			// 
+			//
 			log.Logger.Info("no knowledge base index detected, starting automatic index build")
 			ctx := context.Background()
 			if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {
@@ -587,7 +587,7 @@ func (a *App) Run() error {
 		}()
 	}
 
-	// 
+	//
 	addr := fmt.Sprintf("%s:%d", a.config.Server.Host, a.config.Server.Port)
 	a.logger.Info("start HTTP server", zap.String("address", addr))
 
@@ -1028,7 +1028,7 @@ func setupRoutes(
 func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *zap.Logger) {
 	tool := mcp.Tool{
 		Name:             builtin.ToolRecordVulnerability,
-		Description: "recorddiscoveredvulnerability management.,record,title,description,critical,type,,,.",
+		Description:      "recorddiscoveredvulnerability management.,record,title,description,critical,type,,,.",
 		ShortDescription: "recorddiscoveredvulnerability management",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1213,7 +1213,7 @@ func registerVulnerabilityTool(mcpServer *mcp.Server, db *database.DB, logger *z
 	logger.Info("record")
 }
 
-// registerWebshellTools register WebShell related MCP tools, AI 
+// registerWebshellTools register WebShell related MCP tools, AI
 func registerWebshellTools(mcpServer *mcp.Server, db *database.DB, webshellHandler *handler.WebShellHandler, logger *zap.Logger) {
 	if db == nil || webshellHandler == nil {
 		logger.Warn("skip WebShell tool registration:db webshellHandler ")
@@ -1223,7 +1223,7 @@ func registerWebshellTools(mcpServer *mcp.Server, db *database.DB, webshellHandl
 	// webshell_exec
 	execTool := mcp.Tool{
 		Name:             builtin.ToolWebshellExec,
-		Description: "execute a system command on the specified WebShell connection,returns.connection_id AI .",
+		Description:      "execute a system command on the specified WebShell connection,returns.connection_id AI .",
 		ShortDescription: "execute command on WebShell connection",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1264,7 +1264,7 @@ func registerWebshellTools(mcpServer *mcp.Server, db *database.DB, webshellHandl
 	// webshell_file_list
 	listTool := mcp.Tool{
 		Name:             builtin.ToolWebshellFileList,
-		Description: "list directory content on specified WebShell connection.path defaultcurrent(.).",
+		Description:      "list directory content on specified WebShell connection.path defaultcurrent(.).",
 		ShortDescription: "list directory on WebShell",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1372,10 +1372,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 		return
 	}
 
-	// manage_webshell_list - webshell 
+	// manage_webshell_list - webshell
 	listTool := mcp.Tool{
 		Name:             builtin.ToolManageWebshellList,
-		Description: "list all saved WebShell connections,returnsID,URL,type,remark.",
+		Description:      "list all saved WebShell connections,returnsID,URL,type,remark.",
 		ShortDescription: "list all WebShell connections",
 		InputSchema: map[string]interface{}{
 			"type":       "object",
@@ -1417,10 +1417,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 	}
 	mcpServer.RegisterTool(listTool, listHandler)
 
-	// manage_webshell_add - add webshell 
+	// manage_webshell_add - add webshell
 	addTool := mcp.Tool{
-		Name:        builtin.ToolManageWebshellAdd,
-		Description: "add WebShell . PHP,ASP,ASPX,JSP type.",
+		Name:             builtin.ToolManageWebshellAdd,
+		Description:      "add WebShell . PHP,ASP,ASPX,JSP type.",
 		ShortDescription: "add WebShell ",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1509,10 +1509,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 	}
 	mcpServer.RegisterTool(addTool, addHandler)
 
-	// manage_webshell_update - webshell 
+	// manage_webshell_update - webshell
 	updateTool := mcp.Tool{
-		Name:        builtin.ToolManageWebshellUpdate,
-		Description: "update existing WebShell connection info.",
+		Name:             builtin.ToolManageWebshellUpdate,
+		Description:      "update existing WebShell connection info.",
 		ShortDescription: "update WebShell connection",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1560,7 +1560,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			}, nil
 		}
 
-		// 
+		//
 		existing, err := db.GetWebshellConnection(connID)
 		if err != nil || existing == nil {
 			return &mcp.ToolResult{
@@ -1606,10 +1606,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 	}
 	mcpServer.RegisterTool(updateTool, updateHandler)
 
-	// manage_webshell_delete - delete webshell 
+	// manage_webshell_delete - delete webshell
 	deleteTool := mcp.Tool{
-		Name:        builtin.ToolManageWebshellDelete,
-		Description: "delete WebShell .",
+		Name:             builtin.ToolManageWebshellDelete,
+		Description:      "delete WebShell .",
 		ShortDescription: "delete WebShell ",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1648,10 +1648,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 	}
 	mcpServer.RegisterTool(deleteTool, deleteHandler)
 
-	// manage_webshell_test - webshell 
+	// manage_webshell_test - webshell
 	testTool := mcp.Tool{
-		Name:        builtin.ToolManageWebshellTest,
-		Description: " WebShell ,( whoami dir).",
+		Name:             builtin.ToolManageWebshellTest,
+		Description:      " WebShell ,( whoami dir).",
 		ShortDescription: " WebShell ",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -1677,7 +1677,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			}, nil
 		}
 
-		// 
+		//
 		conn, err := db.GetWebshellConnection(connID)
 		if err != nil || conn == nil {
 			return &mcp.ToolResult{
@@ -1686,7 +1686,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			}, nil
 		}
 
-		// 
+		//
 		testCmd, _ := args["command"].(string)
 		if testCmd == "" {
 			// shell typedefault
@@ -1697,7 +1697,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			}
 		}
 
-		// 
+		//
 		output, ok, errMsg := webshellHandler.ExecWithConnection(conn, testCmd)
 		if errMsg != "" {
 			return &mcp.ToolResult{
@@ -1875,7 +1875,7 @@ func initializeKnowledge(
 			return
 		}
 
-		// 
+		//
 		logger.Info("no knowledge base index detected, starting automatic index build")
 		ctx := context.Background()
 		if err := knowledgeIndexer.RebuildIndex(ctx); err != nil {

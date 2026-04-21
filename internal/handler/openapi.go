@@ -1483,8 +1483,8 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 			},
 			"/api/multi-agent": map[string]interface{}{
 				"post": map[string]interface{}{
-					"tags": []string{"conversation"},
-					"summary": "message AI (Eino DeepAgent,)",
+					"tags":        []string{"conversation"},
+					"summary":     "message AI (Eino DeepAgent,)",
 					"description": " `POST /api/agent-loop` request body, **CloudWeGo Eino DeepAgent** .****:`multi_agent.enabled: true`( `config.yaml` );returns 404 JSON.request body `webshellConnectionId`( WebShell ).",
 					"operationId": "sendMessageMultiAgent",
 					"requestBody": map[string]interface{}{
@@ -1529,8 +1529,8 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 			},
 			"/api/multi-agent/stream": map[string]interface{}{
 				"post": map[string]interface{}{
-					"tags": []string{"conversation"},
-					"summary": "message AI (Eino DeepAgent,SSE)",
+					"tags":        []string{"conversation"},
+					"summary":     "message AI (Eino DeepAgent,SSE)",
 					"description": " `POST /api/agent-loop/stream` ,type; Eino DeepAgent .****:`multi_agent.enabled: true`;,returns 200 SSE, `type: error` `done`. `webshellConnectionId`.",
 					"operationId": "sendMessageMultiAgentStream",
 					"requestBody": map[string]interface{}{
@@ -1540,9 +1540,9 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 								"schema": map[string]interface{}{
 									"type": "object",
 									"properties": map[string]interface{}{
-										"message":            map[string]interface{}{"type": "string"},
-										"conversationId":     map[string]interface{}{"type": "string"},
-										"role":               map[string]interface{}{"type": "string"},
+										"message":              map[string]interface{}{"type": "string"},
+										"conversationId":       map[string]interface{}{"type": "string"},
+										"role":                 map[string]interface{}{"type": "string"},
 										"webshellConnectionId": map[string]interface{}{"type": "string"},
 									},
 									"required": []string{"message"},
@@ -4500,67 +4500,67 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 			"get": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "List Plugins",
 				"description": "List all discovered plugins with their state, configuration, and capabilities.",
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Plugin list returned"}, "401": map[string]interface{}{"description": "Unauthorized"}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Plugin list returned"}, "401": map[string]interface{}{"description": "Unauthorized"}},
 			},
 		},
 		"/api/plugins/{name}/enable": map[string]interface{}{
 			"post": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Enable Plugin",
 				"description": "Enable a plugin and hot-load its tools into the MCP server. Tools become immediately available to the AI agent without restart.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Plugin enabled, tools loaded"}, "404": map[string]interface{}{"description": "Plugin not found"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Plugin enabled, tools loaded"}, "404": map[string]interface{}{"description": "Plugin not found"}},
 			},
 		},
 		"/api/plugins/{name}/disable": map[string]interface{}{
 			"post": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Disable Plugin",
 				"description": "Disable a plugin and remove its tools from the MCP server.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Plugin disabled"}, "404": map[string]interface{}{"description": "Plugin not found"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Plugin disabled"}, "404": map[string]interface{}{"description": "Plugin not found"}},
 			},
 		},
 		"/api/plugins/{name}/config": map[string]interface{}{
 			"get": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Get Plugin Config",
 				"description": "Get plugin configuration variables. Values are masked for security.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Config returned (values masked)"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Config returned (values masked)"}},
 			},
 			"post": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Set Plugin Config",
 				"description": "Set configuration variables for a plugin (e.g., API keys). Values are injected as environment variables when plugin tools execute.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Config saved"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Config saved"}},
 			},
 		},
 		"/api/plugins/{name}/install": map[string]interface{}{
 			"post": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Install Plugin Dependencies",
 				"description": "Install Python dependencies from requirements.txt into an isolated .venv.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Dependencies installed"}, "500": map[string]interface{}{"description": "Install failed"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Dependencies installed"}, "500": map[string]interface{}{"description": "Install failed"}},
 			},
 		},
 		"/api/plugins/upload": map[string]interface{}{
 			"post": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Upload Plugin",
 				"description": "Upload a plugin ZIP archive. Extracted into plugins/ directory.",
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Plugin uploaded"}, "400": map[string]interface{}{"description": "Invalid archive"}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Plugin uploaded"}, "400": map[string]interface{}{"description": "Invalid archive"}},
 			},
 		},
 		"/api/plugins/{name}": map[string]interface{}{
 			"delete": map[string]interface{}{
 				"tags": []string{"Plugin Management"}, "summary": "Delete Plugin",
 				"description": "Remove a plugin directory and all stored state. Irreversible.",
-				"parameters": []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "Plugin deleted"}, "404": map[string]interface{}{"description": "Plugin not found"}},
+				"parameters":  []map[string]interface{}{{"name": "name", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "Plugin deleted"}, "404": map[string]interface{}{"description": "Plugin not found"}},
 			},
 		},
 		"/api/config/test-api": map[string]interface{}{
 			"post": map[string]interface{}{
 				"tags": []string{"Configuration"}, "summary": "Test API Endpoint",
 				"description": "Test AI provider API connectivity. Validates key, discovers models, reports rate limits. Supports Anthropic and OpenAI.",
-				"responses": map[string]interface{}{"200": map[string]interface{}{"description": "API test result with models and rate limits"}},
+				"responses":   map[string]interface{}{"200": map[string]interface{}{"description": "API test result with models and rate limits"}},
 			},
 		},
 	}

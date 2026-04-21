@@ -38,11 +38,11 @@ type BM25Index struct {
 	mu sync.RWMutex
 
 	// Corpus statistics (built by Build()).
-	docCount    int                // total number of documents
-	avgDocLen   float64            // average document length in tokens
-	df          map[string]int     // document frequency per term
-	docLens     map[string]int     // document length (token count) per doc ID
-	tf          map[string]map[string]int // tf[docID][term] = count
+	docCount  int                       // total number of documents
+	avgDocLen float64                   // average document length in tokens
+	df        map[string]int            // document frequency per term
+	docLens   map[string]int            // document length (token count) per doc ID
+	tf        map[string]map[string]int // tf[docID][term] = count
 
 	built bool
 }
@@ -50,10 +50,10 @@ type BM25Index struct {
 // NewBM25Index creates an empty BM25Index with the given parameters.
 func NewBM25Index(params BM25Params) *BM25Index {
 	return &BM25Index{
-		params: params,
-		df:     make(map[string]int),
+		params:  params,
+		df:      make(map[string]int),
 		docLens: make(map[string]int),
-		tf:     make(map[string]map[string]int),
+		tf:      make(map[string]map[string]int),
 	}
 }
 
@@ -237,16 +237,16 @@ var bm25StopWords = map[string]struct{}{
 	"for": {}, "from": {},
 	"has": {}, "have": {}, "he": {}, "her": {}, "him": {}, "his": {},
 	"how": {},
-	"i": {}, "if": {}, "in": {}, "into": {}, "is": {}, "it": {}, "its": {},
+	"i":   {}, "if": {}, "in": {}, "into": {}, "is": {}, "it": {}, "its": {},
 	"me": {},
 	"no": {}, "not": {},
 	"of": {}, "on": {}, "or": {},
 	"our": {},
-	"s": {}, "she": {}, "so": {},
+	"s":   {}, "she": {}, "so": {},
 	"that": {}, "the": {}, "their": {}, "them": {}, "then": {}, "there": {},
 	"these": {}, "they": {}, "this": {}, "those": {}, "through": {}, "to": {},
 	"too": {},
-	"up": {}, "use": {}, "used": {}, "uses": {}, "using": {},
+	"up":  {}, "use": {}, "used": {}, "uses": {}, "using": {},
 	"was": {}, "we": {}, "were": {}, "what": {}, "when": {}, "where": {},
 	"which": {}, "while": {}, "who": {}, "will": {}, "with": {},
 	"you": {}, "your": {},
@@ -256,31 +256,31 @@ var bm25StopWords = map[string]struct{}{
 // canonical normalised form so that, for example, "sqli" and "sql injection"
 // both produce the token "sqlinj" in the index and in queries.
 var securityAliases = map[string]string{
-	"sqli":          "sqlinj",
-	"sql-injection": "sqlinj",
-	"sqlinjection":  "sqlinj",
-	"xss":           "xss",
-	"cross-site":    "xss",
-	"crosssite":     "xss",
-	"lfi":           "lfi",
-	"rfi":           "rfi",
-	"rce":           "rce",
-	"ssrf":          "ssrf",
-	"ssti":          "ssti",
-	"idor":          "idor",
-	"csrf":          "csrf",
-	"xxe":           "xxe",
-	"oob":           "ooob",  // out-of-band
-	"ooob":          "ooob",
-	"open-redirect": "openredirect",
-	"openredirect":  "openredirect",
-	"path-traversal": "pathtraversal",
-	"pathtraversal": "pathtraversal",
-	"dir-traversal": "pathtraversal",
-	"deserializ":    "deserial",
-	"deserialization": "deserial",
-	"cmd-injection": "cmdinj",
-	"cmdinjection":  "cmdinj",
+	"sqli":              "sqlinj",
+	"sql-injection":     "sqlinj",
+	"sqlinjection":      "sqlinj",
+	"xss":               "xss",
+	"cross-site":        "xss",
+	"crosssite":         "xss",
+	"lfi":               "lfi",
+	"rfi":               "rfi",
+	"rce":               "rce",
+	"ssrf":              "ssrf",
+	"ssti":              "ssti",
+	"idor":              "idor",
+	"csrf":              "csrf",
+	"xxe":               "xxe",
+	"oob":               "ooob", // out-of-band
+	"ooob":              "ooob",
+	"open-redirect":     "openredirect",
+	"openredirect":      "openredirect",
+	"path-traversal":    "pathtraversal",
+	"pathtraversal":     "pathtraversal",
+	"dir-traversal":     "pathtraversal",
+	"deserializ":        "deserial",
+	"deserialization":   "deserial",
+	"cmd-injection":     "cmdinj",
+	"cmdinjection":      "cmdinj",
 	"command-injection": "cmdinj",
 }
 

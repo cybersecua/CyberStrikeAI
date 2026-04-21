@@ -19,7 +19,7 @@ type AgentTask struct {
 	Message        string    `json:"message,omitempty"`
 	StartedAt      time.Time `json:"startedAt"`
 	Status         string    `json:"status"`
-	CancellingAt time.Time `json:"-"` // cancelling status,for cleaning up long-stuck tasks
+	CancellingAt   time.Time `json:"-"` // cancelling status,for cleaning up long-stuck tasks
 
 	cancel func(error)
 }
@@ -35,20 +35,20 @@ type CompletedTask struct {
 
 // AgentTaskManager manages running Agent tasks
 type AgentTaskManager struct {
-	mu             sync.RWMutex
-	tasks          map[string]*AgentTask
-	completedTasks []*CompletedTask // recently completed task history
-	maxHistorySize int // record
-	historyRetention time.Duration // record
+	mu               sync.RWMutex
+	tasks            map[string]*AgentTask
+	completedTasks   []*CompletedTask // recently completed task history
+	maxHistorySize   int              // record
+	historyRetention time.Duration    // record
 }
 
 const (
 	// cancellingStuckThreshold ""list.currentreturns,
 	// exceed means stuck,release session ASAP.common practice is release within 30-60s.
 	cancellingStuckThreshold = 45 * time.Second
-	// cancellingStuckThresholdLegacy record CancellingAt StartedAt 
+	// cancellingStuckThresholdLegacy record CancellingAt StartedAt
 	cancellingStuckThresholdLegacy = 2 * time.Minute
-	cleanupInterval = 15 * time.Second // paired with above threshold, 60s 
+	cleanupInterval                = 15 * time.Second // paired with above threshold, 60s
 )
 
 // NewAgentTaskManager create task manager
@@ -56,8 +56,8 @@ func NewAgentTaskManager() *AgentTaskManager {
 	m := &AgentTaskManager{
 		tasks:            make(map[string]*AgentTask),
 		completedTasks:   make([]*CompletedTask, 0),
-		maxHistorySize: 50, // 50record
-		historyRetention: 24 * time.Hour,  // retain for 24 hours
+		maxHistorySize:   50,             // 50record
+		historyRetention: 24 * time.Hour, // retain for 24 hours
 	}
 	go m.runStuckCancellingCleanup()
 	return m
@@ -187,14 +187,14 @@ func (m *AgentTaskManager) FinishTask(conversationID string, finalStatus string)
 	completedTask := &CompletedTask{
 		ConversationID: task.ConversationID,
 		Message:        task.Message,
-		StartedAt:       task.StartedAt,
-		CompletedAt:     time.Now(),
-		Status:          finalStatus,
+		StartedAt:      task.StartedAt,
+		CompletedAt:    time.Now(),
+		Status:         finalStatus,
 	}
-	
+
 	// addrecord
 	m.completedTasks = append(m.completedTasks, completedTask)
-	
+
 	// record
 	m.cleanupHistory()
 
@@ -206,7 +206,7 @@ func (m *AgentTaskManager) FinishTask(conversationID string, finalStatus string)
 func (m *AgentTaskManager) cleanupHistory() {
 	now := time.Now()
 	cutoffTime := now.Add(-m.historyRetention)
-	
+
 	// record
 	validTasks := make([]*CompletedTask, 0, len(m.completedTasks))
 	for _, task := range m.completedTasks {
@@ -214,7 +214,7 @@ func (m *AgentTaskManager) cleanupHistory() {
 			validTasks = append(validTasks, task)
 		}
 	}
-	
+
 	// if still exceeds max count,keep only newest
 	if len(validTasks) > m.maxHistorySize {
 		// sort by completion time,
@@ -222,7 +222,7 @@ func (m *AgentTaskManager) cleanupHistory() {
 		start := len(validTasks) - m.maxHistorySize
 		validTasks = validTasks[start:]
 	}
-	
+
 	m.completedTasks = validTasks
 }
 
@@ -247,30 +247,30 @@ func (m *AgentTaskManager) GetActiveTasks() []*AgentTask {
 func (m *AgentTaskManager) GetCompletedTasks() []*CompletedTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// record(,)
 	// :cannot directly call cleanupHistory here,because write lock needed
 	// returnsrecord
 	now := time.Now()
 	cutoffTime := now.Add(-m.historyRetention)
-	
+
 	result := make([]*CompletedTask, 0, len(m.completedTasks))
 	for _, task := range m.completedTasks {
 		if task.CompletedAt.After(cutoffTime) {
 			result = append(result, task)
 		}
 	}
-	
+
 	// sort by completion time descending(newest first)
 	// since appended, newest at end,need to reverse
 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
 		result[i], result[j] = result[j], result[i]
 	}
-	
+
 	// returns
 	if len(result) > m.maxHistorySize {
 		result = result[:m.maxHistorySize]
 	}
-	
+
 	return result
 }

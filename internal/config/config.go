@@ -41,7 +41,7 @@ type Config struct {
 // MultiAgentConfig holds multi-agent orchestration settings (coexists with single Agent /agent-loop).
 type MultiAgentConfig struct {
 	Enabled                 bool                  `yaml:"enabled" json:"enabled"`
-	DefaultMode             string                `yaml:"default_mode" json:"default_mode"`                   // single | multi
+	DefaultMode             string                `yaml:"default_mode" json:"default_mode"` // single | multi
 	RobotUseMultiAgent      bool                  `yaml:"robot_use_multi_agent" json:"robot_use_multi_agent"`
 	BatchUseMultiAgent      bool                  `yaml:"batch_use_multi_agent" json:"batch_use_multi_agent"`
 	MaxIteration            int                   `yaml:"max_iteration" json:"max_iteration"`
@@ -112,25 +112,25 @@ type MCPConfig struct {
 }
 
 type OpenAIConfig struct {
-	Provider       string `yaml:"provider,omitempty" json:"provider,omitempty"` // "openai" (default) or "anthropic"
-	APIKey         string `yaml:"api_key" json:"api_key"`
-	BaseURL        string `yaml:"base_url" json:"base_url"`
-	Model          string `yaml:"model" json:"model"`
-	ToolModel      string `yaml:"tool_model,omitempty" json:"tool_model,omitempty"`
-	ToolBaseURL    string `yaml:"tool_base_url,omitempty" json:"tool_base_url,omitempty"`
-	ToolAPIKey     string `yaml:"tool_api_key,omitempty" json:"tool_api_key,omitempty"`
-	SummaryModel   string `yaml:"summary_model,omitempty" json:"summary_model,omitempty"`
-	SummaryBaseURL string `yaml:"summary_base_url,omitempty" json:"summary_base_url,omitempty"`
-	SummaryAPIKey  string `yaml:"summary_api_key,omitempty" json:"summary_api_key,omitempty"`
-	MaxTotalTokens   int     `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
-	RateLimitDelayMs int     `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"`
+	Provider         string `yaml:"provider,omitempty" json:"provider,omitempty"` // "openai" (default) or "anthropic"
+	APIKey           string `yaml:"api_key" json:"api_key"`
+	BaseURL          string `yaml:"base_url" json:"base_url"`
+	Model            string `yaml:"model" json:"model"`
+	ToolModel        string `yaml:"tool_model,omitempty" json:"tool_model,omitempty"`
+	ToolBaseURL      string `yaml:"tool_base_url,omitempty" json:"tool_base_url,omitempty"`
+	ToolAPIKey       string `yaml:"tool_api_key,omitempty" json:"tool_api_key,omitempty"`
+	SummaryModel     string `yaml:"summary_model,omitempty" json:"summary_model,omitempty"`
+	SummaryBaseURL   string `yaml:"summary_base_url,omitempty" json:"summary_base_url,omitempty"`
+	SummaryAPIKey    string `yaml:"summary_api_key,omitempty" json:"summary_api_key,omitempty"`
+	MaxTotalTokens   int    `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
+	RateLimitDelayMs int    `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"`
 	// Main model sampling (orchestrator/planner - creative, exploratory)
-	Temperature      float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`               // 0.0-2.0 (0=default). Higher = more creative planning.
-	TopP             float64 `yaml:"top_p,omitempty" json:"top_p,omitempty"`                           // 0.0-1.0 (0=default).
-	TopK             int     `yaml:"top_k,omitempty" json:"top_k,omitempty"`                           // Anthropic only.
+	Temperature float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"` // 0.0-2.0 (0=default). Higher = more creative planning.
+	TopP        float64 `yaml:"top_p,omitempty" json:"top_p,omitempty"`             // 0.0-1.0 (0=default).
+	TopK        int     `yaml:"top_k,omitempty" json:"top_k,omitempty"`             // Anthropic only.
 	// Tool model sampling (executor - precise, deterministic)
-	ToolTemperature  float64 `yaml:"tool_temperature,omitempty" json:"tool_temperature,omitempty"`     // 0.0-2.0 (0=inherit main). Lower = more precise tool args.
-	ToolTopP         float64 `yaml:"tool_top_p,omitempty" json:"tool_top_p,omitempty"`                 // 0.0-1.0 (0=inherit main).
+	ToolTemperature float64 `yaml:"tool_temperature,omitempty" json:"tool_temperature,omitempty"` // 0.0-2.0 (0=inherit main). Lower = more precise tool args.
+	ToolTopP        float64 `yaml:"tool_top_p,omitempty" json:"tool_top_p,omitempty"`             // 0.0-1.0 (0=inherit main).
 	// Summary model sampling (compressor - factual, concise)
 	SummaryTemperature float64 `yaml:"summary_temperature,omitempty" json:"summary_temperature,omitempty"` // 0.0-2.0 (0=inherit main). Low recommended for accurate summaries.
 	SummaryTopP        float64 `yaml:"summary_top_p,omitempty" json:"summary_top_p,omitempty"`             // 0.0-1.0 (0=inherit main).
@@ -342,18 +342,18 @@ type SSLStripConfig struct {
 // All tools spawned by the executor inherit proxy environment variables.
 // Tools that don't respect env vars (nmap, masscan) use proxychains wrapper.
 type ProxyConfig struct {
-	Enabled      bool     `yaml:"enabled" json:"enabled"`                 // Enable proxy middleware (default false)
-	Type         string   `yaml:"type" json:"type"`                       // Proxy type: tor, socks5, socks5h, http, https (default socks5h)
-	Host         string   `yaml:"host" json:"host"`                       // Proxy host (default 127.0.0.1)
-	Port         int      `yaml:"port" json:"port"`                       // Proxy port (default 9050 for tor, 1080 for socks5)
-	Username     string   `yaml:"username,omitempty" json:"username"`     // Auth username (optional, for socks5/http with auth)
-	Password     string   `yaml:"password,omitempty" json:"password"`     // Auth password (optional)
-	NoProxy      string   `yaml:"no_proxy" json:"no_proxy"`               // Comma-separated bypass list (default: localhost,127.0.0.1,*.local)
+	Enabled      bool     `yaml:"enabled" json:"enabled"`                     // Enable proxy middleware (default false)
+	Type         string   `yaml:"type" json:"type"`                           // Proxy type: tor, socks5, socks5h, http, https (default socks5h)
+	Host         string   `yaml:"host" json:"host"`                           // Proxy host (default 127.0.0.1)
+	Port         int      `yaml:"port" json:"port"`                           // Proxy port (default 9050 for tor, 1080 for socks5)
+	Username     string   `yaml:"username,omitempty" json:"username"`         // Auth username (optional, for socks5/http with auth)
+	Password     string   `yaml:"password,omitempty" json:"password"`         // Auth password (optional)
+	NoProxy      string   `yaml:"no_proxy" json:"no_proxy"`                   // Comma-separated bypass list (default: localhost,127.0.0.1,*.local)
 	ExemptTools  []string `yaml:"exempt_tools,omitempty" json:"exempt_tools"` // Tools that bypass proxy (e.g. tools that need direct connection)
-	TorAutoStart bool     `yaml:"tor_auto_start" json:"tor_auto_start"`   // Auto-start tor service if type=tor and tor not running (default false)
-	ProxyChains  bool     `yaml:"proxychains" json:"proxychains"`         // Wrap non-env-aware tools (nmap, masscan) with proxychains (default false)
-	DNSProxy     bool     `yaml:"dns_proxy" json:"dns_proxy"`             // Route DNS through proxy (socks5h, tor). True by default for tor. (default true)
-	HealthCheck  bool     `yaml:"health_check" json:"health_check"`       // Verify proxy works at startup (default true)
+	TorAutoStart bool     `yaml:"tor_auto_start" json:"tor_auto_start"`       // Auto-start tor service if type=tor and tor not running (default false)
+	ProxyChains  bool     `yaml:"proxychains" json:"proxychains"`             // Wrap non-env-aware tools (nmap, masscan) with proxychains (default false)
+	DNSProxy     bool     `yaml:"dns_proxy" json:"dns_proxy"`                 // Route DNS through proxy (socks5h, tor). True by default for tor. (default true)
+	HealthCheck  bool     `yaml:"health_check" json:"health_check"`           // Verify proxy works at startup (default true)
 }
 
 type AuthConfig struct {
@@ -968,7 +968,7 @@ func Default() *Config {
 				ChunkSize:        768, // increase to 768,better context preservation
 				ChunkOverlap:     50,
 				MaxChunksPerItem: 20,  // limit each knowledge item to max 20 chunks, avoid excessive quota consumption
-				MaxRPM: 100, // default 100 RPM, 429 error
+				MaxRPM:           100, // default 100 RPM, 429 error
 				RateLimitDelayMs: 600, // 600ms interval, corresponding to 100 RPM
 				MaxRetries:       3,
 				RetryDelayMs:     1000,
@@ -991,18 +991,18 @@ type IndexingConfig struct {
 	// chunking config
 	ChunkSize        int `yaml:"chunk_size,omitempty" json:"chunk_size,omitempty"`                   // max tokens per chunk (estimated),default 512
 	ChunkOverlap     int `yaml:"chunk_overlap,omitempty" json:"chunk_overlap,omitempty"`             // overlap tokens between chunks,default 50
-	MaxChunksPerItem int `yaml:"max_chunks_per_item,omitempty" json:"max_chunks_per_item,omitempty"` // ,0 
+	MaxChunksPerItem int `yaml:"max_chunks_per_item,omitempty" json:"max_chunks_per_item,omitempty"` // ,0
 
 	// rate limit config(to avoid API rate limits)
-	RateLimitDelayMs int `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // request interval time(),0 
-	MaxRPM int `yaml:"max_rpm,omitempty" json:"max_rpm,omitempty"` // ,0 
+	RateLimitDelayMs int `yaml:"rate_limit_delay_ms,omitempty" json:"rate_limit_delay_ms,omitempty"` // request interval time(),0
+	MaxRPM           int `yaml:"max_rpm,omitempty" json:"max_rpm,omitempty"`                         // ,0
 
 	// retry config(error)
 	MaxRetries   int `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`       // max retry count,default 3
 	RetryDelayMs int `yaml:"retry_delay_ms,omitempty" json:"retry_delay_ms,omitempty"` // retry delay(),default 1000
 
 	// batch processing config(,current,)
-	BatchSize int `yaml:"batch_size,omitempty" json:"batch_size,omitempty"` // ,0 
+	BatchSize int `yaml:"batch_size,omitempty" json:"batch_size,omitempty"` // ,0
 }
 
 // EmbeddingConfig holds the embedding model configuration.

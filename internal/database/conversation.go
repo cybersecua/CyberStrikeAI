@@ -307,7 +307,7 @@ func (db *DB) GetConversationLite(id string) (*Conversation, error) {
 func (db *DB) ListConversations(limit, offset int, search string) ([]*Conversation, error) {
 	var rows *sql.Rows
 	var err error
-	
+
 	if search != "" {
 		// use LIKE for fuzzy search,titlemessage
 		searchPattern := "%" + search + "%"
@@ -327,7 +327,7 @@ func (db *DB) ListConversations(limit, offset int, search string) ([]*Conversati
 			limit, offset,
 		)
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("conversationtable failed: %w", err)
 	}
@@ -547,7 +547,7 @@ type ProcessDetail struct {
 	ConversationID string    `json:"conversationId"`
 	EventType      string    `json:"eventType"` // iteration, thinking, tool_calls_detected, tool_call, tool_result, progress, error
 	Message        string    `json:"message"`
-	Data string `json:"data"` // JSONformat
+	Data           string    `json:"data"` // JSONformat
 	CreatedAt      time.Time `json:"createdAt"`
 }
 

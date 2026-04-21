@@ -64,17 +64,17 @@ type ConfigHandler struct {
 	config                     *config.Config
 	mcpServer                  *mcp.Server
 	executor                   *security.Executor
-	agent AgentUpdater // Agent interface,update Agent config
+	agent                      AgentUpdater               // Agent interface,update Agent config
 	attackChainHandler         AttackChainUpdater         // attack chain handler interface,for updating config
-	externalMCPMgr *mcp.ExternalMCPManager // external MCP management
-	knowledgeToolRegistrar KnowledgeToolRegistrar // knowledge base()
+	externalMCPMgr             *mcp.ExternalMCPManager    // external MCP management
+	knowledgeToolRegistrar     KnowledgeToolRegistrar     // knowledge base()
 	vulnerabilityToolRegistrar VulnerabilityToolRegistrar // vulnerability tool registrar (optional)
 	webshellToolRegistrar      WebshellToolRegistrar      // WebShell tool registrar (optional)
 	skillsToolRegistrar        SkillsToolRegistrar        // Skills tool registrar (optional)
-	retrieverUpdater RetrieverUpdater // retriever()
-	knowledgeInitializer KnowledgeInitializer // knowledge base()
+	retrieverUpdater           RetrieverUpdater           // retriever()
+	knowledgeInitializer       KnowledgeInitializer       // knowledge base()
 	appUpdater                 AppUpdater                 // App updater (optional)
-	robotRestarter RobotRestarter // robot connection restarter; ApplyConfig restarts Telegram bot
+	robotRestarter             RobotRestarter             // robot connection restarter; ApplyConfig restarts Telegram bot
 	logger                     *zap.Logger
 	mu                         sync.RWMutex
 	lastEmbeddingConfig        *config.EmbeddingConfig // previous embedding model config(for detecting changes)
@@ -191,7 +191,7 @@ type ToolConfigInfo struct {
 	Enabled     bool   `json:"enabled"`
 	IsExternal  bool   `json:"is_external,omitempty"`  // whether external MCP tool
 	ExternalMCP string `json:"external_mcp,omitempty"` // external MCP name(if external tool)
-	RoleEnabled *bool `json:"role_enabled,omitempty"` // currentrole(nilrole)
+	RoleEnabled *bool  `json:"role_enabled,omitempty"` // currentrole(nilrole)
 }
 
 // GetConfig current
@@ -232,7 +232,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 			tools = append(tools, ToolConfigInfo{
 				Name:        mcpTool.Name,
 				Description: description,
-				Enabled: true, // default
+				Enabled:     true, // default
 				IsExternal:  false,
 			})
 		}
@@ -403,7 +403,7 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 			toolInfo := ToolConfigInfo{
 				Name:        mcpTool.Name,
 				Description: description,
-				Enabled: true, // default
+				Enabled:     true, // default
 				IsExternal:  false,
 			}
 
@@ -448,7 +448,7 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 
 		// role
 		for _, toolInfo := range externalTools {
-			// 
+			//
 			if searchTermLower != "" {
 				nameLower := strings.ToLower(toolInfo.Name)
 				descLower := strings.ToLower(toolInfo.Description)
@@ -935,7 +935,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 
 // saveConfig save config to file
 func (h *ConfigHandler) saveConfig() error {
-	// 
+	//
 	data, err := os.ReadFile(h.configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
@@ -1468,12 +1468,12 @@ type RateLimitInfo struct {
 
 // TestAPIResponse is the JSON returned by TestAPIEndpoint.
 type TestAPIResponse struct {
-	Status            string        `json:"status"`
-	Provider          string        `json:"provider,omitempty"`
-	Models            []ModelInfo   `json:"models,omitempty"`
-	RateLimits        *RateLimitInfo `json:"rate_limits,omitempty"`
-	RecommendedDelay  int           `json:"recommended_delay_ms"`
-	Error             string        `json:"error,omitempty"`
+	Status           string         `json:"status"`
+	Provider         string         `json:"provider,omitempty"`
+	Models           []ModelInfo    `json:"models,omitempty"`
+	RateLimits       *RateLimitInfo `json:"rate_limits,omitempty"`
+	RecommendedDelay int            `json:"recommended_delay_ms"`
+	Error            string         `json:"error,omitempty"`
 }
 
 // TestAPIEndpoint handles POST /api/config/test-api.
@@ -1765,7 +1765,7 @@ func classifyHTTPError(err error) TestAPIResponse {
 
 // EndpointHealth describes a single endpoint's status.
 type EndpointHealth struct {
-	Status    string `json:"status"`               // "ok", "error", "not_configured"
+	Status    string `json:"status"` // "ok", "error", "not_configured"
 	Model     string `json:"model,omitempty"`
 	BaseURL   string `json:"base_url,omitempty"`
 	LatencyMs int64  `json:"latency_ms,omitempty"`
@@ -1774,7 +1774,7 @@ type EndpointHealth struct {
 
 // ModelHealthResponse is the JSON returned by the model health check endpoint.
 type ModelHealthResponse struct {
-	Status    string          `json:"status"`               // "ok", "error", "unconfigured"
+	Status    string          `json:"status"` // "ok", "error", "unconfigured"
 	Provider  string          `json:"provider,omitempty"`
 	Model     string          `json:"model,omitempty"`
 	BaseURL   string          `json:"base_url,omitempty"`

@@ -118,16 +118,16 @@ func (h *MarkdownAgentsHandler) GetMarkdownAgent(c *gin.Context) {
 }
 
 type markdownAgentBody struct {
-	Filename       string   `json:"filename"`
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	Tools          []string `json:"tools"`
-	Instruction    string   `json:"instruction"`
-	BindRole       string   `json:"bind_role"`
-	MaxIterations  int      `json:"max_iterations"`
-	Kind           string   `json:"kind"`
-	Raw            string   `json:"raw"`
+	Filename      string   `json:"filename"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Tools         []string `json:"tools"`
+	Instruction   string   `json:"instruction"`
+	BindRole      string   `json:"bind_role"`
+	MaxIterations int      `json:"max_iterations"`
+	Kind          string   `json:"kind"`
+	Raw           string   `json:"raw"`
 }
 
 // CreateMarkdownAgent POST /api/multi-agent/markdown-agents

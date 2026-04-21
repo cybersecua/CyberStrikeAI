@@ -79,8 +79,8 @@ type AgentHandler struct {
 	knowledgeManager interface {    // knowledge base manager interface
 		LogRetrieval(conversationID, messageID, query, riskType string, retrievedItems []string) error
 	}
-	skillsManager       *skills.Manager // Skills manager
-	agentsMarkdownDir   string          // multi-agent: Markdown sub-agent directory (absolute path, empty means no disk merge)
+	skillsManager     *skills.Manager // Skills manager
+	agentsMarkdownDir string          // multi-agent: Markdown sub-agent directory (absolute path, empty means no disk merge)
 }
 
 // NewAgentHandler creates a new Agent handler
@@ -122,8 +122,8 @@ func (h *AgentHandler) SetAgentsMarkdownDir(absDir string) {
 
 // ChatAttachment chat attachment (user uploaded file)
 type ChatAttachment struct {
-	FileName   string `json:"fileName"`             // display file name
-	Content    string `json:"content,omitempty"`    // text or base64; can be empty if pre-uploaded to server
+	FileName   string `json:"fileName"`          // display file name
+	Content    string `json:"content,omitempty"` // text or base64; can be empty if pre-uploaded to server
 	MimeType   string `json:"mimeType,omitempty"`
 	ServerPath string `json:"serverPath,omitempty"` // absolute path saved under chat_uploads (returned by POST /api/chat-uploads)
 }
@@ -701,10 +701,10 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 	return result.Response, conversationID, nil
 }
 
-// StreamEvent 
+// StreamEvent
 type StreamEvent struct {
 	Type    string      `json:"type"`    // conversation, progress, tool_call, tool_result, response, error, cancelled, done
-	Message string `json:"message"` // message
+	Message string      `json:"message"` // message
 	Data    interface{} `json:"data,omitempty"`
 }
 
@@ -739,7 +739,7 @@ func (h *AgentHandler) createProgressCallback(conversationID, assistantMessageID
 			if dataMap, ok := data.(map[string]interface{}); ok {
 				toolName, _ := dataMap["toolName"].(string)
 				if toolName == builtin.ToolSearchKnowledgeBase {
-					// 
+					//
 					query := ""
 					riskType := ""
 					var retrievedItems []string
@@ -753,7 +753,7 @@ func (h *AgentHandler) createProgressCallback(conversationID, assistantMessageID
 							if rt, ok := cachedArgs["risk_type"].(string); ok && rt != "" {
 								riskType = rt
 							}
-							// 
+							//
 							delete(toolCallCache, toolCallId)
 						}
 					}
@@ -901,8 +901,8 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no") // nginx
 
-	// 
-	// 
+	//
+	//
 	clientDisconnected := false
 	// shared with sseKeepalive: ResponseWriter, chunked (ERR_INVALID_CHUNKED_ENCODING).
 	var sseWriteMu sync.Mutex
@@ -1195,7 +1195,7 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 
 	// execute Agent Loop,,(rolefinalMessagerolelist)
 	sendEvent("progress", "analyzing your request...", nil)
-	// :roleSkills req.Role WebShell 
+	// :roleSkills req.Role WebShell
 	stopKeepalive := make(chan struct{})
 	go sseKeepalive(c, stopKeepalive, &sseWriteMu)
 	defer close(stopKeepalive)
@@ -1353,18 +1353,18 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 		}
 	}
 
-	// 
+	//
 	sendEvent("response", result.Response, map[string]interface{}{
 		"mcpExecutionIds": result.MCPExecutionIDs,
 		"conversationId":  conversationID,
-		"messageId": assistantMessageID, // messageID,process details
+		"messageId":       assistantMessageID, // messageID,process details
 	})
 	sendEvent("done", "", map[string]interface{}{
 		"conversationId": conversationID,
 	})
 }
 
-// CancelAgentLoop 
+// CancelAgentLoop
 func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 	var req struct {
 		ConversationID string `json:"conversationId" binding:"required"`
@@ -1390,11 +1390,11 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":         "cancelling",
 		"conversationId": req.ConversationID,
-		"message": ",currentstop.",
+		"message":        ",currentstop.",
 	})
 }
 
-// ListAgentTasks 
+// ListAgentTasks
 func (h *AgentHandler) ListAgentTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"tasks": h.tasks.GetActiveTasks(),
@@ -1410,9 +1410,9 @@ func (h *AgentHandler) ListCompletedTasks(c *gin.Context) {
 
 // BatchTaskRequest batch tasks
 type BatchTaskRequest struct {
-	Title string `json:"title"` // title()
+	Title string   `json:"title"`                    // title()
 	Tasks []string `json:"tasks" binding:"required"` // list,
-	Role string `json:"role,omitempty"` // role(,defaultrole)
+	Role  string   `json:"role,omitempty"`           // role(,defaultrole)
 }
 
 // CreateBatchQueue batch tasks
@@ -1428,7 +1428,7 @@ func (h *AgentHandler) CreateBatchQueue(c *gin.Context) {
 		return
 	}
 
-	// 
+	//
 	validTasks := make([]string, 0, len(req.Tasks))
 	for _, task := range req.Tasks {
 		if task != "" {
@@ -1509,7 +1509,7 @@ func (h *AgentHandler) ListBatchQueues(c *gin.Context) {
 		return
 	}
 
-	// 
+	//
 	totalPages := (total + limit - 1) / limit
 	if totalPages == 0 {
 		totalPages = 1
@@ -1670,10 +1670,10 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 			break
 		}
 
-		// 
+		//
 		task, hasNext := h.batchTaskManager.GetNextTask(queueID)
 		if !hasNext {
-			// 
+			//
 			h.batchTaskManager.UpdateQueueStatus(queueID, "completed")
 			h.logger.Info("batch tasks", zap.String("queueId", queueID))
 			break
@@ -1778,16 +1778,22 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 			} else if resultMA != nil {
 				partialResp = resultMA.Response
 			}
+			partialLower := strings.ToLower(partialResp)
+			partialCancelled := partialResp != "" && (strings.Contains(partialLower, "task was cancelled") ||
+				strings.Contains(partialLower, "task has been cancelled") ||
+				strings.Contains(partialLower, "execution was interrupted") ||
+				strings.Contains(partialLower, "execution interrupted"))
 			isCancelled := errors.Is(runErr, context.Canceled) ||
 				strings.Contains(strings.ToLower(errStr), "context canceled") ||
 				strings.Contains(strings.ToLower(errStr), "context cancelled") ||
-				(partialResp != "" && (strings.Contains(partialResp, "") || strings.Contains(partialResp, "")))
+				partialCancelled
 
 			if isCancelled {
 				h.logger.Info("batch tasks", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("conversationId", conversationID))
 				cancelMsg := "Task cancelled by user, subsequent operations stopped."
-				// message,
-				if partialResp != "" && (strings.Contains(partialResp, "") || strings.Contains(partialResp, "")) {
+				// If the partial response already contains a more specific cancel message from the
+				// model, prefer it verbatim over the generic fallback.
+				if partialCancelled {
 					cancelMsg = partialResp
 				}
 				// message
@@ -1799,7 +1805,7 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 					); updateErr != nil {
 						h.logger.Warn("failed to update message after cancellation", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(updateErr))
 					}
-					// 
+					//
 					if err := h.db.AddProcessDetail(assistantMessageID, conversationID, "cancelled", cancelMsg, nil); err != nil {
 						h.logger.Warn("", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(err))
 					}
@@ -1895,14 +1901,14 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 				}
 			}
 
-			// 
+			//
 			h.batchTaskManager.UpdateTaskStatusWithConversationID(queueID, task.ID, "completed", resText, "", conversationID)
 		}
 
-		// 
+		//
 		h.batchTaskManager.MoveToNextTask(queueID)
 
-		// 
+		//
 		queue, _ = h.batchTaskManager.GetBatchQueue(queueID)
 		if queue.Status == "cancelled" || queue.Status == "paused" {
 			break

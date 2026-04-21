@@ -36,7 +36,7 @@ func NewWebShellHandler(logger *zap.Logger, db *database.DB) *WebShellHandler {
 	}
 }
 
-// CreateConnectionRequest 
+// CreateConnectionRequest
 type CreateConnectionRequest struct {
 	URL      string `json:"url" binding:"required"`
 	Password string `json:"password"`
@@ -46,7 +46,7 @@ type CreateConnectionRequest struct {
 	Remark   string `json:"remark"`
 }
 
-// UpdateConnectionRequest 
+// UpdateConnectionRequest
 type UpdateConnectionRequest struct {
 	URL      string `json:"url" binding:"required"`
 	Password string `json:"password"`
@@ -329,12 +329,12 @@ type ExecRequest struct {
 	URL      string `json:"url" binding:"required"`
 	Password string `json:"password"`
 	Type     string `json:"type"`      // php, asp, aspx, jsp, custom
-	Method string `json:"method"` // GET POST,default POST
+	Method   string `json:"method"`    // GET POST,default POST
 	CmdParam string `json:"cmd_param"` // command parameter, cmd/xxx,default cmd
 	Command  string `json:"command" binding:"required"`
 }
 
-// ExecResponse 
+// ExecResponse
 type ExecResponse struct {
 	OK       bool   `json:"ok"`
 	Output   string `json:"output"`
@@ -342,21 +342,21 @@ type ExecResponse struct {
 	HTTPCode int    `json:"http_code,omitempty"`
 }
 
-// FileOpRequest 
+// FileOpRequest
 type FileOpRequest struct {
 	URL        string `json:"url" binding:"required"`
 	Password   string `json:"password"`
 	Type       string `json:"type"`
-	Method string `json:"method"` // GET POST,default POST
-	CmdParam string `json:"cmd_param"` // command parameter, cmd/xxx,default cmd
+	Method     string `json:"method"`                    // GET POST,default POST
+	CmdParam   string `json:"cmd_param"`                 // command parameter, cmd/xxx,default cmd
 	Action     string `json:"action" binding:"required"` // list, read, delete, write, mkdir, rename, upload, upload_chunk
 	Path       string `json:"path"`
-	TargetPath string `json:"target_path"` // rename 
-	Content string `json:"content"` // write/upload 
-	ChunkIndex int `json:"chunk_index"` // upload_chunk ,0 
+	TargetPath string `json:"target_path"` // rename
+	Content    string `json:"content"`     // write/upload
+	ChunkIndex int    `json:"chunk_index"` // upload_chunk ,0
 }
 
-// FileOpResponse 
+// FileOpResponse
 type FileOpResponse struct {
 	OK     bool   `json:"ok"`
 	Output string `json:"output"`

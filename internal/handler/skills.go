@@ -23,7 +23,7 @@ type SkillsHandler struct {
 	config     *config.Config
 	configPath string
 	logger     *zap.Logger
-	db *database.DB // database connection()
+	db         *database.DB // database connection()
 }
 
 // NewSkillsHandler creates a new Skills handler

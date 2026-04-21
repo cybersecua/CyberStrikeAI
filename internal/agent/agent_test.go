@@ -444,7 +444,10 @@ func TestAgentLoop_LastIterationSummaryWaitsForDeferredToolResults(t *testing.T)
 		ParallelToolExecution: true,
 		LargeResultThreshold:  1024,
 	}, mcpServer, nil, logger, 1)
-	agent.parallelToolWait = 10 * time.Millisecond
+	// parallelToolWait was removed from the Agent struct during the eino-removal
+	// refactor; the parallel-tool path now relies on the agent's own channel-based
+	// coordination instead of a fixed wait window, so this test no longer gates
+	// on it.
 	agent.memoryCompressor = nil
 
 	result, err := agent.AgentLoop(context.Background(), "run slow tool", nil)
@@ -516,7 +519,7 @@ func TestAgentLoop_StopWaitsForDeferredToolResults(t *testing.T) {
 		ParallelToolExecution: true,
 		LargeResultThreshold:  1024,
 	}, mcpServer, nil, logger, 5)
-	agent.parallelToolWait = 10 * time.Millisecond
+	// See comment on the sibling test — parallelToolWait no longer exists on Agent.
 	agent.memoryCompressor = nil
 
 	result, err := agent.AgentLoop(context.Background(), "run slow tool", nil)

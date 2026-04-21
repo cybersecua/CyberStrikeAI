@@ -20,7 +20,7 @@ type Retriever struct {
 	logger   *zap.Logger
 }
 
-// RetrievalConfig 
+// RetrievalConfig
 type RetrievalConfig struct {
 	TopK                int
 	SimilarityThreshold float64
@@ -111,7 +111,7 @@ func (r *Retriever) bm25Score(query, text string) float64 {
 		tfScore := tf / (tf + k1*lengthNorm)
 
 		// improved IDF calculation:estimate using word length and frequency
-		// short words(2-3 )usually more important,long words IDF 
+		// short words(2-3 )usually more important,long words IDF
 		idfWeight := 1.0
 		termLen := len(term)
 		if termLen <= 2 {
@@ -174,13 +174,13 @@ func (r *Retriever) Search(ctx context.Context, req *SearchRequest) ([]*Retrieva
 	// query all vectors(type)
 	// use exact match(=)improve performance and accuracy
 	// typelist,category
-		// ,category,SQLmatch,helpmatch
-		var rows *sql.Rows
-		if req.RiskType != "" {
-			// use exact match(=),
-			// COLLATE NOCASE case-insensitive match,improve fault tolerance
-			// :risk_typecategory,match
-			// category
+	// ,category,SQLmatch,helpmatch
+	var rows *sql.Rows
+	if req.RiskType != "" {
+		// use exact match(=),
+		// COLLATE NOCASE case-insensitive match,improve fault tolerance
+		// :risk_typecategory,match
+		// category
 		rows, err = r.db.Query(`
 			SELECT e.id, e.item_id, e.chunk_index, e.chunk_text, e.embedding, i.category, i.title
 			FROM knowledge_embeddings e
@@ -350,7 +350,7 @@ func (r *Retriever) Search(ctx context.Context, req *SearchRequest) ([]*Retrieva
 			if len(candidates) < maxResults {
 				maxResults = len(candidates)
 			}
-			// only return similarity >= 0.55 
+			// only return similarity >= 0.55
 			for _, cand := range candidates {
 				if cand.similarity >= minAcceptableSimilarity && len(filteredCandidates) < maxResults {
 					filteredCandidates = append(filteredCandidates, cand)
@@ -371,7 +371,7 @@ func (r *Retriever) Search(ctx context.Context, req *SearchRequest) ([]*Retrieva
 		)
 	}
 
-	// returns Top-K 
+	// returns Top-K
 	if len(filteredCandidates) > topK {
 		// if too many results after filtering,only take Top-K
 		filteredCandidates = filteredCandidates[:topK]
@@ -574,9 +574,9 @@ func (r *Retriever) expandContext(ctx context.Context, results []*RetrievalResul
 		for _, relatedChunk := range relatedChunksList {
 			expandedResult := &RetrievalResult{
 				Chunk:      relatedChunk,
-				Item: itemResults[0].Item, // Item
+				Item:       itemResults[0].Item, // Item
 				Similarity: expandedSimilarity,
-				Score: expandedScore, // hybrid score
+				Score:      expandedScore, // hybrid score
 			}
 			expandedResults = append(expandedResults, expandedResult)
 			processedChunkIDs[relatedChunk.ID] = true

@@ -18,20 +18,20 @@ import (
 )
 
 const (
-	robotCmdHelp        = "help"
-	robotCmdList        = "list"
-	robotCmdListAlt     = "conversationlist"
-	robotCmdSwitch      = "switch"
-	robotCmdContinue    = "continue"
-	robotCmdNew = "conversation"
-	robotCmdClear       = "clear"
-	robotCmdCurrent     = "current"
-	robotCmdStop        = "stop"
-	robotCmdRoles       = "role"
-	robotCmdRolesList   = "rolelist"
-	robotCmdSwitchRole  = "switchrole"
-	robotCmdDelete      = "delete"
-	robotCmdVersion     = "version"
+	robotCmdHelp       = "help"
+	robotCmdList       = "list"
+	robotCmdListAlt    = "conversationlist"
+	robotCmdSwitch     = "switch"
+	robotCmdContinue   = "continue"
+	robotCmdNew        = "conversation"
+	robotCmdClear      = "clear"
+	robotCmdCurrent    = "current"
+	robotCmdStop       = "stop"
+	robotCmdRoles      = "role"
+	robotCmdRolesList  = "rolelist"
+	robotCmdSwitchRole = "switchrole"
+	robotCmdDelete     = "delete"
+	robotCmdVersion    = "version"
 )
 
 // RobotHandler handles robot message callbacks (Telegram).
@@ -352,7 +352,7 @@ func (h *RobotHandler) cmdVersion() string {
 // handleRobotCommand handles robot built-in commands.
 func (h *RobotHandler) handleRobotCommand(platform, userID, text string) (string, bool) {
 	switch {
-	case text == robotCmdHelp || text == "help" || text == "?" || text == "?":
+	case text == robotCmdHelp || text == "help" || text == "?":
 		return h.cmdHelp(), true
 	case text == robotCmdList || text == robotCmdListAlt || text == "list":
 		return h.cmdList(), true

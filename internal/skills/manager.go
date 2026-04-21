@@ -14,7 +14,7 @@ import (
 type Manager struct {
 	skillsDir string
 	logger    *zap.Logger
-	skills map[string]*cachedSkill // loadskills(status)
+	skills    map[string]*cachedSkill // loadskills(status)
 	mu        sync.RWMutex            // protects skills map concurrent access
 }
 

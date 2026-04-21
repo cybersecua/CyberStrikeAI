@@ -81,11 +81,11 @@ type anthropicMessage struct {
 }
 
 type anthropicContentBlock struct {
-	Type      string          `json:"type"`                 // "text", "tool_use", "tool_result"
-	Text      string          `json:"text,omitempty"`       // text
-	ID        string          `json:"id,omitempty"`         // tool_use
-	Name      string          `json:"name,omitempty"`       // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`      // tool_use
+	Type      string          `json:"type"`                  // "text", "tool_use", "tool_result"
+	Text      string          `json:"text,omitempty"`        // text
+	ID        string          `json:"id,omitempty"`          // tool_use
+	Name      string          `json:"name,omitempty"`        // tool_use
+	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
 	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
 	Content   interface{}     `json:"content,omitempty"`     // tool_result (string or blocks) - will be set explicitly
 }
@@ -140,9 +140,9 @@ type anthropicSSEContentBlockDelta struct {
 	Type  string `json:"type"`
 	Index int    `json:"index"`
 	Delta struct {
-		Type        string          `json:"type"` // "text_delta" or "input_json_delta"
-		Text        string          `json:"text,omitempty"`
-		PartialJSON string          `json:"partial_json,omitempty"`
+		Type        string `json:"type"` // "text_delta" or "input_json_delta"
+		Text        string `json:"text,omitempty"`
+		PartialJSON string `json:"partial_json,omitempty"`
 	} `json:"delta"`
 }
 
@@ -215,11 +215,11 @@ func openaiToAnthropicRequest(payload interface{}) (*anthropicRequest, error) {
 	var systemParts []string
 	for _, rawMsg := range oai.Messages {
 		var msg struct {
-			Role       string          `json:"role"`
-			Content    json.RawMessage `json:"content"`
+			Role       string            `json:"role"`
+			Content    json.RawMessage   `json:"content"`
 			ToolCalls  []json.RawMessage `json:"tool_calls,omitempty"`
-			ToolCallID string          `json:"tool_call_id,omitempty"`
-			Name       string          `json:"name,omitempty"`
+			ToolCallID string            `json:"tool_call_id,omitempty"`
+			Name       string            `json:"name,omitempty"`
 		}
 		if err := json.Unmarshal(rawMsg, &msg); err != nil {
 			continue
@@ -415,9 +415,9 @@ func anthropicResponseToOpenAI(resp *anthropicResponse) (json.RawMessage, error)
 	}
 
 	oaiResp := map[string]interface{}{
-		"id":      resp.ID,
-		"object":  "chat.completion",
-		"model":   "",
+		"id":     resp.ID,
+		"object": "chat.completion",
+		"model":  "",
 		"choices": []interface{}{
 			map[string]interface{}{
 				"index":         0,

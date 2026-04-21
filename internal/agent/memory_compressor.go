@@ -82,14 +82,14 @@ Rules:
 
 // MemoryCompressor is responsible for compressing historical context before calling the LLM to avoid token explosion.
 type MemoryCompressor struct {
-	maxTotalTokens   int
-	minRecentMessage int
-	maxImages        int
-	chunkSize        int
+	maxTotalTokens     int
+	minRecentMessage   int
+	maxImages          int
+	chunkSize          int
 	summaryModel       string
 	summaryTemperature float64
 	summaryTopP        float64
-	timeout          time.Duration
+	timeout            time.Duration
 
 	tokenCounter     TokenCounter
 	completionClient CompletionClient
@@ -174,17 +174,17 @@ func NewMemoryCompressor(cfg MemoryCompressorConfig) (*MemoryCompressor, error) 
 	}
 
 	return &MemoryCompressor{
-		maxTotalTokens:   cfg.MaxTotalTokens,
-		minRecentMessage: cfg.MinRecentMessage,
-		maxImages:        cfg.MaxImages,
-		chunkSize:        cfg.ChunkSize,
+		maxTotalTokens:     cfg.MaxTotalTokens,
+		minRecentMessage:   cfg.MinRecentMessage,
+		maxImages:          cfg.MaxImages,
+		chunkSize:          cfg.ChunkSize,
 		summaryModel:       cfg.SummaryModel,
 		summaryTemperature: cfg.OpenAIConfig.SummaryTemperature,
 		summaryTopP:        cfg.OpenAIConfig.SummaryTopP,
-		timeout:          cfg.Timeout,
-		tokenCounter:     cfg.TokenCounter,
-		completionClient: cfg.CompletionClient,
-		logger:           cfg.Logger,
+		timeout:            cfg.Timeout,
+		tokenCounter:       cfg.TokenCounter,
+		completionClient:   cfg.CompletionClient,
+		logger:             cfg.Logger,
 	}, nil
 }
 

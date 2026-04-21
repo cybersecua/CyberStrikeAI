@@ -22,7 +22,7 @@ const (
 	terminalTimeout       = 30 * time.Minute
 )
 
-// TerminalHandler 
+// TerminalHandler
 type TerminalHandler struct {
 	logger *zap.Logger
 }
@@ -45,14 +45,14 @@ func NewTerminalHandler(logger *zap.Logger) *TerminalHandler {
 	return &TerminalHandler{logger: logger}
 }
 
-// RunCommandRequest 
+// RunCommandRequest
 type RunCommandRequest struct {
 	Command string `json:"command"`
 	Shell   string `json:"shell,omitempty"`
 	Cwd     string `json:"cwd,omitempty"`
 }
 
-// RunCommandResponse 
+// RunCommandResponse
 type RunCommandResponse struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
@@ -95,7 +95,7 @@ func (h *TerminalHandler) RunCommand(c *gin.Context) {
 		cmd = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
 	} else {
 		cmd = exec.CommandContext(ctx, shell, "-c", cmdStr)
-		// TTY COLUMNS/TERM, ping usage 
+		// TTY COLUMNS/TERM, ping usage
 		cmd.Env = append(os.Environ(), "COLUMNS=256", "LINES=40", "TERM=xterm-256color")
 	}
 
@@ -179,11 +179,11 @@ func (h *TerminalHandler) RunCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// streamEvent SSE 
+// streamEvent SSE
 type streamEvent struct {
 	T string `json:"t"` // "out" | "err" | "exit"
 	D string `json:"d,omitempty"`
-	C int `json:"c"` // exit code( omitempty, 0 [exit undefined])
+	C int    `json:"c"` // exit code( omitempty, 0 [exit undefined])
 }
 
 // RunCommandStream ,(SSE)

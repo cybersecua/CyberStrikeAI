@@ -36,7 +36,7 @@ type RAGContextInjector struct {
 	fetchTimeout  time.Duration // per-request timeout for the pre-flight knowledge fetch
 
 	// Cache to avoid re-fetching identical or very similar queries.
-	cacheMu   sync.Mutex
+	cacheMu    sync.Mutex
 	blockCache *ragCache // cached BuildContextBlock result
 	hintCache  *ragCache // cached ToolGuidanceHint result
 }

@@ -15,18 +15,18 @@ const ProtocolVersion = "2024-11-05"
 
 // Message MCP message
 type Message struct {
-	ID      interface{}       `json:"id,omitempty"`
-	Method  string            `json:"method,omitempty"`
-	Params  json.RawMessage   `json:"params,omitempty"`
-	Result  json.RawMessage   `json:"result,omitempty"`
-	Error   *Error            `json:"error,omitempty"`
-	Version string            `json:"jsonrpc,omitempty"`
+	ID      interface{}     `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
+	Version string          `json:"jsonrpc,omitempty"`
 }
 
 // Error MCP error
 type Error struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
@@ -45,9 +45,9 @@ type ClientInfo struct {
 
 // InitializeResponse initialize response
 type InitializeResponse struct {
-	ProtocolVersion string                 `json:"protocolVersion"`
-	Capabilities    ServerCapabilities     `json:"capabilities"`
-	ServerInfo      ServerInfo             `json:"serverInfo"`
+	ProtocolVersion string             `json:"protocolVersion"`
+	Capabilities    ServerCapabilities `json:"capabilities"`
+	ServerInfo      ServerInfo         `json:"serverInfo"`
 }
 
 // ServerCapabilities server capabilities
@@ -392,4 +392,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-

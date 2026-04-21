@@ -33,10 +33,10 @@ func NewReconHandler(cfg *config.Config, logger *zap.Logger) *ReconHandler {
 // ── Validation endpoints ────────────────────────────────────────────────
 
 type validateKeyResponse struct {
-	Valid   bool   `json:"valid"`
-	Error   string `json:"error,omitempty"`
-	Info    string `json:"info,omitempty"`
-	Engine  string `json:"engine"`
+	Valid  bool   `json:"valid"`
+	Error  string `json:"error,omitempty"`
+	Info   string `json:"info,omitempty"`
+	Engine string `json:"engine"`
 }
 
 // ValidateFofaKey validates FOFA credentials by making a minimal query

@@ -65,7 +65,7 @@ type tgEntity struct {
 }
 
 type tgSentMessage struct {
-	MessageID int64 `json:"message_id"`
+	MessageID int64  `json:"message_id"`
 	Chat      tgChat `json:"chat"`
 }
 

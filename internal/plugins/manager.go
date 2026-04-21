@@ -41,9 +41,9 @@ type PluginReconPanel struct {
 // PluginFrontend describes frontend assets a plugin provides.
 type PluginFrontend struct {
 	NavItems    []PluginNavItem    `yaml:"nav_items" json:"nav_items"`       // sidebar nav items
-	Pages       []string           `yaml:"pages" json:"pages"`              // HTML page files in web/pages/
-	Scripts     []string           `yaml:"scripts" json:"scripts"`          // JS files in web/js/
-	Styles      []string           `yaml:"styles" json:"styles"`            // CSS files in web/css/
+	Pages       []string           `yaml:"pages" json:"pages"`               // HTML page files in web/pages/
+	Scripts     []string           `yaml:"scripts" json:"scripts"`           // JS files in web/js/
+	Styles      []string           `yaml:"styles" json:"styles"`             // CSS files in web/css/
 	ReconPanels []PluginReconPanel `yaml:"recon_panels" json:"recon_panels"` // recon tab panels
 }
 

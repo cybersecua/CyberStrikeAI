@@ -22,11 +22,11 @@ type Embedder struct {
 	config         *config.KnowledgeConfig
 	openAIConfig   *config.OpenAIConfig // for getting API Key
 	logger         *zap.Logger
-	rateLimiter    *rate.Limiter       // rate limiter
-	rateLimitDelay time.Duration       // request interval time
-	maxRetries     int                 // max retry count
-	retryDelay     time.Duration       // retry delay
-	mu             sync.Mutex          // protects rateLimiter
+	rateLimiter    *rate.Limiter // rate limiter
+	rateLimitDelay time.Duration // request interval time
+	maxRetries     int           // max retry count
+	retryDelay     time.Duration // retry delay
+	mu             sync.Mutex    // protects rateLimiter
 }
 
 // NewEmbedder creates a new embedder
@@ -76,7 +76,7 @@ type EmbeddingRequest struct {
 
 // EmbeddingResponse OpenAI embedding response
 type EmbeddingResponse struct {
-	Data []EmbeddingData `json:"data"`
+	Data  []EmbeddingData `json:"data"`
 	Error *EmbeddingError `json:"error,omitempty"`
 }
 

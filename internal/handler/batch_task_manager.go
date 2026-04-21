@@ -41,10 +41,10 @@ type BatchTaskQueue struct {
 
 // BatchTaskManager manages batch task queues
 type BatchTaskManager struct {
-	db            *database.DB
-	queues        map[string]*BatchTaskQueue
-	taskCancels   map[string]context.CancelFunc // stores the cancel function for each queue's current task
-	mu            sync.RWMutex
+	db          *database.DB
+	queues      map[string]*BatchTaskQueue
+	taskCancels map[string]context.CancelFunc // stores the cancel function for each queue's current task
+	mu          sync.RWMutex
 }
 
 // NewBatchTaskManager creates a new batch task manager

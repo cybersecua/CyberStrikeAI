@@ -11,14 +11,14 @@ const (
 	ToolSearchKnowledgeBase    = "search_knowledge_base"
 
 	// Skills tools
-	ToolListSkills    = "list_skills"
-	ToolReadSkill     = "read_skill"
+	ToolListSkills = "list_skills"
+	ToolReadSkill  = "read_skill"
 
 	// WebShell assistant tools (used by AI in WebShell management - AI assistant)
-	ToolWebshellExec       = "webshell_exec"
-	ToolWebshellFileList   = "webshell_file_list"
-	ToolWebshellFileRead   = "webshell_file_read"
-	ToolWebshellFileWrite  = "webshell_file_write"
+	ToolWebshellExec      = "webshell_exec"
+	ToolWebshellFileList  = "webshell_file_list"
+	ToolWebshellFileRead  = "webshell_file_read"
+	ToolWebshellFileWrite = "webshell_file_write"
 
 	// WebShell connection management tools (for managing webshell connections via MCP)
 	ToolManageWebshellList   = "manage_webshell_list"

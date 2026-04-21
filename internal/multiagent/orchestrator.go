@@ -190,16 +190,16 @@ func RunDeepAgent(
 	}
 
 	o := &orchestratorState{
-		ctx:            ctx,
-		appCfg:         appCfg,
-		ag:             ag,
-		logger:         logger,
-		conversationID: conversationID,
-		progress:       progress,
-		subDefs:        subDefs,
+		ctx:             ctx,
+		appCfg:          appCfg,
+		ag:              ag,
+		logger:          logger,
+		conversationID:  conversationID,
+		progress:        progress,
+		subDefs:         subDefs,
 		orchInstruction: orchInstruction,
-		maxIter:        deepMaxIter,
-		roleTools:      roleTools,
+		maxIter:         deepMaxIter,
+		roleTools:       roleTools,
 	}
 
 	return o.run(userMessage, history)
@@ -207,16 +207,16 @@ func RunDeepAgent(
 
 // orchestratorState holds all state for a single orchestrator run.
 type orchestratorState struct {
-	ctx            context.Context
-	appCfg         *config.Config
-	ag             *agent.Agent
-	logger         *zap.Logger
-	conversationID string
-	progress       func(eventType, message string, data interface{})
-	subDefs        []subAgentDef
+	ctx             context.Context
+	appCfg          *config.Config
+	ag              *agent.Agent
+	logger          *zap.Logger
+	conversationID  string
+	progress        func(eventType, message string, data interface{})
+	subDefs         []subAgentDef
 	orchInstruction string
-	maxIter        int
-	roleTools      []string
+	maxIter         int
+	roleTools       []string
 
 	// Mutable state, protected by mu.
 	mu     sync.Mutex
@@ -513,10 +513,10 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 		body := strings.TrimSpace(choice.Message.Content)
 		if body != "" {
 			o.sendProgress("response_start", "", map[string]interface{}{
-				"conversationId":   o.conversationID,
-				"mcpExecutionIds":  o.snapshotMCPIDs(),
+				"conversationId":     o.conversationID,
+				"mcpExecutionIds":    o.snapshotMCPIDs(),
 				"messageGeneratedBy": "native:orchestrator",
-				"einoRole":         "orchestrator",
+				"einoRole":           "orchestrator",
 			})
 			o.sendProgress("response_delta", body, map[string]interface{}{
 				"conversationId":  o.conversationID,
@@ -836,8 +836,8 @@ func (o *orchestratorState) forceSummary(messages []agent.ChatMessage) string {
 	})
 
 	o.sendProgress("response_start", "", map[string]interface{}{
-		"conversationId":   o.conversationID,
-		"mcpExecutionIds":  o.snapshotMCPIDs(),
+		"conversationId":     o.conversationID,
+		"mcpExecutionIds":    o.snapshotMCPIDs(),
 		"messageGeneratedBy": "max_iter_summary",
 	})
 
