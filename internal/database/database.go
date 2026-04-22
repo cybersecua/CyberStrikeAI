@@ -266,6 +266,49 @@ func (db *DB) initTables() error {
 		FOREIGN KEY (connection_id) REFERENCES webshell_connections(id) ON DELETE CASCADE
 	);`
 
+	// create debug sessions table
+	createDebugSessionsTable := `
+	CREATE TABLE IF NOT EXISTS debug_sessions (
+		conversation_id TEXT PRIMARY KEY,
+		started_at INTEGER NOT NULL,
+		ended_at   INTEGER,
+		outcome    TEXT,
+		label      TEXT
+	);`
+
+	// create debug LLM calls table
+	createDebugLLMCallsTable := `
+	CREATE TABLE IF NOT EXISTS debug_llm_calls (
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		conversation_id   TEXT NOT NULL,
+		message_id        TEXT,
+		iteration         INTEGER,
+		call_index        INTEGER,
+		agent_id          TEXT,
+		sent_at           INTEGER NOT NULL,
+		first_token_at    INTEGER,
+		finished_at       INTEGER,
+		prompt_tokens     INTEGER,
+		completion_tokens INTEGER,
+		request_json      TEXT NOT NULL,
+		response_json     TEXT NOT NULL,
+		error             TEXT
+	);`
+
+	// create debug events table
+	createDebugEventsTable := `
+	CREATE TABLE IF NOT EXISTS debug_events (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		conversation_id TEXT NOT NULL,
+		message_id      TEXT,
+		seq             INTEGER NOT NULL,
+		event_type      TEXT NOT NULL,
+		agent_id        TEXT,
+		payload_json    TEXT NOT NULL,
+		started_at      INTEGER NOT NULL,
+		finished_at     INTEGER
+	);`
+
 	// create indexes
 	createIndexes := `
 	CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
@@ -294,6 +337,8 @@ func (db *DB) initTables() error {
 	CREATE INDEX IF NOT EXISTS idx_batch_task_queues_title ON batch_task_queues(title);
 	CREATE INDEX IF NOT EXISTS idx_webshell_connections_created_at ON webshell_connections(created_at);
 	CREATE INDEX IF NOT EXISTS idx_webshell_connection_states_updated_at ON webshell_connection_states(updated_at);
+	CREATE INDEX IF NOT EXISTS idx_debug_llm_calls_conv ON debug_llm_calls(conversation_id, sent_at);
+	CREATE INDEX IF NOT EXISTS idx_debug_events_conv ON debug_events(conversation_id, seq);
 	`
 
 	if _, err := db.Exec(createConversationsTable); err != nil {
@@ -358,6 +403,18 @@ func (db *DB) initTables() error {
 
 	if _, err := db.Exec(createWebshellConnectionStatesTable); err != nil {
 		return fmt.Errorf("webshell_connection_statestable failed: %w", err)
+	}
+
+	if _, err := db.Exec(createDebugSessionsTable); err != nil {
+		return fmt.Errorf("debug_sessionstable failed: %w", err)
+	}
+
+	if _, err := db.Exec(createDebugLLMCallsTable); err != nil {
+		return fmt.Errorf("debug_llm_callstable failed: %w", err)
+	}
+
+	if _, err := db.Exec(createDebugEventsTable); err != nil {
+		return fmt.Errorf("debug_eventstable failed: %w", err)
 	}
 
 	// add new fields to existing tables()- create indexes
