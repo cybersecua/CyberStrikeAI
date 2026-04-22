@@ -26,6 +26,11 @@ auth:
 log:
   level: info # Log level: debug, info, warn, error
   output: stdout # Log output destination: stdout, stderr, or a file path
+
+debug:
+  enabled: false       # flip via Settings UI at runtime; this file value is the boot default
+  retain_days: 0       # auto-prune debug sessions older than N days; 0 = keep forever
+
 # ============================================
 # Conversation-related Configuration
 # ============================================

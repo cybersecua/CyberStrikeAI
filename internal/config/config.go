@@ -18,6 +18,7 @@ type Config struct {
 	Version     string                `yaml:"version,omitempty" json:"version,omitempty"` // Version number displayed in the frontend, e.g. v1.3.3
 	Server      ServerConfig          `yaml:"server"`
 	Log         LogConfig             `yaml:"log"`
+	Debug       DebugConfig           `yaml:"debug"`
 	MCP         MCPConfig             `yaml:"mcp"`
 	OpenAI      OpenAIConfig          `yaml:"openai"`
 	FOFA        FofaConfig            `yaml:"fofa,omitempty" json:"fofa,omitempty"`
@@ -101,6 +102,11 @@ type ServerConfig struct {
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Output string `yaml:"output"`
+}
+
+type DebugConfig struct {
+	Enabled    bool `yaml:"enabled"`
+	RetainDays int  `yaml:"retain_days"`
 }
 
 type MCPConfig struct {
