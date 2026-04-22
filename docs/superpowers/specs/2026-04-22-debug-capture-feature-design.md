@@ -161,7 +161,7 @@ All on the existing `/api` group:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/debug/sessions` | paginated session list with summary columns |
+| `GET` | `/api/debug/sessions` | paginated session list; per-row summary fields (`iterations`, `promptTokens`, `completionTokens`, `durationMs`) are computed at query time by SQL aggregates over `debug_llm_calls` (COUNT DISTINCT iteration, SUM tokens, finished_at - started_at) — they are not stored on `debug_sessions` |
 | `GET` | `/api/debug/sessions/:id` | full capture for one conversation: session row + llm_calls + events |
 | `DELETE` | `/api/debug/sessions/:id` | purge debug rows for one session; does not touch messages / conversations |
 | `PATCH` | `/api/debug/sessions/:id` | set `label` |
@@ -264,13 +264,14 @@ Viewer merges `events` and `llmCalls` by timestamp into one vertical timeline.
 
 `GET /api/conversations/:id/export?format=sharegpt`:
 
-1. Load `debug_llm_calls` for convID ordered by `sent_at`.
-2. For each call, the `request.messages` is the exact history the model saw at that point. The last call's request contains all prior assistant tool_calls and tool responses already interleaved by the orchestrator.
-3. Output = `{"messages": lastCall.request.messages + [{role: "assistant", ...lastCall.response.choices[0].message}]}` as one JSONL line.
+1. Load `debug_llm_calls` for convID where `agent_id = "cyberstrike-orchestrator"` ordered by `sent_at`. Sub-agent LLM calls are excluded from ShareGPT output — they're internal delegation detail, not user-facing dialogue. (Operators who want the sub-agent traces use `format=raw`.)
+2. Pick the terminal call: the first call whose `response.choices[0].finish_reason == "stop"`, i.e. the last round that produced a final text answer rather than more tool calls. If no such call exists (the orchestrator hit `maxIter` without a clean stop), pick the last call in `sent_at` order.
+3. That call's `request.messages` is the exact history the model saw on its final turn — with all earlier assistant `tool_calls` and `tool`-role responses already interleaved by the orchestrator's message-append loop.
+4. Output = `{"messages": terminalCall.request.messages + [{role: "assistant", ...terminalCall.response.choices[0].message}]}` as one JSONL line.
 
 `?format=raw`:
 
-1. Stream `debug_llm_calls` + `debug_events` merged by timestamp; each line is `{"source": "llm_call|event", ...row}`.
+1. Stream `debug_llm_calls` + `debug_events` merged by timestamp; each line is `{"source": "llm_call|event", ...row}`. Sub-agent calls included (tagged by `agent_id`).
 
 Bulk (`/api/debug/export-bulk`) iterates sessions matching the since/until range, writes each as an entry in a `tar.gz` stream using `archive/tar` + `compress/gzip` over the response body.
 
