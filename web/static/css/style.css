@@ -2882,19 +2882,19 @@ header {
 }
 
 /* Multi-agent: distinguish orchestrator vs sub-agent timelines */
-.timeline-eino-role-orchestrator {
+.timeline-agent-role-orchestrator {
     border-left-color: #5c6bc0 !important;
     background: rgba(92, 107, 192, 0.09) !important;
 }
-.timeline-eino-role-sub {
+.timeline-agent-role-sub {
     border-left-color: #00897b !important;
     background: rgba(0, 137, 123, 0.08) !important;
 }
-.timeline-item-iteration.timeline-eino-scope-main {
+.timeline-item-iteration.timeline-agent-scope-main {
     border-left-color: #3949ab !important;
     background: rgba(57, 73, 171, 0.1) !important;
 }
-.timeline-item-iteration.timeline-eino-scope-sub {
+.timeline-item-iteration.timeline-agent-scope-sub {
     border-left-color: #00695c !important;
     background: rgba(0, 105, 92, 0.09) !important;
 }

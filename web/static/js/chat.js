@@ -32,7 +32,7 @@ const CHAT_FILE_DEFAULT_PROMPT = '.';
 let chatAttachments = [];
 let chatAttachmentSeq = 0;
 
-// (Eino): multi_agent.enabled, /agent-loop 
+// Multi-agent mode toggle: mirrors config.multi_agent.enabled; switches POST target between /agent-loop and /multi-agent-loop.
 const AGENT_MODE_STORAGE_KEY = 'cyberstrike-chat-agent-mode';
 let multiAgentAPIEnabled = false;
 
@@ -1723,8 +1723,8 @@ function renderProcessDetails(messageId, processDetails) {
     
     
     function processDetailAgentPrefix(d) {
-        if (!d || d.einoAgent == null) return '';
-        const s = String(d.einoAgent).trim();
+        if (!d || d.agent == null) return '';
+        const s = String(d.agent).trim();
         return s ? ('[' + s + '] ') : '';
     }
 
@@ -1758,8 +1758,8 @@ function renderProcessDetails(messageId, processDetails) {
  execLine = '📚 ' + execLine + ' - ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrievalTag') : '');
             }
             itemTitle = agPx + execLine;
-        } else if (eventType === 'eino_agent_reply') {
- itemTitle = agPx + '💬 ' + (typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '');
+        } else if (eventType === 'subagent_reply') {
+ itemTitle = agPx + '💬 ' + (typeof window.t === 'function' ? window.t('chat.subagentReplyTitle') : '');
         } else if (eventType === 'knowledge_retrieval') {
  itemTitle = '📚 ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrieval') : '');
         } else if (eventType === 'error') {

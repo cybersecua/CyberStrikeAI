@@ -856,16 +856,17 @@ func (h *AgentHandler) createProgressCallback(conversationID, assistantMessageID
 			}
 		}
 
-		// ; eino_agent_reply
-		if assistantMessageID != "" && eventType == "eino_agent_reply_stream_end" {
-			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, "eino_agent_reply", message, data); err != nil {
+		// Persist the sub-agent's final reply (stream_end carries the full body).
+		if assistantMessageID != "" && eventType == "subagent_reply_stream_end" {
+			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, "subagent_reply", message, data); err != nil {
 				h.logger.Warn("failed to save process details", zap.Error(err), zap.String("eventType", eventType))
 			}
 			return
 		}
 
-		// process details(response/done,)
-		// :response_start/response_delta ,process details,.
+		// Persist every other event as a process_detail, except those that are
+		// either the final response itself (response/done/response_{start,delta})
+		// or streaming fragments that would flood process_details.
 		if assistantMessageID != "" &&
 			eventType != "response" &&
 			eventType != "done" &&
@@ -874,9 +875,9 @@ func (h *AgentHandler) createProgressCallback(conversationID, assistantMessageID
 			eventType != "tool_result_delta" &&
 			eventType != "thinking_stream_start" &&
 			eventType != "thinking_stream_delta" &&
-			eventType != "eino_agent_reply_stream_start" &&
-			eventType != "eino_agent_reply_stream_delta" &&
-			eventType != "eino_agent_reply_stream_end" {
+			eventType != "subagent_reply_stream_start" &&
+			eventType != "subagent_reply_stream_delta" &&
+			eventType != "subagent_reply_stream_end" {
 			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, eventType, message, data); err != nil {
 				h.logger.Warn("failed to save process details", zap.Error(err), zap.String("eventType", eventType))
 			}

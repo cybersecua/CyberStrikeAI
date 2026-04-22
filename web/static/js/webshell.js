@@ -1279,8 +1279,8 @@ function formatWebshellAiConvDate(updatedAt) {
 }
 
 function webshellAgentPx(data) {
-    if (!data || data.einoAgent == null) return '';
-    var s = String(data.einoAgent).trim();
+    if (!data || data.agent == null) return '';
+    var s = String(data.agent).trim();
     return s ? ('[' + s + '] ') : '';
 }
 
@@ -1305,13 +1305,13 @@ function buildWebshellTimelineItemFromDetail(detail) {
         var success = data.success !== false;
         var tname = data.toolName || 'tool';
         title = ap + (success ? '✅ ' : '❌ ') + ((typeof window.t === 'function') ? (success ? window.t('chat.toolExecComplete', { name: tname }) : window.t('chat.toolExecFailed', { name: tname })) : (tname + (success ? ' execution complete' : ' execution failed')));
-    } else if (eventType === 'eino_agent_reply') {
-        title = ap + '💬 ' + ((typeof window.t === 'function') ? window.t('chat.einoAgentReplyTitle') : 'sub-agent reply');
+    } else if (eventType === 'subagent_reply') {
+        title = ap + '💬 ' + ((typeof window.t === 'function') ? window.t('chat.subagentReplyTitle') : 'sub-agent reply');
     } else if (eventType === 'progress') {
         title = (typeof window.translateProgressMessage === 'function') ? window.translateProgressMessage(detail.message || '') : (detail.message || '');
     }
     var html = '<span class="webshell-ai-timeline-title">' + escapeHtml(title || '') + '</span>';
-    if (eventType === 'eino_agent_reply' && detail.message) {
+    if (eventType === 'subagent_reply' && detail.message) {
         html += '<div class="webshell-ai-timeline-msg"><pre style="white-space:pre-wrap;">' + escapeHtml(detail.message) + '</pre></div>';
     }
     if (eventType === 'tool_call' && data && (data.argumentsObj || data.arguments)) {
@@ -2381,7 +2381,7 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
             } catch (e) {
  // JSON Parse failedwhenignoreparameterdetails,avoid
             }
-        } else if (type === 'eino_agent_reply' && message) {
+        } else if (type === 'subagent_reply' && message) {
             html += '<div class="webshell-ai-timeline-msg"><pre style="white-space:pre-wrap;">' + escapeHtml(message) + '</pre></div>';
         } else if (type === 'tool_result' && data) {
  // tool callout
@@ -2413,7 +2413,7 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
         return item;
     }
 
-    var einoSubReplyStreams = new Map();
+    var subagentReplyStreams = new Map();
 
     if (inputEl) inputEl.value = '';
 
@@ -2543,54 +2543,54 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
                         var sub = eventData.message || (dr.result ? String(dr.result).slice(0, 300) : '');
                         appendTimelineItem('tool_result', title, sub, eventData.data);
                         if (!streamingTarget) assistantDiv.textContent = '...';
-                    } else if (eventData.type === 'eino_agent_reply_stream_start' && eventData.data && eventData.data.streamId) {
+                    } else if (eventData.type === 'subagent_reply_stream_start' && eventData.data && eventData.data.streamId) {
                         var rdS = eventData.data;
-                        var repTS = (typeof window.t === 'function') ? window.t('chat.einoAgentReplyTitle') : 'sub-agent reply';
+                        var repTS = (typeof window.t === 'function') ? window.t('chat.subagentReplyTitle') : 'sub-agent reply';
                         var runTS = (typeof window.t === 'function') ? window.t('timeline.running') : 'executing...';
                         var itemS = document.createElement('div');
-                        itemS.className = 'webshell-ai-timeline-item webshell-ai-timeline-eino_agent_reply';
+                        itemS.className = 'webshell-ai-timeline-item webshell-ai-timeline-subagent_reply';
                         itemS.innerHTML = '<span class="webshell-ai-timeline-title">' + escapeHtml(webshellAgentPx(rdS) + '💬 ' + repTS + ' · ' + runTS) + '</span>';
                         timelineContainer.appendChild(itemS);
                         timelineContainer.classList.add('has-items');
-                        einoSubReplyStreams.set(rdS.streamId, { el: itemS, buf: '' });
+                        subagentReplyStreams.set(rdS.streamId, { el: itemS, buf: '' });
                         if (!streamingTarget) assistantDiv.textContent = '...';
-                    } else if (eventData.type === 'eino_agent_reply_stream_delta' && eventData.data && eventData.data.streamId) {
-                        var stD = einoSubReplyStreams.get(eventData.data.streamId);
+                    } else if (eventData.type === 'subagent_reply_stream_delta' && eventData.data && eventData.data.streamId) {
+                        var stD = subagentReplyStreams.get(eventData.data.streamId);
                         if (stD) {
                             stD.buf += (eventData.message || '');
-                            var preD = stD.el.querySelector('.webshell-eino-reply-stream-body');
+                            var preD = stD.el.querySelector('.webshell-subagent-reply-stream-body');
                             if (!preD) {
                                 preD = document.createElement('pre');
-                                preD.className = 'webshell-ai-timeline-msg webshell-eino-reply-stream-body';
+                                preD.className = 'webshell-ai-timeline-msg webshell-subagent-reply-stream-body';
                                 preD.style.whiteSpace = 'pre-wrap';
                                 stD.el.appendChild(preD);
                             }
                             preD.textContent = stD.buf;
                         }
                         if (!streamingTarget) assistantDiv.textContent = '...';
-                    } else if (eventData.type === 'eino_agent_reply_stream_end' && eventData.data && eventData.data.streamId) {
-                        var stE = einoSubReplyStreams.get(eventData.data.streamId);
+                    } else if (eventData.type === 'subagent_reply_stream_end' && eventData.data && eventData.data.streamId) {
+                        var stE = subagentReplyStreams.get(eventData.data.streamId);
                         if (stE) {
                             var fullE = (eventData.message != null && eventData.message !== '') ? String(eventData.message) : stE.buf;
                             stE.buf = fullE;
-                            var repTE = (typeof window.t === 'function') ? window.t('chat.einoAgentReplyTitle') : 'sub-agent reply';
+                            var repTE = (typeof window.t === 'function') ? window.t('chat.subagentReplyTitle') : 'sub-agent reply';
                             var titE = stE.el.querySelector('.webshell-ai-timeline-title');
                             if (titE) titE.textContent = webshellAgentPx(eventData.data) + '💬 ' + repTE;
-                            var preE = stE.el.querySelector('.webshell-eino-reply-stream-body');
+                            var preE = stE.el.querySelector('.webshell-subagent-reply-stream-body');
                             if (!preE) {
                                 preE = document.createElement('pre');
-                                preE.className = 'webshell-ai-timeline-msg webshell-eino-reply-stream-body';
+                                preE.className = 'webshell-ai-timeline-msg webshell-subagent-reply-stream-body';
                                 preE.style.whiteSpace = 'pre-wrap';
                                 stE.el.appendChild(preE);
                             }
                             preE.textContent = fullE;
-                            einoSubReplyStreams.delete(eventData.data.streamId);
+                            subagentReplyStreams.delete(eventData.data.streamId);
                         }
                         if (!streamingTarget) assistantDiv.textContent = '...';
-                    } else if (eventData.type === 'eino_agent_reply' && eventData.message) {
+                    } else if (eventData.type === 'subagent_reply' && eventData.message) {
                         var rd = eventData.data || {};
-                        var replyT = (typeof window.t === 'function') ? window.t('chat.einoAgentReplyTitle') : 'sub-agent reply';
-                        appendTimelineItem('eino_agent_reply', webshellAgentPx(rd) + '💬 ' + replyT, eventData.message, rd);
+                        var replyT = (typeof window.t === 'function') ? window.t('chat.subagentReplyTitle') : 'sub-agent reply';
+                        appendTimelineItem('subagent_reply', webshellAgentPx(rd) + '💬 ' + replyT, eventData.message, rd);
                         if (!streamingTarget) assistantDiv.textContent = '...';
                     }
                 } catch (e) { /* ignore parse error */ }

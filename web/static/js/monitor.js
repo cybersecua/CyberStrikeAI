@@ -38,7 +38,7 @@ function translateProgressMessage(message) {
  ',...': 'progress.maxIterSummary',
  '...': 'progress.analyzingRequestShort',
  '': 'progress.analyzingRequestPlanning',
- ' Eino DeepAgent...': 'progress.startingEinoDeepAgent',
+ ' ...': 'progress.startingOrchestrator',
  // Canonical English progress strings emitted by the backend (see
  // internal/handler/agent.go + internal/multiagent/orchestrator.go).
  // Keys on the left are matched against the raw SSE progress message;
@@ -53,15 +53,9 @@ function translateProgressMessage(message) {
         'Max iterations reached, generating summary...': 'progress.maxIterSummary',
         'Analyzing your request...': 'progress.analyzingRequestShort',
         'Analyzing your request and planning test strategy...': 'progress.analyzingRequestPlanning',
-        'starting multi-agent orchestrator...': 'progress.startingEinoDeepAgent',
-        'Starting Eino DeepAgent...': 'progress.startingEinoDeepAgent'
+        'starting multi-agent orchestrator...': 'progress.startingOrchestrator'
     };
     if (map[trim]) return window.t(map[trim]);
-    const einoAgentRe = /^\[Eino\]\s*(.+)$/;
-    const einoM = trim.match(einoAgentRe);
-    if (einoM) {
-        return window.t('progress.einoAgent', { name: einoM[1] });
-    }
  const callingToolPrefixCn = ': ';
     const callingToolPrefixEn = 'Calling tool: ';
     if (trim.indexOf(callingToolPrefixCn) === 0) {
@@ -87,8 +81,8 @@ const responseStreamStateByProgressId = new Map();
 // AI :progressId -> Map(streamId -> { itemId, buffer })
 const thinkingStreamStateByProgressId = new Map();
 
-// Eino :progressId -> Map(streamId -> { itemId, buffer })
-const einoAgentReplyStreamStateByProgressId = new Map();
+// Sub-agent reply streams: progressId -> Map(streamId -> { itemId, buffer })
+const subagentReplyStreamStateByProgressId = new Map();
 
 // :progressId::toolCallId -> { itemId, buffer }
 const toolResultStreamStateByKey = new Map();
@@ -96,25 +90,25 @@ function toolResultStreamKey(progressId, toolCallId) {
     return String(progressId) + '::' + String(toolCallId);
 }
 
-/** Eino : [agentId],// */
+/** Build a "[agentId] " bracket prefix for timeline titles when the event carries an agent id. */
 function timelineAgentBracketPrefix(data) {
-    if (!data || data.einoAgent == null) return '';
-    const s = String(data.einoAgent).trim();
+    if (!data || data.agent == null) return '';
+    const s = String(data.agent).trim();
     return s ? ('[' + s + '] ') : '';
 }
 
-/** /:(/) */
-function applyEinoTimelineRole(item, data) {
+/** Stamp timeline items with data-* attributes + role/scope CSS classes for styling. */
+function applyAgentTimelineRole(item, data) {
     if (!item || !data) return;
-    const role = data.einoRole;
+    const role = data.agentRole;
     if (role === 'orchestrator' || role === 'sub') {
-        item.dataset.einoRole = role;
-        item.classList.add('timeline-eino-role-' + role);
+        item.dataset.agentRole = role;
+        item.classList.add('timeline-agent-role-' + role);
     }
-    const scope = data.einoScope;
+    const scope = data.agentScope;
     if (scope === 'main' || scope === 'sub') {
-        item.dataset.einoScope = scope;
-        item.classList.add('timeline-eino-scope-' + scope);
+        item.dataset.agentScope = scope;
+        item.classList.add('timeline-agent-scope-' + scope);
     }
 }
 
@@ -779,14 +773,14 @@ function handleStreamEvent(event, progressElement, progressId,
             const d = event.data || {};
             const n = d.iteration != null ? d.iteration : 1;
             let iterTitle;
-            if (d.einoScope === 'main') {
+            if (d.agentScope === 'main') {
                 iterTitle = typeof window.t === 'function'
-                    ? window.t('chat.einoOrchestratorRound', { n: n })
+                    ? window.t('chat.orchestratorRound', { n: n })
  : (' · ' + n + ' ');
-            } else if (d.einoScope === 'sub') {
-                const ag = d.einoAgent != null ? String(d.einoAgent).trim() : '';
+            } else if (d.agentScope === 'sub') {
+                const ag = d.agent != null ? String(d.agent).trim() : '';
                 iterTitle = typeof window.t === 'function'
-                    ? window.t('chat.einoSubAgentStep', { n: n, agent: ag })
+                    ? window.t('chat.subAgentStep', { n: n, agent: ag })
  : (' · ' + ag + ' · ' + n + ' ');
             } else {
                 iterTitle = typeof window.t === 'function'
@@ -953,7 +947,7 @@ function handleStreamEvent(event, progressElement, progressId,
                         index: deltaInfo.index,
                         total: deltaInfo.total,
                         iteration: deltaInfo.iteration,
-                        einoAgent: deltaInfo.einoAgent,
+                        agent: deltaInfo.agent,
                         source: deltaInfo.source
                     },
                     expanded: false
@@ -1000,8 +994,8 @@ function handleStreamEvent(event, progressElement, progressId,
 
                         const titleEl = item.querySelector('.timeline-item-title');
                         if (titleEl) {
-                            if (resultInfo.einoAgent != null && String(resultInfo.einoAgent).trim() !== '') {
-                                item.dataset.einoAgent = String(resultInfo.einoAgent).trim();
+                            if (resultInfo.agent != null && String(resultInfo.agent).trim() !== '') {
+                                item.dataset.agent = String(resultInfo.agent).trim();
                             }
                             titleEl.textContent = timelineAgentBracketPrefix(resultInfo) + statusIcon + ' ' + resultExecText;
                         }
@@ -1029,18 +1023,18 @@ function handleStreamEvent(event, progressElement, progressId,
             });
             break;
 
-        case 'eino_agent_reply_stream_start': {
+        case 'subagent_reply_stream_start': {
             const d = event.data || {};
             const streamId = d.streamId || null;
             if (!streamId) break;
-            let stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            let stateMap = subagentReplyStreamStateByProgressId.get(progressId);
             if (!stateMap) {
                 stateMap = new Map();
-                einoAgentReplyStreamStateByProgressId.set(progressId, stateMap);
+                subagentReplyStreamStateByProgressId.set(progressId, stateMap);
             }
  const streamingLabel = typeof window.t === 'function' ? window.t('timeline.running') : '...';
- const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '';
-            const itemId = addTimelineItem(timeline, 'eino_agent_reply', {
+ const replyTitleBase = typeof window.t === 'function' ? window.t('chat.subagentReplyTitle') : '';
+            const itemId = addTimelineItem(timeline, 'subagent_reply', {
                 title: timelineAgentBracketPrefix(d) + '💬 ' + replyTitleBase + ' · ' + streamingLabel,
                 message: ' ',
                 data: d,
@@ -1050,13 +1044,13 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
         }
 
-        case 'eino_agent_reply_stream_delta': {
+        case 'subagent_reply_stream_delta': {
             const d = event.data || {};
             const streamId = d.streamId || null;
             if (!streamId) break;
             const delta = event.message || '';
             if (!delta) break;
-            const stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            const stateMap = subagentReplyStreamStateByProgressId.get(progressId);
             if (!stateMap || !stateMap.has(streamId)) break;
             const s = stateMap.get(streamId);
             s.buffer += delta;
@@ -1082,10 +1076,10 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
         }
 
-        case 'eino_agent_reply_stream_end': {
+        case 'subagent_reply_stream_end': {
             const d = event.data || {};
             const streamId = d.streamId || null;
-            const stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
+            const stateMap = subagentReplyStreamStateByProgressId.get(progressId);
             if (streamId && stateMap && stateMap.has(streamId)) {
                 const s = stateMap.get(streamId);
                 const full = (event.message != null && event.message !== '') ? String(event.message) : s.buffer;
@@ -1094,7 +1088,7 @@ function handleStreamEvent(event, progressElement, progressId,
                 if (item) {
                     const titleEl = item.querySelector('.timeline-item-title');
                     if (titleEl) {
- const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '';
+ const replyTitleBase = typeof window.t === 'function' ? window.t('chat.subagentReplyTitle') : '';
                         titleEl.textContent = timelineAgentBracketPrefix(d) + '💬 ' + replyTitleBase;
                     }
                     let contentEl = item.querySelector('.timeline-item-content');
@@ -1108,8 +1102,8 @@ function handleStreamEvent(event, progressElement, progressId,
                     } else {
                         contentEl.textContent = full;
                     }
-                    if (d.einoAgent != null && String(d.einoAgent).trim() !== '') {
-                        item.dataset.einoAgent = String(d.einoAgent).trim();
+                    if (d.agent != null && String(d.agent).trim() !== '') {
+                        item.dataset.agent = String(d.agent).trim();
                     }
                 }
                 stateMap.delete(streamId);
@@ -1117,10 +1111,10 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
         }
 
-        case 'eino_agent_reply': {
+        case 'subagent_reply': {
             const replyData = event.data || {};
- const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '';
-            addTimelineItem(timeline, 'eino_agent_reply', {
+ const replyTitleBase = typeof window.t === 'function' ? window.t('chat.subagentReplyTitle') : '';
+            addTimelineItem(timeline, 'subagent_reply', {
                 title: timelineAgentBracketPrefix(replyData) + '💬 ' + replyTitleBase,
                 message: event.message || '',
                 data: replyData,
@@ -1355,7 +1349,7 @@ function handleStreamEvent(event, progressElement, progressId,
  // 
             responseStreamStateByProgressId.delete(progressId);
             thinkingStreamStateByProgressId.delete(progressId);
-            einoAgentReplyStreamStateByProgressId.delete(progressId);
+            subagentReplyStreamStateByProgressId.delete(progressId);
  // 
             const prefix = String(progressId) + '::';
             for (const key of Array.from(toolResultStreamStateByKey.keys())) {
@@ -1463,8 +1457,8 @@ function addTimelineItem(timeline, type, options) {
     if (type === 'iteration') {
         const n = options.iterationN != null ? options.iterationN : (options.data && options.data.iteration != null ? options.data.iteration : 1);
         item.dataset.iterationN = String(n);
-        if (options.data && options.data.einoScope) {
-            item.dataset.einoScope = String(options.data.einoScope);
+        if (options.data && options.data.agentScope) {
+            item.dataset.agentScope = String(options.data.agentScope);
         }
     }
     if (type === 'progress' && options.message) {
@@ -1484,8 +1478,8 @@ function addTimelineItem(timeline, type, options) {
         item.dataset.toolName = (d.toolName != null && d.toolName !== '') ? String(d.toolName) : '';
         item.dataset.toolSuccess = d.success !== false ? '1' : '0';
     }
-    if (options.data && options.data.einoAgent != null && String(options.data.einoAgent).trim() !== '') {
-        item.dataset.einoAgent = String(options.data.einoAgent).trim();
+    if (options.data && options.data.agent != null && String(options.data.agent).trim() !== '') {
+        item.dataset.agent = String(options.data.agent).trim();
     }
 
  // createdAt,()
@@ -1549,7 +1543,7 @@ function addTimelineItem(timeline, type, options) {
                 </div>
             </div>
         `;
-    } else if (type === 'eino_agent_reply' && options.message) {
+    } else if (type === 'subagent_reply' && options.message) {
         content += `<div class="timeline-item-content">${formatMarkdown(options.message)}</div>`;
     } else if (type === 'tool_result' && options.data) {
         const data = options.data;
@@ -1579,7 +1573,7 @@ function addTimelineItem(timeline, type, options) {
     
     item.innerHTML = content;
     if (options.data) {
-        applyEinoTimelineRole(item, options.data);
+        applyAgentTimelineRole(item, options.data);
     }
     timeline.appendChild(item);
     
@@ -2383,15 +2377,15 @@ function refreshProgressAndTimelineI18n() {
         const titleSpan = item.querySelector('.timeline-item-title');
         const timeSpan = item.querySelector('.timeline-item-time');
         if (!titleSpan) return;
-        const ap = (item.dataset.einoAgent && item.dataset.einoAgent !== '') ? ('[' + item.dataset.einoAgent + '] ') : '';
+        const ap = (item.dataset.agent && item.dataset.agent !== '') ? ('[' + item.dataset.agent + '] ') : '';
         if (type === 'iteration' && item.dataset.iterationN) {
             const n = parseInt(item.dataset.iterationN, 10) || 1;
-            const scope = item.dataset.einoScope;
+            const scope = item.dataset.agentScope;
             if (scope === 'main') {
-                titleSpan.textContent = _t('chat.einoOrchestratorRound', { n: n });
+                titleSpan.textContent = _t('chat.orchestratorRound', { n: n });
             } else if (scope === 'sub') {
-                const agent = item.dataset.einoAgent || '';
-                titleSpan.textContent = _t('chat.einoSubAgentStep', { n: n, agent: agent });
+                const agent = item.dataset.agent || '';
+                titleSpan.textContent = _t('chat.subAgentStep', { n: n, agent: agent });
             } else {
                 titleSpan.textContent = ap + _t('chat.iterationRound', { n: n });
             }
@@ -2410,8 +2404,8 @@ function refreshProgressAndTimelineI18n() {
             const success = item.dataset.toolSuccess === '1';
             const icon = success ? '\u2705 ' : '\u274C ';
             titleSpan.textContent = ap + icon + (success ? _t('chat.toolExecComplete', { name: name }) : _t('chat.toolExecFailed', { name: name }));
-        } else if (type === 'eino_agent_reply') {
-            titleSpan.textContent = ap + '\uD83D\uDCAC ' + _t('chat.einoAgentReplyTitle');
+        } else if (type === 'subagent_reply') {
+            titleSpan.textContent = ap + '\uD83D\uDCAC ' + _t('chat.subagentReplyTitle');
         } else if (type === 'cancelled') {
             titleSpan.textContent = '\u26D4 ' + _t('chat.taskCancelled');
         } else if (type === 'progress' && item.dataset.progressMessage !== undefined) {
