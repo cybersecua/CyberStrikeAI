@@ -21,23 +21,53 @@ import (
 	"go.uber.org/zap"
 )
 
+// conversationIDKey is the private context key that scopes a tool
+// dispatch to a specific conversation. It replaces what used to be a
+// mutable Agent.currentConversationID field with a per-call value
+// carried on context.Context — see withConversationID below for why.
+type conversationIDKey struct{}
+
+// withConversationID returns a context carrying id. Readers obtain it via
+// conversationIDFromContext. The old Agent.currentConversationID field
+// did the same job under a save/swap/restore pattern with a.mu, which
+// raced when two goroutines dispatched tools through the same *Agent
+// concurrently (each swap's "prev" was whatever the other goroutine had
+// just written, not the original). Plumbing the value through context
+// keeps every call's conversation scope isolated and lock-free, which
+// unblocks parallel tool dispatch in the multi-agent orchestrator.
+func withConversationID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, conversationIDKey{}, id)
+}
+
+// conversationIDFromContext returns the conversation id set by
+// withConversationID, or "" if the context carries none.
+func conversationIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(conversationIDKey{}).(string)
+	return v
+}
+
 // Agent AI agent
 type Agent struct {
-	openAIClient          *openai.Client
-	toolOpenAIClient      *openai.Client // separate client for tool-calling model (optional)
-	config                *config.OpenAIConfig
-	agentConfig           *config.AgentConfig
-	memoryCompressor      *MemoryCompressor
-	mcpServer             *mcp.Server
-	externalMCPMgr        *mcp.ExternalMCPManager // external MCP manager
-	logger                *zap.Logger
-	maxIterations         int
-	resultStorage         ResultStorage     // result storage
-	largeResultThreshold  int               // large result threshold (bytes)
-	mu                    sync.RWMutex      // mutex to support concurrent updates
-	toolNameMapping       map[string]string // tool name mapping: OpenAI format -> original format (for external MCP tools)
-	currentConversationID string            // current conversation ID (auto-passed to tools)
-	timeAwareness         *TimeAwareness    // temporal context for system prompts
+	openAIClient         *openai.Client
+	toolOpenAIClient     *openai.Client // separate client for tool-calling model (optional)
+	config               *config.OpenAIConfig
+	agentConfig          *config.AgentConfig
+	memoryCompressor     *MemoryCompressor
+	mcpServer            *mcp.Server
+	externalMCPMgr       *mcp.ExternalMCPManager // external MCP manager
+	logger               *zap.Logger
+	maxIterations        int
+	resultStorage        ResultStorage     // result storage
+	largeResultThreshold int               // large result threshold (bytes)
+	mu                   sync.RWMutex      // mutex to support concurrent updates
+	toolNameMapping      map[string]string // tool name mapping: OpenAI format -> original format (for external MCP tools)
+	timeAwareness        *TimeAwareness    // temporal context for system prompts
 }
 
 // ResultStorage result storage interface (uses storage package types directly)
@@ -395,10 +425,10 @@ func (a *Agent) AgentLoopWithConversationID(ctx context.Context, userInput strin
 // AgentLoopWithProgress executes the Agent loop (with progress callback and conversation ID)
 // roleSkills: role-configured skills list (hints AI in system prompt, not hardcoded content)
 func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, historyMessages []ChatMessage, conversationID string, callback ProgressCallback, roleTools []string, roleSkills []string) (*AgentLoopResult, error) {
-	// set current conversation ID
-	a.mu.Lock()
-	a.currentConversationID = conversationID
-	a.mu.Unlock()
+	// Scope this loop's tool dispatch to the caller's conversation via
+	// context, so executeToolViaMCP can read it back when auto-injecting
+	// conversation_id into tools like record_vulnerability.
+	ctx = withConversationID(ctx, conversationID)
 	// send progress update
 	sendProgress := func(eventType, message string, data interface{}) {
 		if callback != nil {
@@ -1604,19 +1634,19 @@ func (a *Agent) executeToolViaMCP(ctx context.Context, toolName string, args map
 		zap.Any("args", args),
 	)
 
-	// record_vulnerability,conversation_id
+	// record_vulnerability needs the caller's conversation id so it can
+	// attach the finding to the right conversation; we pull it from ctx
+	// (set by withConversationID upstream) instead of reading a shared
+	// field, so concurrent tool dispatches on the same *Agent don't
+	// race on each other's ids.
 	if toolName == builtin.ToolRecordVulnerability {
-		a.mu.RLock()
-		conversationID := a.currentConversationID
-		a.mu.RUnlock()
-
-		if conversationID != "" {
+		if conversationID := conversationIDFromContext(ctx); conversationID != "" {
 			args["conversation_id"] = conversationID
-			a.logger.Debug("conversation_idrecord_vulnerability",
+			a.logger.Debug("auto-injected conversation_id into record_vulnerability call",
 				zap.String("conversation_id", conversationID),
 			)
 		} else {
-			a.logger.Warn("record_vulnerabilityconversation_id")
+			a.logger.Warn("record_vulnerability called without conversation_id on context; caller will see an orphan vulnerability record")
 		}
 	}
 
@@ -2088,18 +2118,16 @@ func (a *Agent) ToolsForRole(roleTools []string) []Tool {
 	return a.getAvailableTools(roleTools)
 }
 
-// ExecuteMCPToolForConversation MCP ( Agent , conversation_id).
+// ExecuteMCPToolForConversation dispatches an MCP tool call scoped to a
+// specific conversation. Callers outside the single-agent loop (the
+// multi-agent orchestrator) use this to run tools against a conversation
+// the Agent itself is not currently looping on — for example when a
+// sub-agent needs to call record_vulnerability against its parent
+// conversation. The conversation id rides on ctx and never touches
+// shared state on *Agent, so concurrent callers don't clobber each
+// other's scope.
 func (a *Agent) ExecuteMCPToolForConversation(ctx context.Context, conversationID, toolName string, args map[string]interface{}) (*ToolExecutionResult, error) {
-	a.mu.Lock()
-	prev := a.currentConversationID
-	a.currentConversationID = conversationID
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		a.currentConversationID = prev
-		a.mu.Unlock()
-	}()
-	return a.executeToolViaMCP(ctx, toolName, args)
+	return a.executeToolViaMCP(withConversationID(ctx, conversationID), toolName, args)
 }
 
 // extractQuotedToolName

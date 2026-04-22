@@ -470,13 +470,11 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 
 			// Execute each tool call.
 			//
-			// Serial dispatch is intentional: agent.ExecuteMCPToolForConversation
-			// mutates Agent.currentConversationID as shared state (see
-			// internal/agent/agent.go around ExecuteMCPToolForConversation).
-			// Parallel execution within the same *Agent would race on that field
-			// and corrupt the conversation_id injection into record_vulnerability
-			// and similar conversation-scoped tools. Parallelising the loop
-			// requires plumbing conversationID through context.Context first.
+			// Dispatch is serial today for determinism (tool-result ordering
+			// in the transcript matches the LLM's requested order and the
+			// SSE stream). Conversation scoping is now context-carried, so
+			// parallelising this loop is safe when we're ready to trade
+			// ordering for latency.
 			for idx, tc := range choice.Message.ToolCalls {
 				// Cancellation re-check between tools: the outer ctx is checked
 				// once per iteration, but a long batch of tools would otherwise
@@ -727,8 +725,8 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 				"agentRole":       "sub",
 			})
 
-			// Serial dispatch — see the comment on the main-loop tool-call loop
-			// for the currentConversationID shared-state rationale.
+			// Serial dispatch mirrors the main loop — see that comment for
+			// the ordering rationale.
 			for idx, tc := range choice.Message.ToolCalls {
 				// Cancellation re-check between tools (same pattern as main loop).
 				if o.ctx.Err() != nil {
