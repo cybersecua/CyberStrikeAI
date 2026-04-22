@@ -69,14 +69,22 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest) (*multiAgentPr
 	if req.WebShellConnectionID != "" {
 		conn, errConn := h.db.GetWebshellConnection(strings.TrimSpace(req.WebShellConnectionID))
 		if errConn != nil || conn == nil {
-			h.logger.Warn("WebShell AI :", zap.String("id", req.WebShellConnectionID), zap.Error(errConn))
-			return nil, fmt.Errorf("WebShell not found ")
+			h.logger.Warn("WebShell AI assistant: connection not found", zap.String("id", req.WebShellConnectionID), zap.Error(errConn))
+			return nil, fmt.Errorf("WebShell connection not found")
 		}
 		remark := conn.Remark
 		if remark == "" {
 			remark = conn.URL
 		}
-		finalMessage = fmt.Sprintf("[WebShell ] currentconnection ID:%s,remark:%s.(,connection_id \"%s\"):webshell_exec,webshell_file_list,webshell_file_read,webshell_file_write,record_vulnerability,list_knowledge_risk_types,search_knowledge_base,list_skills,read_skill.:,,,invoke tool;,,,recordknowledge base/ Skills .\n\n:%s",
+		finalMessage = fmt.Sprintf(
+			"[WebShell session] Active connection ID: %s (remark: %s).\n"+
+				"Always pass connection_id=%q as the first argument on every webshell_* tool call.\n"+
+				"Available tools: webshell_exec, webshell_file_list, webshell_file_read, webshell_file_write, "+
+				"record_vulnerability, list_knowledge_risk_types, search_knowledge_base, list_skills, read_skill.\n"+
+				"Workflow: use the webshell_* tools to act on the target; use record_vulnerability / list_knowledge_risk_types / "+
+				"search_knowledge_base to store and retrieve findings; use list_skills / read_skill to discover and apply reusable "+
+				"procedures from the knowledge base and skill packs.\n\n"+
+				"User request: %s",
 			conn.ID, remark, conn.ID, req.Message)
 		roleTools = []string{
 			builtin.ToolWebshellExec,

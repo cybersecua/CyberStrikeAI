@@ -453,7 +453,11 @@ func (h *AgentHandler) AgentLoop(c *gin.Context) {
 	var roleTools []string  // role-configured tool list
 	var roleSkills []string // role-configured skills list(AI,)
 
-	// WebShell AI assistant mode:current, webshell_* connection_id
+	// WebShell AI-assistant mode: scope the agent to a specific webshell connection.
+	// The system prompt below tells the model to pass connection_id on every webshell_*
+	// tool call, restricts the visible toolset to webshell + knowledge/skills lookups,
+	// and clarifies the workflow: invoke tools to act on the target, then record findings
+	// back to the knowledge base or a skill pack.
 	if req.WebShellConnectionID != "" {
 		conn, err := h.db.GetWebshellConnection(strings.TrimSpace(req.WebShellConnectionID))
 		if err != nil || conn == nil {
@@ -465,7 +469,15 @@ func (h *AgentHandler) AgentLoop(c *gin.Context) {
 		if remark == "" {
 			remark = conn.URL
 		}
-		finalMessage = fmt.Sprintf("[WebShell ] currentconnection ID:%s,remark:%s.(,connection_id \"%s\"):webshell_exec,webshell_file_list,webshell_file_read,webshell_file_write,record_vulnerability,list_knowledge_risk_types,search_knowledge_base,list_skills,read_skill.:,,,invoke tool;,,,recordknowledge base/ Skills .\n\n:%s",
+		finalMessage = fmt.Sprintf(
+			"[WebShell session] Active connection ID: %s (remark: %s).\n"+
+				"Always pass connection_id=%q as the first argument on every webshell_* tool call.\n"+
+				"Available tools: webshell_exec, webshell_file_list, webshell_file_read, webshell_file_write, "+
+				"record_vulnerability, list_knowledge_risk_types, search_knowledge_base, list_skills, read_skill.\n"+
+				"Workflow: use the webshell_* tools to act on the target; use record_vulnerability / list_knowledge_risk_types / "+
+				"search_knowledge_base to store and retrieve findings; use list_skills / read_skill to discover and apply reusable "+
+				"procedures from the knowledge base and skill packs.\n\n"+
+				"User request: %s",
 			conn.ID, remark, conn.ID, req.Message)
 		roleTools = []string{
 			builtin.ToolWebshellExec,
@@ -1064,7 +1076,15 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 		if remark == "" {
 			remark = conn.URL
 		}
-		finalMessage = fmt.Sprintf("[WebShell ] currentconnection ID:%s,remark:%s.(,connection_id \"%s\"):webshell_exec,webshell_file_list,webshell_file_read,webshell_file_write,record_vulnerability,list_knowledge_risk_types,search_knowledge_base,list_skills,read_skill.:,,,invoke tool;,,,recordknowledge base/ Skills .\n\n:%s",
+		finalMessage = fmt.Sprintf(
+			"[WebShell session] Active connection ID: %s (remark: %s).\n"+
+				"Always pass connection_id=%q as the first argument on every webshell_* tool call.\n"+
+				"Available tools: webshell_exec, webshell_file_list, webshell_file_read, webshell_file_write, "+
+				"record_vulnerability, list_knowledge_risk_types, search_knowledge_base, list_skills, read_skill.\n"+
+				"Workflow: use the webshell_* tools to act on the target; use record_vulnerability / list_knowledge_risk_types / "+
+				"search_knowledge_base to store and retrieve findings; use list_skills / read_skill to discover and apply reusable "+
+				"procedures from the knowledge base and skill packs.\n\n"+
+				"User request: %s",
 			conn.ID, remark, conn.ID, req.Message)
 		roleTools = []string{
 			builtin.ToolWebshellExec,
