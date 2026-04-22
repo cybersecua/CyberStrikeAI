@@ -229,6 +229,28 @@ type todoItem struct {
 	Status  string `json:"status"`
 }
 
+// isToolAllowed gates MCP-tool execution against the role's tool whitelist.
+// An empty roleTools slice means "no restriction" (the default for roles with
+// no explicit tool list). Virtual tools (task, write_todos) are orchestrator-
+// level and not subject to this check — they're handled before dispatch.
+//
+// The LLM only ever sees whitelisted tools (via ToolsForRole), but this is
+// the execution-time gate: a model that hallucinates a tool name, or picks
+// one up from conversation history loaded into a new role's context, would
+// otherwise execute without restriction. See audit finding T1#1 in
+// commit 69f80bf's follow-up for background.
+func (o *orchestratorState) isToolAllowed(name string, roleTools []string) bool {
+	if len(roleTools) == 0 {
+		return true
+	}
+	for _, t := range roleTools {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (o *orchestratorState) recordMCPID(id string) {
 	if id == "" {
 		return
@@ -447,7 +469,27 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 			})
 
 			// Execute each tool call.
+			//
+			// Serial dispatch is intentional: agent.ExecuteMCPToolForConversation
+			// mutates Agent.currentConversationID as shared state (see
+			// internal/agent/agent.go around ExecuteMCPToolForConversation).
+			// Parallel execution within the same *Agent would race on that field
+			// and corrupt the conversation_id injection into record_vulnerability
+			// and similar conversation-scoped tools. Parallelising the loop
+			// requires plumbing conversationID through context.Context first.
 			for idx, tc := range choice.Message.ToolCalls {
+				// Cancellation re-check between tools: the outer ctx is checked
+				// once per iteration, but a long batch of tools would otherwise
+				// run to completion after a stop-task signal.
+				if o.ctx.Err() != nil {
+					messages = append(messages, agent.ChatMessage{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    "Tool call cancelled: task was stopped by operator before this call could execute.",
+					})
+					continue
+				}
+
 				toolArgsJSON, _ := json.Marshal(tc.Function.Arguments)
 
 				o.sendProgress("tool_call", fmt.Sprintf("Calling tool: %s", tc.Function.Name), map[string]interface{}{
@@ -472,6 +514,16 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 				case "write_todos":
 					toolResult, isErr = o.handleWriteTodos(tc.Function.Arguments)
 				default:
+					// Role-whitelist enforcement at execution time. ToolsForRole
+					// already filters what the model sees, but that's a display
+					// filter, not a security gate. A hallucinated or
+					// history-leaked tool name must not reach
+					// ExecuteMCPToolForConversation when the role excludes it.
+					if !o.isToolAllowed(tc.Function.Name, o.roleTools) {
+						toolResult = fmt.Sprintf("Tool %q is not available in the current role. Use only the tools shown in your tool list.", tc.Function.Name)
+						isErr = true
+						break
+					}
 					toolResult, isErr = o.handleMCPTool(tc.Function.Name, tc.Function.Arguments, tc.ID, idx, len(choice.Message.ToolCalls), i+1)
 				}
 
@@ -531,7 +583,11 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 			Content: choice.Message.Content,
 		})
 
-		if choice.FinishReason == "stop" || len(choice.Message.ToolCalls) == 0 {
+		// The tool-calls branch above `continue`s, so reaching this point
+		// already implies len(choice.Message.ToolCalls) == 0. We only break
+		// out when the LLM signals it's done (FinishReason=="stop") or
+		// produced no tools and no further content to drive another round.
+		if choice.FinishReason == "stop" {
 			break
 		}
 	}
@@ -671,13 +727,37 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 				"einoRole":       "sub",
 			})
 
+			// Serial dispatch — see the comment on the main-loop tool-call loop
+			// for the currentConversationID shared-state rationale.
 			for idx, tc := range choice.Message.ToolCalls {
+				// Cancellation re-check between tools (same pattern as main loop).
+				if o.ctx.Err() != nil {
+					messages = append(messages, agent.ChatMessage{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    "Tool call cancelled: task was stopped by operator before this call could execute.",
+					})
+					continue
+				}
+
 				// Sub-agents cannot call "task" (prevent infinite recursion).
 				if tc.Function.Name == "task" {
 					messages = append(messages, agent.ChatMessage{
 						Role:       "tool",
 						ToolCallID: tc.ID,
 						Content:    "Nested task delegation is forbidden (already inside a sub-agent delegation chain) to avoid infinite delegation. Please continue the work using the current agent's tools.",
+					})
+					continue
+				}
+
+				// Role-whitelist enforcement for the sub-agent's restricted tool
+				// set. subRoleTools narrows below whatever the orchestrator-level
+				// role allowed.
+				if !o.isToolAllowed(tc.Function.Name, subRoleTools) {
+					messages = append(messages, agent.ChatMessage{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    fmt.Sprintf("Tool %q is not available to the %q sub-agent. Use only the tools in your tool list.", tc.Function.Name, agentName),
 					})
 					continue
 				}
@@ -753,6 +833,14 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 }
 
 // handleWriteTodos processes the virtual "write_todos" tool.
+//
+// Semantics: write_todos is a narrative / UI-visibility tool. It stores the
+// submitted list in o.todos (mutex-protected) and emits a `todos` SSE event
+// so the frontend can render a live to-do list, but the stored state has
+// NO effect on orchestrator control flow — no iteration branches on
+// o.todos, no re-planning hook reads it. The tool's Description text says
+// "plan multi-step tasks and track progress"; operators should understand
+// that is behavioural/prompting shaping for the model, not a runtime gate.
 func (o *orchestratorState) handleWriteTodos(args map[string]interface{}) (string, bool) {
 	todosRaw, ok := args["todos"]
 	if !ok {
@@ -841,12 +929,21 @@ func (o *orchestratorState) forceSummary(messages []agent.ChatMessage) string {
 		"messageGeneratedBy": "max_iter_summary",
 	})
 
-	streamText, _ := o.ag.CallStreamText(o.ctx, summaryMessages, []agent.Tool{}, func(delta string) error {
+	streamText, err := o.ag.CallStreamText(o.ctx, summaryMessages, []agent.Tool{}, func(delta string) error {
 		o.sendProgress("response_delta", delta, map[string]interface{}{
 			"conversationId": o.conversationID,
 		})
 		return nil
 	})
+	if err != nil {
+		// Force-summary is best-effort: log so operators see the failure
+		// in zap output but continue — buildResult will substitute the
+		// fallback message for empty content.
+		o.logger.Warn("orchestrator force-summary stream failed",
+			zap.String("conversationId", o.conversationID),
+			zap.Error(err),
+		)
+	}
 	return strings.TrimSpace(streamText)
 }
 
