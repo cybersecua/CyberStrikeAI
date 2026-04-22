@@ -381,9 +381,9 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 	// Main orchestrator loop.
 	o.sendProgress("iteration", "", map[string]interface{}{
 		"iteration":      1,
-		"einoScope":      "main",
-		"einoRole":       "orchestrator",
-		"einoAgent":      "cyberstrike-orchestrator",
+		"agentScope":      "main",
+		"agentRole":       "orchestrator",
+		"agent":      "cyberstrike-orchestrator",
 		"conversationId": o.conversationID,
 		"source":         "native",
 	})
@@ -398,9 +398,9 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 		if i > 0 {
 			o.sendProgress("iteration", "", map[string]interface{}{
 				"iteration":      i + 1,
-				"einoScope":      "main",
-				"einoRole":       "orchestrator",
-				"einoAgent":      "cyberstrike-orchestrator",
+				"agentScope":      "main",
+				"agentRole":       "orchestrator",
+				"agent":      "cyberstrike-orchestrator",
 				"conversationId": o.conversationID,
 				"source":         "native",
 			})
@@ -421,8 +421,8 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 				o.sendProgress("thinking_stream_start", " ", map[string]interface{}{
 					"streamId":  thinkingStreamID,
 					"source":    "native",
-					"einoAgent": "cyberstrike-orchestrator",
-					"einoRole":  "orchestrator",
+					"agent": "cyberstrike-orchestrator",
+					"agentRole":  "orchestrator",
 				})
 			}
 			o.sendProgress("thinking_stream_delta", delta, map[string]interface{}{
@@ -464,8 +464,8 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 				"count":          len(choice.Message.ToolCalls),
 				"conversationId": o.conversationID,
 				"source":         "native",
-				"einoAgent":      "cyberstrike-orchestrator",
-				"einoRole":       "orchestrator",
+				"agent":      "cyberstrike-orchestrator",
+				"agentRole":       "orchestrator",
 			})
 
 			// Execute each tool call.
@@ -501,8 +501,8 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 					"total":          len(choice.Message.ToolCalls),
 					"conversationId": o.conversationID,
 					"source":         "native",
-					"einoAgent":      "cyberstrike-orchestrator",
-					"einoRole":       "orchestrator",
+					"agent":      "cyberstrike-orchestrator",
+					"agentRole":       "orchestrator",
 				})
 
 				var toolResult string
@@ -545,8 +545,8 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 					"resultPreview":  preview,
 					"conversationId": o.conversationID,
 					"toolCallId":     tc.ID,
-					"einoAgent":      "cyberstrike-orchestrator",
-					"einoRole":       "orchestrator",
+					"agent":      "cyberstrike-orchestrator",
+					"agentRole":       "orchestrator",
 					"source":         "native",
 				})
 			}
@@ -568,12 +568,12 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 				"conversationId":     o.conversationID,
 				"mcpExecutionIds":    o.snapshotMCPIDs(),
 				"messageGeneratedBy": "native:orchestrator",
-				"einoRole":           "orchestrator",
+				"agentRole":           "orchestrator",
 			})
 			o.sendProgress("response_delta", body, map[string]interface{}{
 				"conversationId":  o.conversationID,
 				"mcpExecutionIds": o.snapshotMCPIDs(),
-				"einoRole":        "orchestrator",
+				"agentRole":        "orchestrator",
 			})
 			lastAssistant = body
 		}
@@ -631,26 +631,26 @@ func (o *orchestratorState) handleTaskCall(args map[string]interface{}, toolCall
 
 	o.sendProgress("progress", fmt.Sprintf("[sub-agent: %s] starting task...", subAgentName), map[string]interface{}{
 		"conversationId": o.conversationID,
-		"einoAgent":      subAgentName,
-		"einoRole":       "sub",
+		"agent":      subAgentName,
+		"agentRole":       "sub",
 	})
 
 	result, err := o.runSubAgent(subAgentName, subInstruction, taskDesc, subRoleTools, subMaxIter)
 	if err != nil {
 		errMsg := fmt.Sprintf("Sub-agent %s failed: %s", subAgentName, err.Error())
-		o.sendProgress("eino_agent_reply", errMsg, map[string]interface{}{
+		o.sendProgress("subagent_reply", errMsg, map[string]interface{}{
 			"conversationId": o.conversationID,
-			"einoAgent":      subAgentName,
-			"einoRole":       "sub",
+			"agent":      subAgentName,
+			"agentRole":       "sub",
 			"source":         "native",
 		})
 		return errMsg, true
 	}
 
-	o.sendProgress("eino_agent_reply", result, map[string]interface{}{
+	o.sendProgress("subagent_reply", result, map[string]interface{}{
 		"conversationId": o.conversationID,
-		"einoAgent":      subAgentName,
-		"einoRole":       "sub",
+		"agent":      subAgentName,
+		"agentRole":       "sub",
 		"source":         "native",
 	})
 
@@ -685,9 +685,9 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 
 		o.sendProgress("iteration", "", map[string]interface{}{
 			"iteration":      i + 1,
-			"einoScope":      "sub",
-			"einoRole":       "sub",
-			"einoAgent":      agentName,
+			"agentScope":      "sub",
+			"agentRole":       "sub",
+			"agent":      agentName,
 			"conversationId": o.conversationID,
 			"source":         "native",
 		})
@@ -723,8 +723,8 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 				"count":          len(choice.Message.ToolCalls),
 				"conversationId": o.conversationID,
 				"source":         "native",
-				"einoAgent":      agentName,
-				"einoRole":       "sub",
+				"agent":      agentName,
+				"agentRole":       "sub",
 			})
 
 			// Serial dispatch — see the comment on the main-loop tool-call loop
@@ -772,8 +772,8 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 					"total":          len(choice.Message.ToolCalls),
 					"conversationId": o.conversationID,
 					"source":         "native",
-					"einoAgent":      agentName,
-					"einoRole":       "sub",
+					"agent":      agentName,
+					"agentRole":       "sub",
 				})
 
 				toolResult, isErr := o.handleMCPTool(tc.Function.Name, tc.Function.Arguments, tc.ID, idx, len(choice.Message.ToolCalls), i+1)
@@ -796,8 +796,8 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 					"resultPreview":  preview,
 					"conversationId": o.conversationID,
 					"toolCallId":     tc.ID,
-					"einoAgent":      agentName,
-					"einoRole":       "sub",
+					"agent":      agentName,
+					"agentRole":       "sub",
 					"source":         "native",
 				})
 			}

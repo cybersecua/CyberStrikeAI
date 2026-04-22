@@ -74,7 +74,7 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory {
                 if (type == null) type = "";
                 switch (type) {
                     case "response_delta":
-                    case "eino_agent_reply_stream_delta":
+                    case "subagent_reply_stream_delta":
                         // delta chunk (content only)
                         tab.appendFinalToRun(runId, message);
                         break;
