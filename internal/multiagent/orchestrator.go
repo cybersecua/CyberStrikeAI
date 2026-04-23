@@ -852,6 +852,7 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 					Role:    "user",
 					Content: "This is your final iteration. Please summarize your findings and results concisely.",
 				})
+				// TODO(debug-capture): wrap ctx with debug.WithCapture so max-iter sub-agent summaries land in debug_llm_calls. Currently these truncation-path calls don't appear in the export.
 				summaryText, _ := o.ag.CallStreamText(o.ctx, messages, []agent.Tool{}, func(delta string) error { return nil })
 				if strings.TrimSpace(summaryText) != "" {
 					return summaryText, nil
@@ -973,6 +974,7 @@ func (o *orchestratorState) forceSummary(messages []agent.ChatMessage) string {
 		"messageGeneratedBy": "max_iter_summary",
 	})
 
+	// TODO(debug-capture): wrap ctx with debug.WithCapture so force-summary calls land in debug_llm_calls. This path fires on max-iter truncation of the main orchestrator loop; calls currently don't appear in the export.
 	streamText, err := o.ag.CallStreamText(o.ctx, summaryMessages, []agent.Tool{}, func(delta string) error {
 		o.sendProgress("response_delta", delta, map[string]interface{}{
 			"conversationId": o.conversationID,

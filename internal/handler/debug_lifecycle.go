@@ -5,9 +5,17 @@ import (
 )
 
 // wrapRunWithDebug calls sink.StartSession before runFn and
-// sink.EndSession after (with the outcome runFn returned).
-// Centralizes the boundary logic so MultiAgentLoop uses a single
-// code path for the capture bookends.
+// sink.EndSession after (with the outcome runFn returned). Used by
+// the non-streaming MultiAgentLoop handler, which has a simple
+// "success/error → outcome" flow.
+//
+// The streaming MultiAgentLoopStream handler does NOT use this
+// helper. Its flow mutates a local taskStatus across multiple
+// branches (cancelled / failed / completed) and needs the
+// EndSession to fire with the final value, so it uses a raw
+// h.debugSink.StartSession call paired with a deferred closure
+// that reads taskStatus at exec time. See multi_agent.go for the
+// pattern.
 //
 // runFn returns (outcome, err) where outcome is one of
 // "completed"|"cancelled"|"failed"|"interrupted"|"". Empty-string
@@ -15,13 +23,8 @@ import (
 // nil err — so a caller that doesn't bother classifying still
 // produces a terminal debug_sessions row.
 //
-// A nil sink is safe — both methods are skipped. Callers that want
-// on-state behavior should pass a real Sink.
-//
-// EndSession is deferred so it fires even when runFn panics.
-// StartSession is not deferred (it must run before runFn), so a
-// panic inside StartSession itself would skip EndSession — that edge
-// case is accepted as negligible given StartSession's trivial body.
+// EndSession is deferred inside the helper body (via named-return
+// closure) so it fires even if runFn panics.
 func wrapRunWithDebug(sink debug.Sink, conversationID string, runFn func() (string, error)) (outcome string, err error) {
 	if sink != nil {
 		sink.StartSession(conversationID)
