@@ -204,6 +204,19 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	// create debug sink
 	sink := debug.NewSink(cfg.Debug.Enabled, db.DB, log.Logger)
 
+	// Sweep any pre-crash live debug sessions to 'interrupted' so they
+	// don't appear eternally live in the Settings → Debug list. Safe to
+	// call even if debug.enabled was never flipped — the sweep only
+	// updates rows that exist.
+	if err := debug.SweepOrphans(db.DB, log.Logger); err != nil {
+		log.Logger.Warn("debug: boot sweep failed", zap.Error(err))
+	}
+
+	// Retention worker: daily prune of sessions older than
+	// cfg.Debug.RetainDays. retainDays <= 0 is a no-op inside the
+	// worker, so we can start it unconditionally without a guard.
+	go debug.StartRetentionWorker(context.Background(), db.DB, cfg.Debug.RetainDays, 24*time.Hour, log.Logger)
+
 	// create Agent
 	maxIterations := cfg.Agent.MaxIterations
 	if maxIterations <= 0 {
