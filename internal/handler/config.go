@@ -19,6 +19,7 @@ import (
 
 	"cyberstrike-ai/internal/agents"
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/debug"
 	"cyberstrike-ai/internal/knowledge"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/security"
@@ -75,6 +76,7 @@ type ConfigHandler struct {
 	knowledgeInitializer       KnowledgeInitializer       // knowledge base()
 	appUpdater                 AppUpdater                 // App updater (optional)
 	robotRestarter             RobotRestarter             // robot connection restarter; ApplyConfig restarts Telegram bot
+	debugSink                  debug.Sink                 // runtime debug toggle; SetEnabled flipped by PUT /api/config
 	logger                     *zap.Logger
 	mu                         sync.RWMutex
 	lastEmbeddingConfig        *config.EmbeddingConfig // previous embedding model config(for detecting changes)
@@ -92,7 +94,7 @@ type AgentUpdater interface {
 }
 
 // NewConfigHandler creates a new config handler
-func NewConfigHandler(configPath string, cfg *config.Config, mcpServer *mcp.Server, executor *security.Executor, agent AgentUpdater, attackChainHandler AttackChainUpdater, externalMCPMgr *mcp.ExternalMCPManager, logger *zap.Logger) *ConfigHandler {
+func NewConfigHandler(configPath string, cfg *config.Config, mcpServer *mcp.Server, executor *security.Executor, agent AgentUpdater, attackChainHandler AttackChainUpdater, externalMCPMgr *mcp.ExternalMCPManager, logger *zap.Logger, sink debug.Sink) *ConfigHandler {
 	// save initial embedding model config(knowledge base)
 	var lastEmbeddingConfig *config.EmbeddingConfig
 	if cfg.Knowledge.Enabled {
@@ -111,6 +113,7 @@ func NewConfigHandler(configPath string, cfg *config.Config, mcpServer *mcp.Serv
 		agent:               agent,
 		attackChainHandler:  attackChainHandler,
 		externalMCPMgr:      externalMCPMgr,
+		debugSink:           sink,
 		logger:              logger,
 		lastEmbeddingConfig: lastEmbeddingConfig,
 	}
@@ -182,6 +185,7 @@ type GetConfigResponse struct {
 	Knowledge  config.KnowledgeConfig  `json:"knowledge"`
 	Robots     config.RobotsConfig     `json:"robots,omitempty"`
 	MultiAgent config.MultiAgentPublic `json:"multi_agent,omitempty"`
+	Debug      config.DebugConfig      `json:"debug,omitempty"`
 }
 
 // ToolConfigInfo tool config info
@@ -278,6 +282,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		Knowledge:  h.config.Knowledge,
 		Robots:     h.config.Robots,
 		MultiAgent: multiPub,
+		Debug:      h.config.Debug,
 	})
 }
 
@@ -537,6 +542,7 @@ type UpdateConfigRequest struct {
 	Knowledge  *config.KnowledgeConfig     `json:"knowledge,omitempty"`
 	Robots     *config.RobotsConfig        `json:"robots,omitempty"`
 	MultiAgent *config.MultiAgentAPIUpdate `json:"multi_agent,omitempty"`
+	Debug      *config.DebugConfig         `json:"debug,omitempty"`
 }
 
 // ToolEnableStatus status
@@ -635,6 +641,18 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 			zap.String("default_mode", h.config.MultiAgent.DefaultMode),
 			zap.Bool("robot_use_multi_agent", h.config.MultiAgent.RobotUseMultiAgent),
 			zap.Bool("batch_use_multi_agent", h.config.MultiAgent.BatchUseMultiAgent),
+		)
+	}
+
+	// debug capture toggle — flip atomic.Bool on the running Sink
+	if req.Debug != nil {
+		h.config.Debug = *req.Debug
+		if h.debugSink != nil {
+			h.debugSink.SetEnabled(h.config.Debug.Enabled)
+		}
+		h.logger.Info("update debug config",
+			zap.Bool("enabled", h.config.Debug.Enabled),
+			zap.Int("retain_days", h.config.Debug.RetainDays),
 		)
 	}
 
@@ -747,11 +765,12 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		}
 	}
 
-	// save config to file
+	// save config to file; yaml persistence is belt-and-suspenders —
+	// runtime state (including the debug Sink toggle) is already applied
+	// in-memory above, so a yaml write failure must not roll back the live
+	// toggle or fail the HTTP response.
 	if err := h.saveConfig(); err != nil {
-		h.logger.Error("failed to save config", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config: " + err.Error()})
-		return
+		h.logger.Warn("failed to persist config to yaml (runtime state is still applied)", zap.Error(err))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "config updated"})
@@ -958,6 +977,7 @@ func (h *ConfigHandler) saveConfig() error {
 	updateKnowledgeConfig(root, h.config.Knowledge)
 	updateRobotsConfig(root, h.config.Robots)
 	updateMultiAgentConfig(root, h.config.MultiAgent)
+	updateDebugConfig(root, h.config.Debug)
 	// update external MCP config(external_mcp.go,)
 	// read original config for backward compatibility
 	originalConfigs := make(map[string]map[string]bool)
@@ -1207,6 +1227,13 @@ func updateMultiAgentConfig(doc *yaml.Node, cfg config.MultiAgentConfig) {
 	setStringInMap(maNode, "default_mode", cfg.DefaultMode)
 	setBoolInMap(maNode, "robot_use_multi_agent", cfg.RobotUseMultiAgent)
 	setBoolInMap(maNode, "batch_use_multi_agent", cfg.BatchUseMultiAgent)
+}
+
+func updateDebugConfig(doc *yaml.Node, cfg config.DebugConfig) {
+	root := doc.Content[0]
+	debugNode := ensureMap(root, "debug")
+	setBoolInMap(debugNode, "enabled", cfg.Enabled)
+	setIntInMap(debugNode, "retain_days", cfg.RetainDays)
 }
 
 func ensureMap(parent *yaml.Node, path ...string) *yaml.Node {

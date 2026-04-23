@@ -418,7 +418,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
 	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
 	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
-	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
+	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger, sink)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
 	roleHandler.SetSkillsManager(skillsManager) // set Skills managerRoleHandler
