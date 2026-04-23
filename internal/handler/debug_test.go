@@ -235,3 +235,63 @@ func TestPatchDebugSession_SetsLabel(t *testing.T) {
 		t.Fatalf("label not persisted: got %q", label)
 	}
 }
+
+func TestExportConversation_RawFormat(t *testing.T) {
+	db := openHandlerTestDB(t)
+	_, _ = db.Exec(`INSERT INTO debug_sessions (conversation_id, started_at, ended_at, outcome) VALUES ('c1', 1, 2, 'completed')`)
+	_, _ = db.Exec(`INSERT INTO debug_llm_calls (conversation_id, sent_at, agent_id, request_json, response_json) VALUES ('c1', 1, 'cyberstrike-orchestrator', '{"messages":[]}', '{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}')`)
+
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/conversations/:id/export", h.ExportConversation)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/conversations/c1/export?format=raw", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/jsonl" {
+		t.Fatalf("content-type: want application/jsonl, got %q", ct)
+	}
+	if !strings.Contains(w.Body.String(), `"source":"llm_call"`) {
+		t.Fatalf("missing llm_call source tag: %s", w.Body.String())
+	}
+}
+
+func TestExportConversation_ShareGPT(t *testing.T) {
+	db := openHandlerTestDB(t)
+	_, _ = db.Exec(`INSERT INTO debug_llm_calls (conversation_id, sent_at, agent_id, request_json, response_json) VALUES ('c1', 1, 'cyberstrike-orchestrator', '{"messages":[{"role":"user","content":"hi"}]}', '{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hello"}}]}')`)
+
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/conversations/:id/export", h.ExportConversation)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/conversations/c1/export?format=sharegpt", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	if !strings.HasSuffix(w.Body.String(), "\n") {
+		t.Fatalf("ShareGPT body must end with newline")
+	}
+}
+
+func TestExportConversation_InvalidFormat(t *testing.T) {
+	db := openHandlerTestDB(t)
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/conversations/:id/export", h.ExportConversation)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/conversations/c1/export?format=bogus", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d", w.Code)
+	}
+}

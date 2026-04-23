@@ -183,3 +183,30 @@ func (h *DebugHandler) PatchSession(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
+
+// ExportConversation handles GET /api/conversations/:id/export.
+// Query param format=raw (default) or format=sharegpt.
+// Streams JSONL directly to the response writer; peak memory is one row.
+func (h *DebugHandler) ExportConversation(c *gin.Context) {
+	id := c.Param("id")
+	format := c.DefaultQuery("format", "raw")
+
+	if format != "raw" && format != "sharegpt" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be raw or sharegpt"})
+		return
+	}
+
+	c.Header("Content-Type", "application/jsonl")
+	c.Header("Content-Disposition", `attachment; filename="`+id+`.jsonl"`)
+
+	switch format {
+	case "raw":
+		if err := debug.WriteRawJSONL(c.Writer, h.db, id); err != nil {
+			h.logger.Warn("debug: ExportConversation raw failed", zap.Error(err))
+		}
+	case "sharegpt":
+		if err := debug.WriteShareGPTJSONL(c.Writer, h.db, id); err != nil {
+			h.logger.Warn("debug: ExportConversation sharegpt failed", zap.Error(err))
+		}
+	}
+}
