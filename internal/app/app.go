@@ -800,6 +800,7 @@ func setupRoutes(
 		protected.DELETE("/debug/sessions/:id", debugHandler.DeleteSession)
 		protected.PATCH("/debug/sessions/:id", debugHandler.PatchSession)
 		protected.GET("/conversations/:id/export", debugHandler.ExportConversation)
+		protected.GET("/debug/export-bulk", debugHandler.ExportBulk)
 
 		// knowledge base(, App handler)
 		knowledgeRoutes := protected.Group("/knowledge")
