@@ -38,7 +38,6 @@ function translateProgressMessage(message) {
  ',...': 'progress.maxIterSummary',
  '...': 'progress.analyzingRequestShort',
  '': 'progress.analyzingRequestPlanning',
- ' ...': 'progress.startingOrchestrator',
  // Canonical English progress strings emitted by the backend (see
  // internal/handler/agent.go + internal/multiagent/orchestrator.go).
  // Keys on the left are matched against the raw SSE progress message;
@@ -56,6 +55,11 @@ function translateProgressMessage(message) {
         'starting multi-agent orchestrator...': 'progress.startingOrchestrator'
     };
     if (map[trim]) return window.t(map[trim]);
+    const subagentRe = /^\[sub-agent:\s*(.+?)\]/;
+    const subagentM = trim.match(subagentRe);
+    if (subagentM) {
+        return window.t('progress.subagent', { name: subagentM[1] });
+    }
  const callingToolPrefixCn = ': ';
     const callingToolPrefixEn = 'Calling tool: ';
     if (trim.indexOf(callingToolPrefixCn) === 0) {
