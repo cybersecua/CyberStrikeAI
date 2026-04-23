@@ -329,6 +329,14 @@ async function loadConfig(loadTools = true) {
             }
         });
 
+        // populate debug capture configuration
+        if (currentConfig.debug) {
+            const debugEnabledEl = document.getElementById('debug-enabled');
+            const debugRetainEl  = document.getElementById('debug-retain-days');
+            if (debugEnabledEl) debugEnabledEl.checked = !!currentConfig.debug.Enabled;
+            if (debugRetainEl)  debugRetainEl.value    = Number(currentConfig.debug.RetainDays || 0);
+        }
+
         // onlyhasatneedwhenonly loadtoollist(MCPmanagement pageneed,systemsettingspagenotneed)
         if (loadTools) {
             // settingsPer pagecount(willatpaginationcontrolsrenderwhensettings)
@@ -939,7 +947,16 @@ async function applySettings() {
                     allowed_user_ids: tgAllowedIds
                 }
             },
-            tools: []
+            tools: [],
+            debug: (() => {
+                const debugEnabledEl = document.getElementById('debug-enabled');
+                const debugRetainEl  = document.getElementById('debug-retain-days');
+                if (!debugEnabledEl) return undefined;
+                return {
+                    Enabled:    debugEnabledEl.checked,
+                    RetainDays: parseInt(debugRetainEl?.value || '0', 10),
+                };
+            })()
         };
         
         // collecttoolenabled state
