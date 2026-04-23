@@ -799,6 +799,7 @@ func setupRoutes(
 		protected.GET("/debug/sessions/:id", debugHandler.GetSession)
 		protected.DELETE("/debug/sessions/:id", debugHandler.DeleteSession)
 		protected.PATCH("/debug/sessions/:id", debugHandler.PatchSession)
+		protected.GET("/conversations/:id/export", debugHandler.ExportConversation)
 
 		// knowledge base(, App handler)
 		knowledgeRoutes := protected.Group("/knowledge")
