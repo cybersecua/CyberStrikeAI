@@ -227,9 +227,10 @@ type orchestratorState struct {
 	sink            debug.Sink
 
 	// Mutable state, protected by mu.
-	mu     sync.Mutex
-	mcpIDs []string
-	todos  []todoItem
+	mu      sync.Mutex
+	mcpIDs  []string
+	todos   []todoItem
+	callSeq int // monotonic LLM-call index across orchestrator + sub-agents; protected by mu
 }
 
 type todoItem struct {
@@ -277,9 +278,34 @@ func (o *orchestratorState) snapshotMCPIDs() []string {
 }
 
 func (o *orchestratorState) sendProgress(eventType, message string, data interface{}) {
+	// User-facing callback: unchanged.
 	if o.progress != nil {
 		o.progress(eventType, message, data)
 	}
+	// Debug tee: fire-and-forget into the sink. Noop when debug is off.
+	if o.sink == nil {
+		return
+	}
+	now := time.Now().UnixNano()
+	// Extract agent id from the data map if present; fall back to the
+	// orchestrator default so every event has an agentId for queries.
+	agentID := "cyberstrike-orchestrator"
+	var messageID string
+	if m, ok := data.(map[string]interface{}); ok {
+		if v, _ := m["agent"].(string); v != "" {
+			agentID = v
+		}
+		if v, _ := m["messageId"].(string); v != "" {
+			messageID = v
+		}
+	}
+	payload, _ := json.Marshal(data)
+	o.sink.RecordEvent(o.conversationID, messageID, debug.Event{
+		EventType:   eventType,
+		AgentID:     agentID,
+		PayloadJSON: string(payload),
+		StartedAt:   now,
+	})
 }
 
 func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage) (*RunResult, error) {
@@ -420,7 +446,13 @@ func (o *orchestratorState) run(userMessage string, history []agent.ChatMessage)
 		thinkingStreamID := fmt.Sprintf("thinking-stream-%s-%d-%d", o.conversationID, i+1, atomic.AddInt64(&reasoningStreamSeq, 1))
 		thinkingStarted := false
 
-		response, err := o.ag.CallStreamWithToolCalls(o.ctx, messages, allTools, func(delta string) error {
+		o.mu.Lock()
+		callIdx := o.callSeq
+		o.callSeq++
+		o.mu.Unlock()
+		captureCtx := debug.WithCapture(o.ctx, o.conversationID, "", i+1, callIdx, "cyberstrike-orchestrator")
+
+		response, err := o.ag.CallStreamWithToolCalls(captureCtx, messages, allTools, func(delta string) error {
 			if delta == "" {
 				return nil
 			}
@@ -698,7 +730,13 @@ func (o *orchestratorState) runSubAgent(agentName, instruction, taskDesc string,
 			"source":         "native",
 		})
 
-		response, err := o.ag.CallStreamWithToolCalls(o.ctx, messages, subTools, func(delta string) error {
+		o.mu.Lock()
+		callIdx := o.callSeq
+		o.callSeq++
+		o.mu.Unlock()
+		captureCtx := debug.WithCapture(o.ctx, o.conversationID, "", i+1, callIdx, agentName)
+
+		response, err := o.ag.CallStreamWithToolCalls(captureCtx, messages, subTools, func(delta string) error {
 			// Sub-agent thinking deltas are silently consumed; we only report the final result.
 			return nil
 		})

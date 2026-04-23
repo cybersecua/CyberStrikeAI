@@ -1,10 +1,16 @@
 package multiagent
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"cyberstrike-ai/internal/debug"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // TestIsToolAllowed covers the execution-time role-whitelist gate. The
@@ -253,5 +259,120 @@ func TestSnapshotMCPIDs_ConcurrentWrites(t *testing.T) {
 	snap := o.snapshotMCPIDs()
 	if len(snap) != workers*perWorker {
 		t.Fatalf("expected %d recorded ids, got %d", workers*perWorker, len(snap))
+	}
+}
+
+func openOrchestratorTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "orch_test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ddl := []string{
+		`CREATE TABLE debug_sessions (conversation_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER, outcome TEXT, label TEXT)`,
+		`CREATE TABLE debug_events (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, message_id TEXT, seq INTEGER NOT NULL, event_type TEXT NOT NULL, agent_id TEXT, payload_json TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER)`,
+		`CREATE TABLE debug_llm_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, message_id TEXT, iteration INTEGER, call_index INTEGER, agent_id TEXT, sent_at INTEGER NOT NULL, first_token_at INTEGER, finished_at INTEGER, prompt_tokens INTEGER, completion_tokens INTEGER, request_json TEXT NOT NULL, response_json TEXT NOT NULL, error TEXT)`,
+	}
+	for _, s := range ddl {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("Exec: %v (%s)", err, s)
+		}
+	}
+	return db
+}
+
+func TestOrchestrator_sendProgress_TeesToSink(t *testing.T) {
+	db := openOrchestratorTestDB(t)
+	sink := debug.NewSink(true, db, nil)
+	o := &orchestratorState{
+		ctx:            context.Background(),
+		conversationID: "conv-t",
+		sink:           sink,
+		progress:       func(string, string, interface{}) {},
+	}
+
+	o.sendProgress("iteration", "", map[string]interface{}{
+		"iteration":      1,
+		"agent":          "cyberstrike-orchestrator",
+		"conversationId": "conv-t",
+	})
+
+	var n int
+	var evType, payload string
+	err := db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(event_type),''), COALESCE(MAX(payload_json),'') FROM debug_events WHERE conversation_id = ?`, "conv-t").Scan(&n, &evType, &payload)
+	if err != nil {
+		t.Fatalf("QueryRow: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 debug_events row, got %d", n)
+	}
+	if evType != "iteration" {
+		t.Fatalf("event_type: want iteration, got %q", evType)
+	}
+	if !strings.Contains(payload, `"iteration":1`) {
+		t.Fatalf("payload missing iteration field: %s", payload)
+	}
+}
+
+func TestOrchestrator_sendProgress_ExtractsAgentIDFromData(t *testing.T) {
+	db := openOrchestratorTestDB(t)
+	sink := debug.NewSink(true, db, nil)
+	o := &orchestratorState{
+		ctx:            context.Background(),
+		conversationID: "conv-t",
+		sink:           sink,
+		progress:       func(string, string, interface{}) {},
+	}
+
+	// Event with an explicit agent field should store that agent_id.
+	o.sendProgress("subagent_reply", "done", map[string]interface{}{
+		"agent":          "recon-subagent",
+		"conversationId": "conv-t",
+	})
+	// Event without an agent field should default to the orchestrator.
+	o.sendProgress("tool_calls_detected", "2 calls", map[string]interface{}{
+		"count": 2,
+	})
+
+	rows, err := db.Query(`SELECT event_type, agent_id FROM debug_events WHERE conversation_id = ? ORDER BY seq`, "conv-t")
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	defer rows.Close()
+	type pair struct{ ev, agent string }
+	var got []pair
+	for rows.Next() {
+		var ev, agent sql.NullString
+		if err := rows.Scan(&ev, &agent); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		got = append(got, pair{ev.String, agent.String})
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 rows, got %d", len(got))
+	}
+	if got[0].ev != "subagent_reply" || got[0].agent != "recon-subagent" {
+		t.Fatalf("row 0: want (subagent_reply, recon-subagent), got %+v", got[0])
+	}
+	if got[1].ev != "tool_calls_detected" || got[1].agent != "cyberstrike-orchestrator" {
+		t.Fatalf("row 1: want (tool_calls_detected, cyberstrike-orchestrator), got %+v", got[1])
+	}
+}
+
+func TestOrchestrator_sendProgress_NoopSinkDoesNothing(t *testing.T) {
+	db := openOrchestratorTestDB(t)
+	sink := debug.NewSink(false, nil, nil) // noop
+	o := &orchestratorState{
+		ctx:            context.Background(),
+		conversationID: "conv-t",
+		sink:           sink,
+		progress:       func(string, string, interface{}) {},
+	}
+	o.sendProgress("iteration", "", map[string]interface{}{"iteration": 1})
+	var n int
+	_ = db.QueryRow("SELECT COUNT(*) FROM debug_events").Scan(&n)
+	if n != 0 {
+		t.Fatalf("noop sink should write zero rows, got %d", n)
 	}
 }
