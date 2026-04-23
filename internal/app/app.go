@@ -439,6 +439,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	conversationHandler := handler.NewConversationHandler(db, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, resultStorage, conversationHandler, agentHandler)
+	debugHandler := handler.NewDebugHandler(db.DB, log.Logger)
 
 	// create App instance()
 	app := &App{
@@ -553,6 +554,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		authManager,
 		openAPIHandler,
 		pluginsHandler,
+		debugHandler,
 	)
 
 	return app, nil
@@ -671,6 +673,7 @@ func setupRoutes(
 	authManager *security.AuthManager,
 	openAPIHandler *handler.OpenAPIHandler,
 	pluginsHandler *handler.PluginsHandler,
+	debugHandler *handler.DebugHandler,
 ) {
 	// API routes
 	api := router.Group("/api")
@@ -790,6 +793,9 @@ func setupRoutes(
 		// attack chain visualization
 		protected.GET("/attack-chain/:conversationId", attackChainHandler.GetAttackChain)
 		protected.POST("/attack-chain/:conversationId/regenerate", attackChainHandler.RegenerateAttackChain)
+
+		// debug capture API (Tasks 15-18)
+		protected.GET("/debug/sessions", debugHandler.ListSessions)
 
 		// knowledge base(, App handler)
 		knowledgeRoutes := protected.Group("/knowledge")
