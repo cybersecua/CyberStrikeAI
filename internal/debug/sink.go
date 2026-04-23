@@ -66,8 +66,6 @@ type dbSink struct {
 func (s *dbSink) SetEnabled(v bool) { s.enabled.Store(v) }
 func (s *dbSink) Enabled() bool     { return s.enabled.Load() }
 
-// Record*/Start*/End* bodies are filled in Tasks 5-7.
-func (s *dbSink) StartSession(conversationID string)                        {}
-func (s *dbSink) EndSession(conversationID, outcome string)                 {}
+// RecordLLMCall and RecordEvent bodies are filled in Tasks 6-7.
 func (s *dbSink) RecordLLMCall(conversationID, messageID string, c LLMCall) {}
 func (s *dbSink) RecordEvent(conversationID, messageID string, e Event)     {}
