@@ -240,3 +240,25 @@ func loadEvents(db *sql.DB, conversationID string) ([]eventRow, error) {
 	}
 	return out, nil
 }
+
+// LoadLLMCallsExported is the exported form for consumers outside
+// the debug package (the HTTP handler). Prefer this over the
+// unexported loadLLMCalls when crossing package boundaries.
+func LoadLLMCallsExported(db *sql.DB, conversationID string) ([]LLMCallRow, error) {
+	return loadLLMCalls(db, conversationID)
+}
+
+// LoadEventsExported is the exported form for handler consumption.
+// Returns []map[string]interface{} for direct JSON marshaling on
+// the wire — keeps the eventRow struct internal.
+func LoadEventsExported(db *sql.DB, conversationID string) ([]map[string]interface{}, error) {
+	rows, err := loadEvents(db, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, e := range rows {
+		out = append(out, rawEventLine(e))
+	}
+	return out, nil
+}

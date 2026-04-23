@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -118,5 +119,119 @@ func TestListDebugSessions_OrderedByStartedAtDesc(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	if len(body) != 2 || body[0]["conversationId"] != "newer" {
 		t.Fatalf("want newer first, got %v", body)
+	}
+}
+
+func TestGetDebugSession_UnknownIs404(t *testing.T) {
+	db := openHandlerTestDB(t)
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/debug/sessions/:id", h.GetSession)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/debug/sessions/does-not-exist", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: want 404, got %d", w.Code)
+	}
+}
+
+func TestGetDebugSession_ReturnsFullCapture(t *testing.T) {
+	db := openHandlerTestDB(t)
+	_, _ = db.Exec(`INSERT INTO debug_sessions (conversation_id, started_at, ended_at, outcome, label) VALUES ('c1', 1000, 2000, 'completed', '')`)
+	_, _ = db.Exec(`INSERT INTO debug_events (conversation_id, seq, event_type, payload_json, started_at) VALUES ('c1', 0, 'iteration', '{"iteration":1}', 1100)`)
+	_, _ = db.Exec(`INSERT INTO debug_llm_calls (conversation_id, iteration, sent_at, request_json, response_json) VALUES ('c1', 1, 1200, '{"messages":[]}', '{"choices":[]}')`)
+
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/debug/sessions/:id", h.GetSession)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/debug/sessions/c1", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if _, ok := body["session"]; !ok {
+		t.Fatalf("missing session field")
+	}
+	llmCalls, _ := body["llmCalls"].([]interface{})
+	if len(llmCalls) != 1 {
+		t.Fatalf("want 1 llmCall, got %v", llmCalls)
+	}
+	events, _ := body["events"].([]interface{})
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %v", events)
+	}
+}
+
+func TestDeleteDebugSession_PurgesAllTables(t *testing.T) {
+	db := openHandlerTestDB(t)
+	_, _ = db.Exec(`INSERT INTO debug_sessions (conversation_id, started_at) VALUES ('c1', 1)`)
+	_, _ = db.Exec(`INSERT INTO debug_events (conversation_id, seq, event_type, payload_json, started_at) VALUES ('c1', 0, 'a', '{}', 1)`)
+	_, _ = db.Exec(`INSERT INTO debug_llm_calls (conversation_id, sent_at, request_json, response_json) VALUES ('c1', 1, '{}', '{}')`)
+
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.DELETE("/api/debug/sessions/:id", h.DeleteSession)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/api/debug/sessions/c1", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: want 204, got %d (%s)", w.Code, w.Body.String())
+	}
+
+	for _, tbl := range []string{"debug_sessions", "debug_events", "debug_llm_calls"} {
+		var n int
+		_ = db.QueryRow(`SELECT COUNT(*) FROM `+tbl+` WHERE conversation_id = 'c1'`).Scan(&n)
+		if n != 0 {
+			t.Fatalf("%s still has rows after delete: %d", tbl, n)
+		}
+	}
+}
+
+func TestDeleteDebugSession_UnknownIs404(t *testing.T) {
+	db := openHandlerTestDB(t)
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.DELETE("/api/debug/sessions/:id", h.DeleteSession)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/api/debug/sessions/ghost", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: want 404, got %d", w.Code)
+	}
+}
+
+func TestPatchDebugSession_SetsLabel(t *testing.T) {
+	db := openHandlerTestDB(t)
+	_, _ = db.Exec(`INSERT INTO debug_sessions (conversation_id, started_at) VALUES ('c1', 1)`)
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.PATCH("/api/debug/sessions/:id", h.PatchSession)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("PATCH", "/api/debug/sessions/c1", strings.NewReader(`{"label":"nmap run 2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", w.Code)
+	}
+	var label string
+	_ = db.QueryRow(`SELECT label FROM debug_sessions WHERE conversation_id='c1'`).Scan(&label)
+	if label != "nmap run 2" {
+		t.Fatalf("label not persisted: got %q", label)
 	}
 }

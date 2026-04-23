@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"cyberstrike-ai/internal/debug"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -78,4 +79,107 @@ func (h *DebugHandler) ListSessions(c *gin.Context) {
 		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// GetSession handles GET /api/debug/sessions/:id and returns the
+// full capture payload: session row + all llm_calls + all events.
+func (h *DebugHandler) GetSession(c *gin.Context) {
+	id := c.Param("id")
+
+	var sess sessionSummary
+	var endedAt sql.NullInt64
+	err := h.db.QueryRow(`
+		SELECT conversation_id, COALESCE(label,''), started_at, ended_at, COALESCE(outcome,'')
+		FROM debug_sessions WHERE conversation_id = ?`, id).
+		Scan(&sess.ConversationID, &sess.Label, &sess.StartedAt, &endedAt, &sess.Outcome)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "debug session not found"})
+		return
+	}
+	if err != nil {
+		h.logger.Warn("debug: GetSession session query failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "debug query failed"})
+		return
+	}
+	if endedAt.Valid {
+		sess.EndedAt = &endedAt.Int64
+		sess.DurationMs = (endedAt.Int64 - sess.StartedAt) / 1_000_000
+	}
+
+	llmCalls, err := debug.LoadLLMCallsExported(h.db, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	events, err := debug.LoadEventsExported(h.db, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"session":  sess,
+		"llmCalls": llmCalls,
+		"events":   events,
+	})
+}
+
+// DeleteSession handles DELETE /api/debug/sessions/:id.
+// Purges rows from all three debug tables in one transaction.
+// Does not touch the parent messages / conversations rows.
+func (h *DebugHandler) DeleteSession(c *gin.Context) {
+	id := c.Param("id")
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM debug_sessions WHERE conversation_id = ?`, id).Scan(&n); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "debug session not found"})
+		return
+	}
+	tx, err := h.db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer tx.Rollback()
+	for _, tbl := range []string{"debug_events", "debug_llm_calls", "debug_sessions"} {
+		if _, err := tx.Exec(`DELETE FROM `+tbl+` WHERE conversation_id = ?`, id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// PatchSession handles PATCH /api/debug/sessions/:id. Only the
+// label field is mutable in v1.
+func (h *DebugHandler) PatchSession(c *gin.Context) {
+	id := c.Param("id")
+	var body struct {
+		Label *string `json:"label"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Label == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "label required"})
+		return
+	}
+	res, err := h.db.Exec(`UPDATE debug_sessions SET label = ? WHERE conversation_id = ?`, *body.Label, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "debug session not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

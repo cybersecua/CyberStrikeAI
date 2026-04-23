@@ -796,6 +796,9 @@ func setupRoutes(
 
 		// debug capture API (Tasks 15-18)
 		protected.GET("/debug/sessions", debugHandler.ListSessions)
+		protected.GET("/debug/sessions/:id", debugHandler.GetSession)
+		protected.DELETE("/debug/sessions/:id", debugHandler.DeleteSession)
+		protected.PATCH("/debug/sessions/:id", debugHandler.PatchSession)
 
 		// knowledge base(, App handler)
 		knowledgeRoutes := protected.Group("/knowledge")
