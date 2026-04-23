@@ -42,12 +42,12 @@ func NewSink(enabled bool, db *sql.DB, log *zap.Logger) Sink {
 // Do not touch db; callers pass nil when debug is off.
 type noopSink struct{}
 
-func (noopSink) StartSession(string)                             {}
-func (noopSink) EndSession(string, string)                       {}
-func (noopSink) RecordLLMCall(string, string, LLMCall)           {}
-func (noopSink) RecordEvent(string, string, Event)               {}
-func (noopSink) SetEnabled(bool)                                 {}
-func (noopSink) Enabled() bool                                   { return false }
+func (noopSink) StartSession(string)                   {}
+func (noopSink) EndSession(string, string)             {}
+func (noopSink) RecordLLMCall(string, string, LLMCall) {}
+func (noopSink) RecordEvent(string, string, Event)     {}
+func (noopSink) SetEnabled(bool)                       {}
+func (noopSink) Enabled() bool                         { return false }
 
 // dbSink writes to SQLite. Writes are best-effort: any DB error is
 // logged at warn and swallowed, so a debug-subsystem failure never
@@ -66,8 +66,8 @@ type dbSink struct {
 func (s *dbSink) SetEnabled(v bool) { s.enabled.Store(v) }
 func (s *dbSink) Enabled() bool     { return s.enabled.Load() }
 
-// Record*/Start*/End* bodies are filled in Tasks 4-7.
-func (s *dbSink) StartSession(conversationID string)                           {}
-func (s *dbSink) EndSession(conversationID, outcome string)                    {}
-func (s *dbSink) RecordLLMCall(conversationID, messageID string, c LLMCall)    {}
-func (s *dbSink) RecordEvent(conversationID, messageID string, e Event)        {}
+// Record*/Start*/End* bodies are filled in Tasks 5-7.
+func (s *dbSink) StartSession(conversationID string)                        {}
+func (s *dbSink) EndSession(conversationID, outcome string)                 {}
+func (s *dbSink) RecordLLMCall(conversationID, messageID string, c LLMCall) {}
+func (s *dbSink) RecordEvent(conversationID, messageID string, e Event)     {}
