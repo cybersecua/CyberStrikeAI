@@ -144,3 +144,100 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Expose on window so Task 22 can attach openViewer.
 window.debugTab = debugTab;
+
+debugTab.openViewer = async function(convID) {
+    const panel = document.getElementById('debug-viewer-panel');
+    const title = document.getElementById('debug-viewer-title');
+    const body  = document.getElementById('debug-viewer-body');
+    if (!panel || !title || !body) return;
+
+    title.textContent = convID;
+    body.innerHTML = '<div style="padding:16px">Loading…</div>';
+    panel.hidden = false;
+
+    let data;
+    try {
+        const resp = await fetch('/api/debug/sessions/' + encodeURIComponent(convID), { credentials: 'same-origin' });
+        if (resp.status === 404) {
+            body.innerHTML = '<div style="padding:16px">Session was deleted.</div>';
+            return;
+        }
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        data = await resp.json();
+    } catch (e) {
+        body.innerHTML = '<div style="padding:16px">' + debugTab._escape(String(e)) + '</div>';
+        return;
+    }
+
+    // llmCalls come from LoadLLMCallsExported which returns []LLMCallRow — a Go
+    // struct with NO json tags, so gin encodes it with PascalCase field names:
+    //   SentAt, AgentID, Iteration, PromptTokens, CompletionTokens,
+    //   RequestJSON (string), ResponseJSON (string), Error
+    // Events come from LoadEventsExported → rawEventLine → camelCase keys:
+    //   startedAt, agentId, eventType, …
+    const items = [];
+    for (const c of (data.llmCalls || [])) {
+        items.push({ kind: 'llm_call', t: c.SentAt || 0, row: c });
+    }
+    for (const e of (data.events || [])) {
+        items.push({ kind: 'event', t: e.startedAt || 0, row: e });
+    }
+    items.sort((a, b) => a.t - b.t);
+
+    const frag = document.createDocumentFragment();
+    const esc  = debugTab._escape;
+
+    for (const it of items) {
+        if (it.kind === 'event') {
+            const d = document.createElement('div');
+            d.className = 'debug-event';
+            const when = it.t ? new Date(it.t / 1_000_000).toISOString().replace('T', ' ').replace(/\..*Z$/, '') : '';
+            d.textContent = '[' + when + '] ' + (it.row.eventType || '') + ' (agent=' + (it.row.agentId || '-') + ')';
+            frag.appendChild(d);
+        } else {
+            // RequestJSON / ResponseJSON arrive as plain JSON strings (Go string field,
+            // not json.RawMessage). Pretty-print them for readability.
+            const prettyJSON = (s) => {
+                if (!s) return '';
+                try { return JSON.stringify(JSON.parse(s), null, 2); } catch (_) { return s; }
+            };
+            const d = document.createElement('div');
+            d.className = 'debug-llmcall';
+            const when   = it.t ? new Date(it.t / 1_000_000).toISOString().replace('T', ' ').replace(/\..*Z$/, '') : '';
+            const tokens = (it.row.PromptTokens || 0) + '/' + (it.row.CompletionTokens || 0);
+            const reqText = prettyJSON(it.row.RequestJSON);
+            const resText = prettyJSON(it.row.ResponseJSON);
+            const errorBlock = it.row.Error
+                ? '<strong>Error:</strong><pre style="max-height:200px;overflow:auto">' + esc(it.row.Error) + '</pre>'
+                : '';
+            d.innerHTML = `
+                <details>
+                    <summary>[${esc(when)}] LLM call — iter ${esc(String(it.row.Iteration || 0))}, agent ${esc(it.row.AgentID || '-')}, tokens ${esc(tokens)}</summary>
+                    <div style="margin-top:8px">
+                        <strong>Request:</strong>
+                        <pre style="max-height:400px;overflow:auto">${esc(reqText)}</pre>
+                        <strong>Response:</strong>
+                        <pre style="max-height:400px;overflow:auto">${esc(resText)}</pre>
+                        ${errorBlock}
+                    </div>
+                </details>
+            `;
+            frag.appendChild(d);
+        }
+    }
+    body.innerHTML = '';
+    body.appendChild(frag);
+};
+
+// Close-button handler — registered on DOMContentLoaded so it is wired on the
+// same tick as the rest of the debug tab, and remains valid across all
+// openViewer calls (the panel is reused, not recreated).
+document.addEventListener('DOMContentLoaded', () => {
+    const closeBtn = document.getElementById('debug-viewer-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            const panel = document.getElementById('debug-viewer-panel');
+            if (panel) panel.hidden = true;
+        });
+    }
+});
