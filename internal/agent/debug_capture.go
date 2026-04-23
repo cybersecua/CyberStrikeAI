@@ -9,34 +9,40 @@ import (
 )
 
 // captureLLMCall wraps one LLM round-trip and records it to the
-// debug sink if capture coordinates are attached to ctx (via
-// debug.WithCapture). requestPayload serializes into the exact
-// request body we'd send the provider. callFn runs the actual call
-// and returns (response, promptTokens, completionTokens, error).
-// Zero token counts indicate the backend didn't report usage; the
-// sink writes them as SQL NULL so aggregates stay correct.
+// debug sink when capture coordinates are attached to ctx (via
+// debug.WithCapture). requestPayload is marshaled to JSON BEFORE
+// callFn runs, so even if the closure mutates it during dispatch
+// the snapshot reflects the request at send time.
 //
-// When the sink is a noopSink, RecordLLMCall returns immediately —
-// the only per-call overhead is the time.Now() calls and a JSON
-// marshal of the request payload. Acceptable: capture cost is paid
-// only when debug is on.
+// When no capture coordinates are on ctx (debug off for this call),
+// the only per-call overhead is: the CaptureCoords lookup, two
+// time.Now() calls, and callFn itself. No JSON marshal cost.
 func (a *Agent) captureLLMCall(
 	ctx context.Context,
 	requestPayload interface{},
 	callFn func() (response interface{}, promptTokens, completionTokens int64, err error),
 ) (interface{}, error) {
+	// Snapshot capture coordinates + request JSON BEFORE callFn. If
+	// the caller or closure mutates requestPayload (e.g., toggling a
+	// model field on fallback, or appending to a Messages slice),
+	// the snapshot reflects the actual request at dispatch time.
+	convID, msgID, iteration, callIndex, agentID := debug.CaptureCoords(ctx)
+	var reqJSON []byte
+	if convID != "" {
+		reqJSON, _ = json.Marshal(requestPayload)
+	}
+
 	sentAt := time.Now().UnixNano()
 	resp, pt, ct, err := callFn()
 	finishedAt := time.Now().UnixNano()
 
-	convID, msgID, iteration, callIndex, agentID := debug.CaptureCoords(ctx)
 	if convID == "" {
-		// No capture coordinates on ctx — skip recording. Happens
-		// in unit tests that exercise the raw LLM path without
-		// orchestrator, and in any non-captured call.
+		// No capture coordinates — off-path. Skip recording. The
+		// only overhead paid was two time.Now() calls and the
+		// CaptureCoords lookup.
 		return resp, err
 	}
-	reqJSON, _ := json.Marshal(requestPayload)
+
 	var respJSON []byte
 	if resp != nil {
 		respJSON, _ = json.Marshal(resp)
