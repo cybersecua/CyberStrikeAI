@@ -10,20 +10,20 @@ import (
 // type carried by the sink) so the read path can evolve without
 // breaking Sink callers.
 type LLMCallRow struct {
-	ID               int64
-	ConversationID   string
-	MessageID        string
-	Iteration        int
-	CallIndex        int
-	AgentID          string
-	SentAt           int64
-	FirstTokenAt     int64
-	FinishedAt       int64
-	PromptTokens     int64
-	CompletionTokens int64
-	RequestJSON      string
-	ResponseJSON     string
-	Error            string
+	ID               int64  `json:"id"`
+	ConversationID   string `json:"conversationId"`
+	MessageID        string `json:"messageId,omitempty"`
+	Iteration        int    `json:"iteration"`
+	CallIndex        int    `json:"callIndex"`
+	AgentID          string `json:"agentId"`
+	SentAt           int64  `json:"sentAt"`
+	FirstTokenAt     int64  `json:"firstTokenAt"`
+	FinishedAt       int64  `json:"finishedAt"`
+	PromptTokens     int64  `json:"promptTokens"`
+	CompletionTokens int64  `json:"completionTokens"`
+	RequestJSON      string `json:"request"`
+	ResponseJSON     string `json:"response"`
+	Error            string `json:"error,omitempty"`
 }
 
 // shareGPTRequest is the request shape we expect: the orchestrator

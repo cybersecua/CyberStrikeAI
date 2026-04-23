@@ -170,14 +170,14 @@ debugTab.openViewer = async function(convID) {
     }
 
     // llmCalls come from LoadLLMCallsExported which returns []LLMCallRow — a Go
-    // struct with NO json tags, so gin encodes it with PascalCase field names:
-    //   SentAt, AgentID, Iteration, PromptTokens, CompletionTokens,
-    //   RequestJSON (string), ResponseJSON (string), Error
+    // struct with camelCase json tags:
+    //   sentAt, agentId, iteration, promptTokens, completionTokens,
+    //   request (string), response (string), error
     // Events come from LoadEventsExported → rawEventLine → camelCase keys:
     //   startedAt, agentId, eventType, …
     const items = [];
     for (const c of (data.llmCalls || [])) {
-        items.push({ kind: 'llm_call', t: c.SentAt || 0, row: c });
+        items.push({ kind: 'llm_call', t: c.sentAt || 0, row: c });
     }
     for (const e of (data.events || [])) {
         items.push({ kind: 'event', t: e.startedAt || 0, row: e });
@@ -195,7 +195,7 @@ debugTab.openViewer = async function(convID) {
             d.textContent = '[' + when + '] ' + (it.row.eventType || '') + ' (agent=' + (it.row.agentId || '-') + ')';
             frag.appendChild(d);
         } else {
-            // RequestJSON / ResponseJSON arrive as plain JSON strings (Go string field,
+            // request / response arrive as plain JSON strings (Go string field,
             // not json.RawMessage). Pretty-print them for readability.
             const prettyJSON = (s) => {
                 if (!s) return '';
@@ -204,15 +204,15 @@ debugTab.openViewer = async function(convID) {
             const d = document.createElement('div');
             d.className = 'debug-llmcall';
             const when   = it.t ? new Date(it.t / 1_000_000).toISOString().replace('T', ' ').replace(/\..*Z$/, '') : '';
-            const tokens = (it.row.PromptTokens || 0) + '/' + (it.row.CompletionTokens || 0);
-            const reqText = prettyJSON(it.row.RequestJSON);
-            const resText = prettyJSON(it.row.ResponseJSON);
-            const errorBlock = it.row.Error
-                ? '<strong>Error:</strong><pre style="max-height:200px;overflow:auto">' + esc(it.row.Error) + '</pre>'
+            const tokens = (it.row.promptTokens || 0) + '/' + (it.row.completionTokens || 0);
+            const reqText = prettyJSON(it.row.request);
+            const resText = prettyJSON(it.row.response);
+            const errorBlock = it.row.error
+                ? '<strong>Error:</strong><pre style="max-height:200px;overflow:auto">' + esc(it.row.error) + '</pre>'
                 : '';
             d.innerHTML = `
                 <details>
-                    <summary>[${esc(when)}] LLM call — iter ${esc(String(it.row.Iteration || 0))}, agent ${esc(it.row.AgentID || '-')}, tokens ${esc(tokens)}</summary>
+                    <summary>[${esc(when)}] LLM call — iter ${esc(String(it.row.iteration || 0))}, agent ${esc(it.row.agentId || '-')}, tokens ${esc(tokens)}</summary>
                     <div style="margin-top:8px">
                         <strong>Request:</strong>
                         <pre style="max-height:400px;overflow:auto">${esc(reqText)}</pre>
