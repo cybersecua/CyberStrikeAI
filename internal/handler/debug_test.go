@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -293,5 +297,46 @@ func TestExportConversation_InvalidFormat(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status: want 400, got %d", w.Code)
+	}
+}
+
+func TestExportBulk_TarGzValid(t *testing.T) {
+	db := openHandlerTestDB(t)
+	for _, id := range []string{"a", "b"} {
+		_, _ = db.Exec(`INSERT INTO debug_sessions (conversation_id, started_at, ended_at, outcome) VALUES (?, 1, 2, 'completed')`, id)
+		_, _ = db.Exec(`INSERT INTO debug_llm_calls (conversation_id, sent_at, agent_id, request_json, response_json) VALUES (?, 1, 'cyberstrike-orchestrator', '{"messages":[{"role":"user","content":"hi"}]}', '{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}')`, id)
+	}
+	h := &DebugHandler{db: db, logger: zap.NewNop()}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/debug/export-bulk", h.ExportBulk)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/debug/export-bulk?format=sharegpt", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/gzip" {
+		t.Fatalf("content-type: got %q", ct)
+	}
+	gzr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	tr := tar.NewReader(gzr)
+	names := map[string]bool{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar: %v", err)
+		}
+		names[hdr.Name] = true
+	}
+	if !names["a.jsonl"] || !names["b.jsonl"] {
+		t.Fatalf("missing entries: %v", names)
 	}
 }

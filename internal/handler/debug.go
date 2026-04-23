@@ -3,6 +3,8 @@ package handler
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
+	"time"
 
 	"cyberstrike-ai/internal/debug"
 	"github.com/gin-gonic/gin"
@@ -208,5 +210,32 @@ func (h *DebugHandler) ExportConversation(c *gin.Context) {
 		if err := debug.WriteShareGPTJSONL(c.Writer, h.db, id); err != nil {
 			h.logger.Warn("debug: ExportConversation sharegpt failed", zap.Error(err))
 		}
+	}
+}
+
+// ExportBulk handles GET /api/debug/export-bulk.
+// Query params: format=raw|sharegpt (default sharegpt),
+//               since=unix_ms (optional), until=unix_ms (optional).
+// Streams a gzip-compressed tar archive with one JSONL entry per
+// session in the [since, until] window.
+func (h *DebugHandler) ExportBulk(c *gin.Context) {
+	format := c.DefaultQuery("format", "sharegpt")
+	var sinceNS, untilNS int64
+	if s := c.Query("since"); s != "" {
+		if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+			sinceNS = ms * int64(time.Millisecond)
+		}
+	}
+	if u := c.Query("until"); u != "" {
+		if ms, err := strconv.ParseInt(u, 10, 64); err == nil {
+			untilNS = ms * int64(time.Millisecond)
+		}
+	}
+
+	c.Header("Content-Type", "application/gzip")
+	c.Header("Content-Disposition", `attachment; filename="debug-export.tar.gz"`)
+
+	if err := debug.WriteBulkArchive(c.Writer, h.db, format, sinceNS, untilNS); err != nil {
+		h.logger.Warn("debug: ExportBulk failed", zap.Error(err))
 	}
 }
