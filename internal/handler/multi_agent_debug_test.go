@@ -106,3 +106,23 @@ func TestWrapRunWithDebug_NilSinkSafe(t *testing.T) {
 		t.Fatalf("unexpected err=%v outcome=%q", err, outcome)
 	}
 }
+
+func TestWrapRunWithDebug_PanicStillFiresEndSession(t *testing.T) {
+	fake := &fakeSink{enabled: true}
+	defer func() {
+		// Must have recovered the panic from runFn.
+		_ = recover()
+		if len(fake.ends) != 1 {
+			t.Fatalf("EndSession did not fire on panic; got %d end calls", len(fake.ends))
+		}
+		if fake.ends[0].id != "conv-panic" {
+			t.Fatalf("EndSession id: want conv-panic, got %q", fake.ends[0].id)
+		}
+		// Outcome at panic-time is "failed" (err defaulting) OR whatever
+		// the defer-computed outcome is. Accept either.
+	}()
+	_, _ = wrapRunWithDebug(fake, "conv-panic", func() (string, error) {
+		panic("runFn exploded")
+	})
+	t.Fatalf("expected panic to propagate")
+}

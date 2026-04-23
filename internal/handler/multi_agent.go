@@ -138,13 +138,13 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	}
 
 	taskStatus := "completed"
-	defer h.tasks.FinishTask(conversationID, taskStatus)
+	defer func() { h.tasks.FinishTask(conversationID, taskStatus) }()
 
 	// Debug capture bookends: StartSession now, EndSession on function
-	// exit via defer-closure so it reads the final taskStatus value
-	// (mutated by cancelled/failed branches below after RunOrchestrator
-	// returns). Defer fires after RunOrchestrator but before the
-	// FinishTask defer (LIFO), which is the intended order.
+	// exit via defer-closure so both it and FinishTask read the final
+	// taskStatus value (mutated by cancelled/failed branches below after
+	// RunOrchestrator returns). Both defers fire after RunOrchestrator but
+	// before main return (LIFO), which is the intended order.
 	h.debugSink.StartSession(conversationID)
 	defer func() { h.debugSink.EndSession(conversationID, taskStatus) }()
 
