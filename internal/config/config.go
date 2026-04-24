@@ -106,7 +106,11 @@ func (c *Config) EffectiveProvider() string {
 
 // ClaudeCLIConfig holds settings for the Claude CLI provider.
 type ClaudeCLIConfig struct {
-	Workdir      string   `yaml:"workdir,omitempty" json:"workdir,omitempty"`             // Working directory for claude binary (default: cwd)
+	// Workdir sets the claude binary's working directory. Any absolute path is
+	// accepted - Claude's Read/Write tools will operate under it. Not a sandbox;
+	// the authenticated user already has full shell access via MCP, so there's
+	// nothing to gain from restricting it here.
+	Workdir      string   `yaml:"workdir,omitempty" json:"workdir,omitempty"`
 	MaxTurns     int      `yaml:"max_turns,omitempty" json:"max_turns,omitempty"`         // Max agentic turns (0 = unlimited)
 	AllowedTools []string `yaml:"allowed_tools,omitempty" json:"allowed_tools,omitempty"` // Restrict claude to these tools (empty = all)
 }
