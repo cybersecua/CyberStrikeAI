@@ -628,3 +628,37 @@ func TestAgent_LLMCallWrapper_RecordsWhenDebugOn(t *testing.T) {
 		t.Fatalf("metadata mismatch: iter=%d callIdx=%d agent=%q", iter, callIdx, agentID)
 	}
 }
+
+// TestAgent_ToolDispatch_RejectsNonWhitelistedTool is the regression
+// test for the single-agent role-whitelist execution gate. The
+// orchestrator had the same bypass patched in task #29; single-agent
+// missed the fix.
+//
+// Scenario: the model returns a tool_call for "forbidden_tool" which
+// is NOT in the role's whitelist. The dispatch loop must refuse to
+// execute it and append a synthetic tool-role response explaining
+// the refusal, so the LLM can react on the next round.
+func TestAgent_ToolDispatch_RejectsNonWhitelistedTool(t *testing.T) {
+	// Drive via isToolAllowed directly — exercises the unit rather
+	// than requiring a full orchestration loop mock.
+	cases := []struct {
+		name      string
+		roleTools []string
+		tool      string
+		want      bool
+	}{
+		{name: "empty role list allows anything", roleTools: nil, tool: "nmap", want: true},
+		{name: "tool on whitelist is allowed", roleTools: []string{"nmap", "nuclei"}, tool: "nuclei", want: true},
+		{name: "tool NOT on whitelist is denied", roleTools: []string{"nmap"}, tool: "forbidden_tool", want: false},
+		{name: "case-sensitive match is denied", roleTools: []string{"nmap"}, tool: "Nmap", want: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := isToolAllowed(tc.tool, tc.roleTools)
+			if got != tc.want {
+				t.Fatalf("isToolAllowed(%q, %v) = %v, want %v", tc.tool, tc.roleTools, got, tc.want)
+			}
+		})
+	}
+}

@@ -866,6 +866,30 @@ LANGUAGE: You MUST respond ONLY in English. All output - including todo lists, t
 					"iteration":    i + 1,
 				})
 
+				// role-whitelist execution gate — mirrors the orchestrator's
+				// *orchestratorState.isToolAllowed check
+				// (internal/multiagent/orchestrator.go:560).
+				// ToolsForRole / getAvailableTools is the DISPLAY filter the
+				// LLM sees; this is the security gate that blocks a
+				// hallucinated or history-leaked tool name from reaching MCP.
+				if !isToolAllowed(toolCall.Function.Name, roleTools) {
+					denyMsg := fmt.Sprintf("Tool %q is not available in the current role. Use only the tools shown in your tool list.", toolCall.Function.Name)
+					messages = append(messages, ChatMessage{
+						Role:       "tool",
+						ToolCallID: toolCall.ID,
+						Content:    denyMsg,
+					})
+					sendProgress("tool_result", fmt.Sprintf("Tool denied: %s", toolCall.Function.Name), map[string]interface{}{
+						"toolName":   toolCall.Function.Name,
+						"toolCallId": toolCall.ID,
+						"success":    false,
+						"isError":    true,
+						"result":     denyMsg,
+						"iteration":  i + 1,
+					})
+					continue
+				}
+
 				// execute tool
 				toolCtx := context.WithValue(ctx, security.ToolOutputCallbackCtxKey, security.ToolOutputCallback(func(chunk string) {
 					if strings.TrimSpace(chunk) == "" {
