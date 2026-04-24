@@ -34,11 +34,22 @@ func NewCLIClientWithPath(path string, logger *zap.Logger) *CLIClient {
 }
 
 // SendPrompt sends a prompt to the Claude CLI and returns the parsed result.
+// The prompt is piped via stdin so it never appears in /proc/<pid>/cmdline or
+// process-accounting logs (auditd, systemd-journald, etc.).
 func (c *CLIClient) SendPrompt(ctx context.Context, prompt string, opts *PromptOptions) (*Result, error) {
-	args := c.buildArgs(prompt, opts)
-	c.logger.Debug("executing claude CLI", zap.String("binary", c.binaryPath), zap.Strings("args", args))
+	args := c.buildArgs(opts)
+	sessionID := ""
+	if opts != nil {
+		sessionID = opts.SessionID
+	}
+	c.logger.Debug("executing claude CLI",
+		zap.String("binary", c.binaryPath),
+		zap.Int("arg_count", len(args)),
+		zap.String("session_id", sessionID),
+	)
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	cmd.Stdin = strings.NewReader(prompt)
 	if c.workdir != "" {
 		cmd.Dir = c.workdir
 	}
@@ -62,9 +73,10 @@ func (c *CLIClient) SendPrompt(ctx context.Context, prompt string, opts *PromptO
 	return &result, nil
 }
 
-// buildArgs constructs CLI arguments from the prompt and options.
-func (c *CLIClient) buildArgs(prompt string, opts *PromptOptions) []string {
-	args := []string{"-p", prompt, "--output-format", "json"}
+// buildArgs constructs CLI arguments for the claude binary. The prompt itself
+// is passed via stdin (see SendPrompt); "-p -" tells claude to read it from there.
+func (c *CLIClient) buildArgs(opts *PromptOptions) []string {
+	args := []string{"-p", "-", "--output-format", "json"}
 
 	if opts == nil {
 		return args

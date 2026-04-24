@@ -108,19 +108,16 @@ func TestCLIClient_BuildArgs(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		prompt   string
 		opts     *PromptOptions
 		expected []string
 	}{
 		{
 			name:     "no options",
-			prompt:   "hello",
 			opts:     nil,
-			expected: []string{"-p", "hello", "--output-format", "json"},
+			expected: []string{"-p", "-", "--output-format", "json"},
 		},
 		{
-			name:   "all options",
-			prompt: "test prompt",
+			name: "all options",
 			opts: &PromptOptions{
 				SystemPrompt: "be helpful",
 				SessionID:    "abc-123",
@@ -128,7 +125,7 @@ func TestCLIClient_BuildArgs(t *testing.T) {
 				AllowedTools: []string{"Read", "Write"},
 			},
 			expected: []string{
-				"-p", "test prompt", "--output-format", "json",
+				"-p", "-", "--output-format", "json",
 				"--system-prompt", "be helpful",
 				"--resume", "abc-123",
 				"--max-turns", "5",
@@ -136,24 +133,22 @@ func TestCLIClient_BuildArgs(t *testing.T) {
 			},
 		},
 		{
-			name:   "partial options",
-			prompt: "partial",
+			name: "partial options",
 			opts: &PromptOptions{
 				MaxTurns: 3,
 			},
-			expected: []string{"-p", "partial", "--output-format", "json", "--max-turns", "3"},
+			expected: []string{"-p", "-", "--output-format", "json", "--max-turns", "3"},
 		},
 		{
-			name:   "empty options struct",
-			prompt: "empty",
-			opts:   &PromptOptions{},
-			expected: []string{"-p", "empty", "--output-format", "json"},
+			name:     "empty options struct",
+			opts:     &PromptOptions{},
+			expected: []string{"-p", "-", "--output-format", "json"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := client.buildArgs(tt.prompt, tt.opts)
+			got := client.buildArgs(tt.opts)
 			if len(got) != len(tt.expected) {
 				t.Fatalf("expected %d args, got %d: %v", len(tt.expected), len(got), got)
 			}
