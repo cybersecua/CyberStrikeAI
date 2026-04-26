@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/ctxkeys"
 	"cyberstrike-ai/internal/debug"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
@@ -22,12 +23,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// conversationIDKey is the private context key that scopes a tool
-// dispatch to a specific conversation. It replaces what used to be a
-// mutable Agent.currentConversationID field with a per-call value
-// carried on context.Context — see withConversationID below for why.
-type conversationIDKey struct{}
-
 // withConversationID returns a context carrying id. Readers obtain it via
 // conversationIDFromContext. The old Agent.currentConversationID field
 // did the same job under a save/swap/restore pattern with a.mu, which
@@ -36,21 +31,30 @@ type conversationIDKey struct{}
 // just written, not the original). Plumbing the value through context
 // keeps every call's conversation scope isolated and lock-free, which
 // unblocks parallel tool dispatch in the multi-agent orchestrator.
+//
+// The key lives in ctxkeys so that the mcp package can set the same key on
+// incoming HTTP requests (X-Conversation-ID header) without importing agent
+// (which would create an import cycle since agent imports mcp).
 func withConversationID(ctx context.Context, id string) context.Context {
-	if id == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, conversationIDKey{}, id)
+	return ctxkeys.WithConversationID(ctx, id)
+}
+
+// WithConversationID is the exported wrapper around ctxkeys.WithConversationID
+// for callers that already import this package.
+func WithConversationID(ctx context.Context, id string) context.Context {
+	return ctxkeys.WithConversationID(ctx, id)
 }
 
 // conversationIDFromContext returns the conversation id set by
 // withConversationID, or "" if the context carries none.
 func conversationIDFromContext(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	v, _ := ctx.Value(conversationIDKey{}).(string)
-	return v
+	return ctxkeys.ConversationIDFromContext(ctx)
+}
+
+// ConversationIDFromContext is the exported wrapper around
+// ctxkeys.ConversationIDFromContext for callers that already import this package.
+func ConversationIDFromContext(ctx context.Context) string {
+	return ctxkeys.ConversationIDFromContext(ctx)
 }
 
 // Agent AI agent

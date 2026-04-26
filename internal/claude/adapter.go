@@ -66,19 +66,39 @@ func (a *StreamAdapter) UpdateConfig(cfg CLIConfig) {
 //
 //	callback(eventType, message string, data interface{})
 //
+// roleTools is the optional role-configured tool whitelist from the role config.
+// When non-empty, only MCP tool names that also appear in roleTools are forwarded
+// to Claude CLI — this aligns with the role-whitelist gate in the single-agent loop
+// (operational scoping, not security). The static cfg.AllowedTools always applies.
+//
 // Returns the result text, the Claude session ID (for storage), and any error.
 func (a *StreamAdapter) RunPrompt(
 	ctx context.Context,
 	prompt string,
 	systemPrompt string,
 	conversationID string,
+	roleTools []string,
 	callback func(eventType, message string, data interface{}),
 ) (resultText string, claudeSessionID string, err error) {
 
-	// Build options from config — merge static AllowedTools with MCP tool names
+	// Build options from config — merge static AllowedTools with MCP tool names.
+	// If roleTools is set, intersect MCPToolNames with it so restricted roles
+	// only see the tools they're meant to have.
 	allowedTools := append([]string{}, a.cfg.AllowedTools...)
-	for _, name := range a.cfg.MCPToolNames {
-		allowedTools = append(allowedTools, "mcp__cyberstrike__"+name)
+	if len(roleTools) > 0 {
+		roleSet := make(map[string]struct{}, len(roleTools))
+		for _, t := range roleTools {
+			roleSet[t] = struct{}{}
+		}
+		for _, name := range a.cfg.MCPToolNames {
+			if _, ok := roleSet[name]; ok {
+				allowedTools = append(allowedTools, "mcp__cyberstrike__"+name)
+			}
+		}
+	} else {
+		for _, name := range a.cfg.MCPToolNames {
+			allowedTools = append(allowedTools, "mcp__cyberstrike__"+name)
+		}
 	}
 	opts := &PromptOptions{
 		SystemPrompt: systemPrompt,
@@ -90,14 +110,23 @@ func (a *StreamAdapter) RunPrompt(
 	// When our MCP middleware enforces an auth header, include it in the server config
 	// so Claude CLI's requests don't get 401'd.
 	if a.cfg.MCPServerURL != "" {
+		headers := map[string]string{}
+		if a.cfg.MCPAuthHeader != "" && a.cfg.MCPAuthHeaderValue != "" {
+			headers[a.cfg.MCPAuthHeader] = a.cfg.MCPAuthHeaderValue
+		}
+		// Thread the conversation ID so that our MCP server's HandleHTTP can
+		// inject it into the tool-dispatch context. This is how record_vulnerability
+		// (and other tools that read conversationIDFromContext) know which
+		// conversation they belong to when called by Claude CLI.
+		if conversationID != "" {
+			headers["X-Conversation-ID"] = conversationID
+		}
 		server := map[string]interface{}{
 			"type": "http",
 			"url":  a.cfg.MCPServerURL,
 		}
-		if a.cfg.MCPAuthHeader != "" && a.cfg.MCPAuthHeaderValue != "" {
-			server["headers"] = map[string]string{
-				a.cfg.MCPAuthHeader: a.cfg.MCPAuthHeaderValue,
-			}
+		if len(headers) > 0 {
+			server["headers"] = headers
 		}
 		mcpCfg := map[string]interface{}{
 			"mcpServers": map[string]interface{}{
@@ -106,9 +135,10 @@ func (a *StreamAdapter) RunPrompt(
 		}
 		if mcpJSON, err := json.Marshal(mcpCfg); err == nil {
 			opts.MCPConfig = string(mcpJSON)
-			// Deliberately not logging the JSON: it contains the MCP auth header value.
+			// Deliberately not logging the JSON: it may contain the MCP auth header value.
 			a.logger.Debug("Passing MCP config to Claude CLI",
-				zap.Bool("auth_header_set", a.cfg.MCPAuthHeader != ""))
+				zap.Bool("auth_header_set", a.cfg.MCPAuthHeader != ""),
+				zap.Bool("conversation_id_set", conversationID != ""))
 		} else {
 			a.logger.Warn("Failed to marshal MCP config", zap.Error(err))
 		}
