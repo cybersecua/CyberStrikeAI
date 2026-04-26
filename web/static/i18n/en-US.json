@@ -1324,7 +1324,9 @@
     "summaryTopP": "Summary Top P",
     "temperature": "Temperature",
     "topP": "Top P",
-    "topK": "Top K (Anthropic)"
+    "topK": "Top K (Anthropic)",
+    "claudeCliPrereqsLabel": "Readiness check",
+    "claudeCheckBtn": "Check Claude CLI prereqs"
   },
   "settingsTerminal": {
     "title": "Terminal",

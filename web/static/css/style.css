@@ -14735,3 +14735,12 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 #debug-viewer-body .debug-llmcall details summary { cursor: pointer; font-weight: 600; }
 #debug-viewer-body pre { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
 
+/* Claude CLI prereq check list */
+.prereq-list { list-style: none; padding: 0; margin: 8px 0; font-size: 0.9em; }
+.prereq-list li { padding: 4px 8px; border-left: 3px solid var(--border-color, #ddd); margin: 2px 0; }
+.prereq-list li.ok { border-left-color: #4caf50; }
+.prereq-list li.fail { border-left-color: #f44336; background: rgba(244,67,54,0.06); }
+.prereq-list li.pending { border-left-color: #999; }
+.prereq-list .check-name { font-weight: 600; margin-right: 8px; }
+.prereq-list .check-detail { color: var(--text-muted, #666); font-family: monospace; font-size: 0.85em; }
+

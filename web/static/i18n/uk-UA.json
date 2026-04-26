@@ -1324,7 +1324,9 @@
     "summaryTopP": "Top P підсумків",
     "temperature": "Температура",
     "topP": "Top P",
-    "topK": "Top K (Anthropic)"
+    "topK": "Top K (Anthropic)",
+    "claudeCliPrereqsLabel": "Перевірка готовності",
+    "claudeCheckBtn": "Перевірити передумови Claude CLI"
   },
   "settingsTerminal": {
     "title": "Термінал",

@@ -1408,6 +1408,12 @@
                                             <input type="text" id="claude-cli-allowed-tools" placeholder="Leave empty for all tools" />
                                             <small class="form-hint">Comma-separated list of allowed Claude tools (e.g. Read, Write, Bash)</small>
                                         </div>
+                                        <div class="form-group">
+                                            <label data-i18n="settingsBasic.claudeCliPrereqsLabel">Readiness check</label>
+                                            <button class="btn-secondary" id="claude-cli-check-btn" type="button" data-i18n="settingsBasic.claudeCheckBtn">Check Claude CLI prereqs</button>
+                                            <ul id="claude-cli-check-results" class="prereq-list"></ul>
+                                            <div id="claude-cli-status-summary"></div>
+                                        </div>
                                         </div><!-- /claude-cli-fields-wrapper -->
 
                                         <!-- OpenAI-compatible settings (shown when openai is selected) -->
@@ -2867,6 +2873,7 @@ skill...</small>
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/settings.js"></script>
     <script src="/static/js/settings_debug.js"></script>
+    <script src="/static/js/settings_provider.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
     <script src="/static/js/terminal.js"></script>

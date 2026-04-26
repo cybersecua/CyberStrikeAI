@@ -854,6 +854,11 @@ async function applySettings() {
         
         // validateRequiredfield (only for OpenAI provider; Claude CLI has no required fields)
         const selectedProvider = document.getElementById('llm-provider')?.value || 'openai';
+
+        // Gate: Claude CLI requires all prereq checks to pass before enabling.
+        if (selectedProvider === 'claude-cli' && typeof window.providerSwitch !== 'undefined') {
+            if (!window.providerSwitch.canSave()) return;
+        }
         const apiKey = document.getElementById('openai-api-key').value.trim();
         const baseUrl = document.getElementById('openai-base-url').value.trim();
         const model = getSelectedModel();
