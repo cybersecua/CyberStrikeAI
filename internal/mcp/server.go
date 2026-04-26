@@ -481,6 +481,20 @@ func (s *Server) handleCallTool(ctx context.Context, msg *Message) *Message {
 		}
 	}
 
+	// Inject conversation_id into tool arguments from ctx when present and absent
+	// from the args map. This mirrors what agent.executeToolViaMCP does on the
+	// OpenAI path so that tools like record_vulnerability see the correct
+	// conversation when called via Claude CLI (which bypasses the
+	// executeToolViaMCP pre-dispatch layer and never stuffs ctx→args itself).
+	if convID := ctxkeys.ConversationIDFromContext(ctx); convID != "" {
+		if _, hasID := req.Arguments["conversation_id"]; !hasID {
+			if req.Arguments == nil {
+				req.Arguments = map[string]interface{}{}
+			}
+			req.Arguments["conversation_id"] = convID
+		}
+	}
+
 	// Apply a per-tool timeout on top of the caller's context (which may
 	// already carry a conversation ID injected by HandleHTTP).
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
