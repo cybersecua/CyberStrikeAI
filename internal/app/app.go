@@ -418,7 +418,22 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger, sink)
 	agentHandler.SetSkillsManager(skillsManager) // set Skills manager
 	agentHandler.SetAgentsMarkdownDir(agentsDir)
-	// Collect all registered MCP tool names so Claude CLI can auto-allow them
+	monitorHandler := handler.NewMonitorHandler(mcpServer, executor, db, log.Logger)
+	monitorHandler.SetExternalMCPManager(externalMCPMgr) // external MCP management,get external MCPrecord
+	groupHandler := handler.NewGroupHandler(db, log.Logger)
+	authHandler := handler.NewAuthHandler(authManager, cfg, configPath, log.Logger)
+	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
+	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
+	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
+	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
+	// Register webshell tools BEFORE snapshotting MCPToolNames so that
+	// cold-boot Claude CLI sessions see webshell tools on the first turn.
+	// (The hot-reload path in claudeConfigUpdater re-collects after every
+	// config apply, so it already worked; this fixes the initial snapshot.)
+	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
+	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
+	// Collect all registered MCP tool names so Claude CLI can auto-allow them.
+	// Must be AFTER all tool registrations including webshell above.
 	var mcpToolNames []string
 	for _, t := range mcpServer.GetAllTools() {
 		mcpToolNames = append(mcpToolNames, t.Name)
@@ -439,16 +454,6 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	if knowledgeManager != nil {
 		agentHandler.SetKnowledgeManager(knowledgeManager)
 	}
-	monitorHandler := handler.NewMonitorHandler(mcpServer, executor, db, log.Logger)
-	monitorHandler.SetExternalMCPManager(externalMCPMgr) // external MCP management,get external MCPrecord
-	groupHandler := handler.NewGroupHandler(db, log.Logger)
-	authHandler := handler.NewAuthHandler(authManager, cfg, configPath, log.Logger)
-	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
-	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
-	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
-	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
-	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
-	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
 	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger, sink)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)

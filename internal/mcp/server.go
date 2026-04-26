@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"cyberstrike-ai/internal/ctxkeys"
 )
 
 // MonitorStorage interface for monitor data storage
@@ -154,7 +156,16 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := s.handleMessage(&msg)
+	// Thread the conversation ID from the X-Conversation-ID header into the
+	// request context so that tool handlers (e.g. record_vulnerability) can
+	// attach findings to the right conversation. Claude CLI sets this header
+	// via the mcpCfg headers map built in claude/adapter.go.
+	ctx := r.Context()
+	if convID := r.Header.Get("X-Conversation-ID"); convID != "" {
+		ctx = ctxkeys.WithConversationID(ctx, convID)
+	}
+
+	response := s.handleMessage(ctx, &msg)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		s.logger.Warn("Failed to write MCP response", zap.Error(err))
@@ -183,7 +194,13 @@ func (s *Server) serveSSESessionMessage(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	response := s.handleMessage(&msg)
+	// Thread conversation ID from the X-Conversation-ID header for SSE session tool calls.
+	sseCtx := r.Context()
+	if convID := r.Header.Get("X-Conversation-ID"); convID != "" {
+		sseCtx = ctxkeys.WithConversationID(sseCtx, convID)
+	}
+
+	response := s.handleMessage(sseCtx, &msg)
 	if response == nil {
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -277,7 +294,7 @@ func (s *Server) removeSSEClient(id string) {
 }
 
 // handleMessage handles an MCP message
-func (s *Server) handleMessage(msg *Message) *Message {
+func (s *Server) handleMessage(ctx context.Context, msg *Message) *Message {
 	// check if this is a notification - notifications have no id field and don't need a response
 	isNotification := msg.ID.Value() == nil || msg.ID.String() == ""
 
@@ -292,7 +309,7 @@ func (s *Server) handleMessage(msg *Message) *Message {
 	case "tools/list":
 		return s.handleListTools(msg)
 	case "tools/call":
-		return s.handleCallTool(msg)
+		return s.handleCallTool(ctx, msg)
 	case "prompts/list":
 		return s.handleListPrompts(msg)
 	case "prompts/get":
@@ -402,7 +419,7 @@ func (s *Server) handleListTools(msg *Message) *Message {
 }
 
 // handleCallTool handles a tool call request
-func (s *Server) handleCallTool(msg *Message) *Message {
+func (s *Server) handleCallTool(ctx context.Context, msg *Message) *Message {
 	var req CallToolRequest
 	if err := json.Unmarshal(msg.Params, &req); err != nil {
 		return &Message{
@@ -464,7 +481,9 @@ func (s *Server) handleCallTool(msg *Message) *Message {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Apply a per-tool timeout on top of the caller's context (which may
+	// already carry a conversation ID injected by HandleHTTP).
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	s.logger.Info("starting tool execution",
@@ -1165,8 +1184,8 @@ func (s *Server) HandleStdio() error {
 			continue
 		}
 
-		// handle message
-		response := s.handleMessage(&msg)
+		// handle message (stdio path: no HTTP request context, no conversation ID header)
+		response := s.handleMessage(context.Background(), &msg)
 
 		// if it is a notification (response is nil), no response needs to be sent
 		if response == nil {

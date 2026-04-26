@@ -38,7 +38,7 @@ func TestStreamAdapter_RunPrompt(t *testing.T) {
 			events = append(events, eventType+":"+message)
 		}
 
-		result, sessionID, err := adapter.RunPrompt(context.Background(), "hello", "", "conv-1", callback)
+		result, sessionID, err := adapter.RunPrompt(context.Background(), "hello", "", "conv-1", nil, callback)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -69,7 +69,7 @@ func TestStreamAdapter_RunPrompt(t *testing.T) {
 		adapter.sessions.Set("conv-2", "sess-existing")
 
 		callback := func(_, _ string, _ interface{}) {}
-		_, _, err := adapter.RunPrompt(context.Background(), "follow up", "", "conv-2", callback)
+		_, _, err := adapter.RunPrompt(context.Background(), "follow up", "", "conv-2", nil, callback)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -85,9 +85,68 @@ func TestStreamAdapter_RunPrompt(t *testing.T) {
 		adapter := NewStreamAdapterWithClient(client, logger)
 
 		callback := func(_, _ string, _ interface{}) {}
-		_, _, err := adapter.RunPrompt(context.Background(), "hello", "", "conv-3", callback)
+		_, _, err := adapter.RunPrompt(context.Background(), "hello", "", "conv-3", nil, callback)
 		if err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestStreamAdapter_RunPrompt_RoleToolsFilter(t *testing.T) {
+	logger := zap.NewNop()
+
+	t.Run("nil roleTools includes all MCP tools", func(t *testing.T) {
+		var capturedOpts *PromptOptions
+		client := &mockClient{result: &Result{Result: "ok", SessionID: "s1"}}
+		wrapper := &optsCaptureClient{inner: client, opts: &capturedOpts}
+		adapter := NewStreamAdapterWithClient(wrapper, logger)
+		adapter.cfg = CLIConfig{
+			MCPToolNames: []string{"scan_host", "record_vulnerability", "webshell_exec"},
+		}
+		cb := func(_, _ string, _ interface{}) {}
+		_, _, err := adapter.RunPrompt(context.Background(), "hi", "", "conv-rt1", nil, cb)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := map[string]bool{
+			"mcp__cyberstrike__scan_host":            true,
+			"mcp__cyberstrike__record_vulnerability": true,
+			"mcp__cyberstrike__webshell_exec":        true,
+		}
+		for _, tool := range (*capturedOpts).AllowedTools {
+			delete(want, tool)
+		}
+		if len(want) > 0 {
+			t.Errorf("missing tools in allowedTools: %v", want)
+		}
+	})
+
+	t.Run("non-empty roleTools intersects MCP tool names", func(t *testing.T) {
+		var capturedOpts *PromptOptions
+		client := &mockClient{result: &Result{Result: "ok", SessionID: "s2"}}
+		wrapper := &optsCaptureClient{inner: client, opts: &capturedOpts}
+		adapter := NewStreamAdapterWithClient(wrapper, logger)
+		adapter.cfg = CLIConfig{
+			MCPToolNames: []string{"scan_host", "record_vulnerability", "webshell_exec"},
+		}
+		cb := func(_, _ string, _ interface{}) {}
+		// roleTools restricts to only scan_host
+		_, _, err := adapter.RunPrompt(context.Background(), "hi", "", "conv-rt2", []string{"scan_host"}, cb)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		allowed := make(map[string]bool)
+		for _, t := range (*capturedOpts).AllowedTools {
+			allowed[t] = true
+		}
+		if !allowed["mcp__cyberstrike__scan_host"] {
+			t.Errorf("expected mcp__cyberstrike__scan_host to be allowed; got %v", (*capturedOpts).AllowedTools)
+		}
+		if allowed["mcp__cyberstrike__record_vulnerability"] {
+			t.Errorf("expected mcp__cyberstrike__record_vulnerability to be excluded by roleTools")
+		}
+		if allowed["mcp__cyberstrike__webshell_exec"] {
+			t.Errorf("expected mcp__cyberstrike__webshell_exec to be excluded by roleTools")
 		}
 	})
 }

@@ -1246,15 +1246,23 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 		h.logger.Info("Routing to Claude CLI provider", zap.String("conversationId", conversationID))
 		sendEvent("progress", "Routing to Claude CLI...", map[string]interface{}{"provider": "claude-cli"})
 
+		// Fix 4: use lowercase "default" to match all other role checks in this file.
 		// Build system prompt from role context (reuse the same role prompt logic)
 		systemPrompt := ""
-		if req.Role != "" && req.Role != "Default" {
+		if req.Role != "" && req.Role != "default" {
 			if role, exists := h.config.Roles[req.Role]; exists && role.Enabled && role.UserPrompt != "" {
 				systemPrompt = role.UserPrompt
 			}
 		}
 
-		resultText, _, claudeErr := h.claudeAdapter.RunPrompt(taskCtx, finalMessage, systemPrompt, conversationID, sendEvent)
+		// Debug capture bookends: StartSession now, EndSession after the branch
+		// returns (mirrors the pattern in multi_agent.go:148-149). We cannot use
+		// wrapRunWithDebug here because this is a streaming handler that mutates
+		// taskStatus across multiple return paths.
+		h.debugSink.StartSession(conversationID)
+		defer func() { h.debugSink.EndSession(conversationID, taskStatus) }()
+
+		resultText, _, claudeErr := h.claudeAdapter.RunPrompt(taskCtx, finalMessage, systemPrompt, conversationID, roleTools, sendEvent)
 		if claudeErr != nil {
 			taskStatus = "failed"
 			errorMsg := "Claude CLI execution failed: " + claudeErr.Error()
