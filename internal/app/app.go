@@ -829,6 +829,7 @@ func setupRoutes(
 		protected.POST("/config/apply", configHandler.ApplyConfig)
 		protected.POST("/config/test-api", configHandler.TestAPIEndpoint)
 		protected.GET("/health/model", configHandler.ModelHealthCheck)
+		protected.POST("/claude-cli/check", configHandler.CheckClaudeCLI)
 
 		// system settings - terminal(,)
 		protected.POST("/terminal/run", terminalHandler.RunCommand)
