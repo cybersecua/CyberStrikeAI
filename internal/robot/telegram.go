@@ -474,7 +474,7 @@ func isQuickCommand(text string) bool {
 	quickCmds := []string{
 		"help", "?", "list", "conversations",
 		"new", "clear", "current", "stop",
-		"roles", "version",
+		"roles", "version", "mode",
 	}
 	for _, cmd := range quickCmds {
 		if lower == cmd {
@@ -482,7 +482,7 @@ func isQuickCommand(text string) bool {
 		}
 	}
 	// switch/continue/role/delete prefixes
-	prefixes := []string{"switch ", "continue ", "role ", "delete "}
+	prefixes := []string{"switch ", "continue ", "role ", "delete ", "mode "}
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(lower, prefix) {
 			return true

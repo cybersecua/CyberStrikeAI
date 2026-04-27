@@ -606,8 +606,20 @@ func (h *AgentHandler) AgentLoop(c *gin.Context) {
 	})
 }
 
-// ProcessMessageForRobot processes a message from a robot (Telegram). Similar to /api/agent-loop/stream but returns a string reply.
-func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationID, message, role string) (response string, convID string, err error) {
+// ProcessMessageForRobot drives an agent loop on behalf of a chat
+// platform (Telegram today). forceMode overrides the global
+// RobotUseMultiAgent flag for this single invocation:
+//   - "multi"  → orchestrator path (still requires MultiAgent.Enabled)
+//   - "single" → AgentLoopWithProgress path
+//   - "" or anything else → fall back to global RobotUseMultiAgent
+//
+// progressFn (nil = silent) receives bot-side step strings as the
+// agent loop runs — the caller is responsible for any throttling.
+func (h *AgentHandler) ProcessMessageForRobot(
+	ctx context.Context,
+	conversationID, message, role, forceMode string,
+	progressFn func(step string),
+) (response string, convID string, err error) {
 	if conversationID == "" {
 		title := safeTruncateString(message, 50)
 		conv, createErr := h.db.CreateConversation(title)
@@ -620,6 +632,15 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 			return "", "", fmt.Errorf("conversation not found")
 		}
 	}
+
+	taskStatus := "completed"
+	h.debugSink.StartSession(conversationID)
+	defer func() {
+		if err != nil {
+			taskStatus = "failed"
+		}
+		h.debugSink.EndSession(conversationID, taskStatus)
+	}()
 
 	agentHistoryMessages, err := h.loadHistoryFromReActData(conversationID)
 	if err != nil {
@@ -661,7 +682,64 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 	}
 	progressCallback := h.createProgressCallback(conversationID, assistantMessageID, nil)
 
-	useRobotMulti := h.config != nil && h.config.MultiAgent.Enabled && h.config.MultiAgent.RobotUseMultiAgent
+	// Bot-side progress tee: forward filtered major events to the
+	// caller-supplied progressFn (nil = silent, e.g. legacy callers
+	// that didn't opt in).
+	originalCallback := progressCallback
+	progressCallback = func(eventType, message string, data interface{}) {
+		if originalCallback != nil {
+			originalCallback(eventType, message, data)
+		}
+		if progressFn != nil {
+			dataMap, _ := data.(map[string]interface{})
+			if step := MajorEventStep(eventType, message, dataMap); step != "" {
+				progressFn(step)
+			}
+		}
+	}
+
+	if h.config != nil && h.config.EffectiveProvider() == "claude-cli" && h.claudeAdapter != nil {
+		if progressFn != nil {
+			progressFn("Running through Claude CLI…")
+		}
+		// sendEvent shim — no SSE writer in bot context. The adapter's
+		// own debug-event capture still fires inside RunPrompt.
+		sendEvent := func(eventType, msg string, data interface{}) {}
+		systemPrompt := "" // bot path prepends role prompt into finalMessage
+		resultText, _, runErr := h.claudeAdapter.RunPrompt(ctx, finalMessage, systemPrompt, conversationID, roleTools, sendEvent)
+		if runErr != nil {
+			errMsg := "execution failed: " + runErr.Error()
+			if assistantMessageID != "" {
+				_, _ = h.db.Exec("UPDATE messages SET content = ? WHERE id = ?", errMsg, assistantMessageID)
+				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errMsg, nil)
+			}
+			return "", conversationID, runErr
+		}
+		// Persist result — mirror the multi-agent post-success update.
+		if assistantMessageID != "" {
+			if _, updErr := h.db.Exec("UPDATE messages SET content = ? WHERE id = ?", resultText, assistantMessageID); updErr != nil {
+				h.logger.Warn("robot: failed to update assistant message (claude-cli)", zap.Error(updErr))
+			}
+		} else {
+			if _, addErr := h.db.AddMessage(conversationID, "assistant", resultText, nil); addErr != nil {
+				h.logger.Warn("robot: failed to save assistant message (claude-cli)", zap.Error(addErr))
+			}
+		}
+		return resultText, conversationID, nil
+	}
+
+	var useRobotMulti bool
+	switch forceMode {
+	case "multi":
+		// Per-chat override to multi still requires the operator's
+		// global MultiAgent.Enabled flag. User can't bypass that.
+		useRobotMulti = h.config != nil && h.config.MultiAgent.Enabled
+	case "single":
+		useRobotMulti = false
+	default:
+		// "" or unrecognized: fall back to global default.
+		useRobotMulti = h.config != nil && h.config.MultiAgent.Enabled && h.config.MultiAgent.RobotUseMultiAgent
+	}
 	if useRobotMulti {
 		resultMA, errMA := multiagent.RunOrchestrator(
 			ctx,

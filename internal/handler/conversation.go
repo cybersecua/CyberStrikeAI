@@ -57,6 +57,7 @@ func (h *ConversationHandler) ListConversations(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	offsetStr := c.DefaultQuery("offset", "0")
 	search := c.Query("search") // search params
+	platform := c.Query("platform")
 
 	limit, _ := strconv.Atoi(limitStr)
 	offset, _ := strconv.Atoi(offsetStr)
@@ -65,7 +66,17 @@ func (h *ConversationHandler) ListConversations(c *gin.Context) {
 		limit = 50
 	}
 
-	conversations, err := h.db.ListConversations(limit, offset, search)
+	var conversations []*database.Conversation
+	var err error
+	switch platform {
+	case "":
+		conversations, err = h.db.ListConversations(limit, offset, search)
+	case "__web__":
+		// Web-only: ListConversationsByPlatform with empty string maps to "platform IS NULL"
+		conversations, err = h.db.ListConversationsByPlatform(limit, offset, search, "")
+	default:
+		conversations, err = h.db.ListConversationsByPlatform(limit, offset, search, platform)
+	}
 	if err != nil {
 		h.logger.Error("conversationtable failed", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -501,6 +501,11 @@
                                             </svg>
                                         </button>
                                     </div>
+                                    <select id="conversation-platform-filter" class="filter-dropdown" onchange="handlePlatformFilterChange()">
+                                        <option value="" data-i18n="conversations.filterAll">All</option>
+                                        <option value="__web__" data-i18n="conversations.filterWeb">Web</option>
+                                        <option value="telegram" data-i18n="conversations.filterTelegram">Telegram</option>
+                                    </select>
                                     <div id="conversations-list" class="conversations-list"></div>
                                 </div>
                             </div>

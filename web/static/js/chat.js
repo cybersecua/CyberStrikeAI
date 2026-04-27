@@ -2082,6 +2082,10 @@ async function loadConversations(searchQuery = '') {
         if (searchQuery && searchQuery.trim()) {
             url += '&search=' + encodeURIComponent(searchQuery.trim());
         }
+        const platformFilter = (document.getElementById('conversation-platform-filter') || {}).value || '';
+        if (platformFilter) {
+            url += '&platform=' + encodeURIComponent(platformFilter);
+        }
         const response = await apiFetch(url);
 
         const listContainer = document.getElementById('conversations-list');
@@ -2271,7 +2275,17 @@ function handleConversationSearch(query) {
  }, 300); // 300ms
 }
 
-// 
+function handlePlatformFilterChange() {
+    const searchInput = document.getElementById('conversation-search-input');
+    const searchQuery = searchInput ? searchInput.value : '';
+    if (typeof loadConversationsWithGroups === 'function') {
+        loadConversationsWithGroups(searchQuery);
+    } else if (typeof loadConversations === 'function') {
+        loadConversations(searchQuery);
+    }
+}
+
+//
 function clearConversationSearch() {
     const searchInput = document.getElementById('conversation-search-input');
     const clearBtn = document.getElementById('conversation-search-clear');
@@ -4365,6 +4379,10 @@ async function loadConversationsWithGroups(searchQuery = '') {
         if (searchQuery && searchQuery.trim()) {
             url += '&search=' + encodeURIComponent(searchQuery.trim());
         }
+        const platformFilter = (document.getElementById('conversation-platform-filter') || {}).value || '';
+        if (platformFilter) {
+            url += '&platform=' + encodeURIComponent(platformFilter);
+        }
         const response = await apiFetch(url);
         if (loadSeq !== conversationsListLoadSeq) return;
 
@@ -4518,6 +4536,14 @@ function createConversationListItemWithMenu(conversation, isPinned) {
     title.textContent = safeTruncateText(titleText, 60);
  title.title = titleText; // 
     titleWrapper.appendChild(title);
+
+    if (conversation.platform) {
+        const platformBadge = document.createElement('span');
+        platformBadge.className = 'platform-badge platform-' + conversation.platform;
+        platformBadge.textContent = conversation.platform;
+        platformBadge.title = 'via ' + conversation.platform;
+        titleWrapper.appendChild(platformBadge);
+    }
 
     if (isPinned) {
         const pinIcon = document.createElement('span');

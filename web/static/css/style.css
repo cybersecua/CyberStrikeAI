@@ -14744,3 +14744,33 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 .prereq-list .check-name { font-weight: 600; margin-right: 8px; }
 .prereq-list .check-detail { color: var(--text-muted, #666); font-family: monospace; font-size: 0.85em; }
 
+.filter-dropdown {
+    margin: 4px 0 8px 0;
+    padding: 4px 6px;
+    font-size: 0.85em;
+    border: 1px solid var(--border-color, #ddd);
+    background: var(--panel-bg, #fff);
+    color: var(--text-color, inherit);
+    border-radius: 4px;
+    width: 100%;
+    cursor: pointer;
+}
+
+.platform-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    margin-left: 4px;
+    font-size: 0.65em;
+    border-radius: 8px;
+    background: rgba(33, 150, 243, 0.15);
+    color: #1976d2;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+.platform-badge.platform-telegram {
+    background: rgba(0, 136, 204, 0.18);
+    color: #0088cc;
+}
+

@@ -1704,5 +1704,10 @@
     "deleteConfirm": "Delete captured session for {{id}}?",
     "deleteOk": "Session deleted",
     "labelPlaceholder": "Add a label…"
+  },
+  "conversations": {
+    "filterAll": "All",
+    "filterWeb": "Web",
+    "filterTelegram": "Telegram"
   }
 }

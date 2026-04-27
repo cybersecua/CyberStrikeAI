@@ -1704,5 +1704,10 @@
     "deleteConfirm": "Видалити захоплений сеанс для {{id}}?",
     "deleteOk": "Сеанс видалено",
     "labelPlaceholder": "Додати мітку…"
+  },
+  "conversations": {
+    "filterAll": "Усі",
+    "filterWeb": "Веб",
+    "filterTelegram": "Telegram"
   }
 }
