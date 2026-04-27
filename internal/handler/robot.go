@@ -199,7 +199,7 @@ func (h *RobotHandler) handleInternal(platform, userID, text string, progressFn 
 	cancelWithCause := func(cause error) { cancel() }
 	if _, err := h.agentHandler.tasks.StartTask(convID, text, cancelWithCause); err != nil {
 		if errors.Is(err, ErrTaskAlreadyRunning) {
-			return "Another task is running for this chat. Say `stop` to cancel."
+			return "⚠️ Another task is running for this chat. Say `stop` to cancel."
 		}
 		return "Failed to start task: " + err.Error()
 	}
@@ -481,7 +481,7 @@ func (h *RobotHandler) cmdMode(platform, userID string, arg string) string {
 		if err := h.db.SetBotMode(platform, userID, "single"); err != nil {
 			return "Failed to set mode: " + err.Error()
 		}
-		return "This chat is now single-agent."
+		return "✅ This chat is now single-agent."
 
 	case "multi":
 		if h.config == nil || !h.config.MultiAgent.Enabled {
@@ -490,7 +490,7 @@ func (h *RobotHandler) cmdMode(platform, userID string, arg string) string {
 		if err := h.db.SetBotMode(platform, userID, "multi"); err != nil {
 			return "Failed to set mode: " + err.Error()
 		}
-		return "This chat is now multi-agent."
+		return "✅ This chat is now multi-agent."
 
 	case "default":
 		if err := h.db.SetBotMode(platform, userID, ""); err != nil {
@@ -501,7 +501,7 @@ func (h *RobotHandler) cmdMode(platform, userID string, arg string) string {
 		if globalMulti {
 			fallbackName = "multi"
 		}
-		return fmt.Sprintf("Reverted to global default (%s).", fallbackName)
+		return fmt.Sprintf("↩️ Reverted to global default (%s).", fallbackName)
 
 	default:
 		return fmt.Sprintf("Unknown mode '%s'. Use: mode single | mode multi | mode default", arg)
