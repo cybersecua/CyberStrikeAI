@@ -312,6 +312,18 @@ func (db *DB) initTables() error {
 		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 	);`
 
+	// create bot sessions table
+	createBotSessionsTable := `
+	CREATE TABLE IF NOT EXISTS bot_sessions (
+		platform        TEXT NOT NULL,
+		user_id         TEXT NOT NULL,
+		conversation_id TEXT,
+		current_mode    TEXT,
+		updated_at      INTEGER NOT NULL,
+		PRIMARY KEY (platform, user_id),
+		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+	);`
+
 	// create indexes
 	createIndexes := `
 	CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
@@ -422,6 +434,10 @@ func (db *DB) initTables() error {
 		return fmt.Errorf("debug_eventstable failed: %w", err)
 	}
 
+	if _, err := db.Exec(createBotSessionsTable); err != nil {
+		return fmt.Errorf("bot_sessions table: %w", err)
+	}
+
 	// add new fields to existing tables()- create indexes
 	if err := db.migrateConversationsTable(); err != nil {
 		db.logger.Warn("migrateconversationstable failed", zap.Error(err))
@@ -520,6 +536,13 @@ func (db *DB) migrateConversationsTable() error {
 	} else if count == 0 {
 		if _, err := db.Exec("ALTER TABLE conversations ADD COLUMN webshell_connection_id TEXT"); err != nil {
 			db.logger.Warn("addwebshell_connection_idfield failed", zap.Error(err))
+		}
+	}
+
+	// platform field for bot origin tracking
+	if _, err := db.Exec("ALTER TABLE conversations ADD COLUMN platform TEXT"); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			db.logger.Warn("add platform field failed", zap.Error(err))
 		}
 	}
 
