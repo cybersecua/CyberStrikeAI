@@ -65,6 +65,21 @@ func (db *DB) CreateConversationWithWebshell(webshellConnectionID, title string)
 	}, nil
 }
 
+// CreateConversationWithPlatform tags the conversation row with a
+// non-NULL platform string ("telegram", future: "dingtalk", etc.).
+// Used by RobotHandler when creating a conversation on first message
+// from a bot user.
+func (db *DB) CreateConversationWithPlatform(title, platform string) (*Conversation, error) {
+	c, err := db.CreateConversation(title)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE conversations SET platform = ? WHERE id = ?`, platform, c.ID); err != nil {
+		return nil, fmt.Errorf("set platform: %w", err)
+	}
+	return c, nil
+}
+
 // GetConversationByWebshellConnectionID WebShell connection ID conversation( AI )
 func (db *DB) GetConversationByWebshellConnectionID(connectionID string) (*Conversation, error) {
 	if connectionID == "" {
@@ -344,6 +359,98 @@ func (db *DB) ListConversations(limit, offset int, search string) ([]*Conversati
 		}
 
 		// time formatparse
+		var err1, err2 error
+		conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAt)
+		if err1 != nil {
+			conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05", createdAt)
+		}
+		if err1 != nil {
+			conv.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		}
+
+		conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05.999999999-07:00", updatedAt)
+		if err2 != nil {
+			conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05", updatedAt)
+		}
+		if err2 != nil {
+			conv.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		}
+
+		conv.Pinned = pinned != 0
+
+		conversations = append(conversations, &conv)
+	}
+
+	return conversations, nil
+}
+
+// ListConversationsByPlatform returns conversations filtered by
+// platform tag. Empty platform argument matches NULL (web-origin
+// only); non-empty matches the literal value. Use ListConversations
+// for "all platforms".
+func (db *DB) ListConversationsByPlatform(limit, offset int, search, platform string) ([]*Conversation, error) {
+	var rows *sql.Rows
+	var err error
+
+	if search != "" {
+		// use LIKE for fuzzy search, title and message
+		searchPattern := "%" + search + "%"
+		// use DISTINCT to avoid duplicates, conversation message match
+		if platform == "" {
+			// web-only: platform IS NULL
+			rows, err = db.Query(
+				`SELECT DISTINCT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at
+				 FROM conversations c
+				 LEFT JOIN messages m ON c.id = m.conversation_id
+				 WHERE (c.title LIKE ? OR m.content LIKE ?) AND c.platform IS NULL
+				 ORDER BY c.updated_at DESC
+				 LIMIT ? OFFSET ?`,
+				searchPattern, searchPattern, limit, offset,
+			)
+		} else {
+			// specific platform
+			rows, err = db.Query(
+				`SELECT DISTINCT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at
+				 FROM conversations c
+				 LEFT JOIN messages m ON c.id = m.conversation_id
+				 WHERE (c.title LIKE ? OR m.content LIKE ?) AND c.platform = ?
+				 ORDER BY c.updated_at DESC
+				 LIMIT ? OFFSET ?`,
+				searchPattern, searchPattern, platform, limit, offset,
+			)
+		}
+	} else {
+		if platform == "" {
+			// web-only: platform IS NULL
+			rows, err = db.Query(
+				"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at FROM conversations WHERE platform IS NULL ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+				limit, offset,
+			)
+		} else {
+			// specific platform
+			rows, err = db.Query(
+				"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at FROM conversations WHERE platform = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+				platform, limit, offset,
+			)
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("conversationtable failed: %w", err)
+	}
+	defer rows.Close()
+
+	var conversations []*Conversation
+	for rows.Next() {
+		var conv Conversation
+		var createdAt, updatedAt string
+		var pinned int
+
+		if err := rows.Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scanconversation: %w", err)
+		}
+
+		// time format parse
 		var err1, err2 error
 		conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAt)
 		if err1 != nil {
