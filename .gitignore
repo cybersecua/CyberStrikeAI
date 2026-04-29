@@ -48,3 +48,6 @@ Thumbs.db
 
 # Editor backup files
 *.bak
+
+# Container fleet: downloaded gs-netcat binary
+containers/bin/

@@ -271,6 +271,13 @@ type AgentConfig struct {
 	Cuttlefish              CuttlefishConfig    `yaml:"cuttlefish" json:"cuttlefish"`                                 // Android VM (Cuttlefish) settings
 	SSLStrip                SSLStripConfig      `yaml:"sslstrip" json:"sslstrip"`                                     // SSLStrip MITM tool settings
 	Proxy                   ProxyConfig         `yaml:"proxy" json:"proxy"`                                           // Global proxy middleware for tool traffic routing
+	ToolExecution           ToolExecutionConfig `yaml:"tool_execution" json:"tool_execution"`                         // Where to run security tools: local host or a registered container
+}
+
+// ToolExecutionConfig controls where security tools are executed.
+type ToolExecutionConfig struct {
+	Mode      string `yaml:"mode" json:"mode"`           // "local" (default) | "container"
+	Container string `yaml:"container" json:"container"` // container name required when mode=container
 }
 
 // TimeAwarenessConfig controls whether and how the agent injects time context.

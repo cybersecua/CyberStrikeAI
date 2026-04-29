@@ -312,6 +312,20 @@ func (db *DB) initTables() error {
 		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 	);`
 
+	// create containers table (remote Kali fleet, controlled via gsocket)
+	createContainersTable := `
+	CREATE TABLE IF NOT EXISTS containers (
+		id           TEXT PRIMARY KEY,
+		name         TEXT NOT NULL,
+		gs_secret    TEXT NOT NULL UNIQUE,
+		hostname     TEXT NOT NULL DEFAULT '',
+		ip_address   TEXT NOT NULL DEFAULT '',
+		tags         TEXT NOT NULL DEFAULT '',
+		is_online    INTEGER NOT NULL DEFAULT 0,
+		last_seen_at INTEGER,
+		created_at   INTEGER NOT NULL
+	);`
+
 	// create bot sessions table
 	createBotSessionsTable := `
 	CREATE TABLE IF NOT EXISTS bot_sessions (
@@ -356,6 +370,8 @@ func (db *DB) initTables() error {
 	CREATE INDEX IF NOT EXISTS idx_debug_events_conv ON debug_events(conversation_id, seq);
 	CREATE INDEX IF NOT EXISTS idx_debug_sessions_started ON debug_sessions(started_at);
 	CREATE INDEX IF NOT EXISTS idx_debug_sessions_ended ON debug_sessions(ended_at);
+	CREATE INDEX IF NOT EXISTS idx_containers_gs_secret ON containers(gs_secret);
+	CREATE INDEX IF NOT EXISTS idx_containers_created_at ON containers(created_at);
 	`
 
 	if _, err := db.Exec(createConversationsTable); err != nil {
@@ -432,6 +448,10 @@ func (db *DB) initTables() error {
 
 	if _, err := db.Exec(createDebugEventsTable); err != nil {
 		return fmt.Errorf("debug_eventstable failed: %w", err)
+	}
+
+	if _, err := db.Exec(createContainersTable); err != nil {
+		return fmt.Errorf("containers table: %w", err)
 	}
 
 	if _, err := db.Exec(createBotSessionsTable); err != nil {

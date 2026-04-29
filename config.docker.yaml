@@ -53,7 +53,21 @@ mcp:
   port: 8081
 
 external_mcp:
-  servers: {}
+  servers:
+    # Container fleet MCP — controls remote Kali containers over gsocket.
+    # Set CSAI_PASSWORD env var (same as auth.password above) and flip enable to true.
+    gs-panel:
+      transport: stdio
+      command: python3
+      args: ["/app/containers/panel-mcp/mcp_server.py"]
+      env:
+        CSAI_URL: "http://localhost:8080"
+        CSAI_PASSWORD: "${CSAI_PASSWORD}"
+        GS_NETCAT_BIN: "/usr/local/bin/gs-netcat"
+      description: "container fleet — deploy/list/exec/scan on remote Kali containers over gsocket"
+      timeout: 120
+      external_mcp_enable: false  # set to true after configuring CSAI_PASSWORD
+      tool_enabled: {}
 
 knowledge:
   enabled: false

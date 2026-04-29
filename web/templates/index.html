@@ -150,6 +150,17 @@
  <span data-i18n="nav.webshell">WebShell</span>
                         </div>
                     </div>
+                    <div class="nav-item" data-page="containers">
+                        <div class="nav-item-content" data-title="Containers" onclick="switchPage('containers')" data-i18n="nav.containers" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
+                                <line x1="12" y1="12" x2="12" y2="16"></line>
+                                <line x1="10" y1="14" x2="14" y2="14"></line>
+                            </svg>
+                            <span data-i18n="nav.containers">Containers</span>
+                        </div>
+                    </div>
                     <div class="nav-item" data-page="chat-files">
  <div class="nav-item-content" data-title="" onclick="switchPage('chat-files')" data-i18n="nav.chatFiles" data-i18n-attr="data-title" data-i18n-skip-text="true">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1052,6 +1063,122 @@
                         
  <!-- -->
                         <div id="vulnerability-pagination" class="pagination-container pagination-fixed"></div>
+                    </div>
+                </div>
+
+ <!-- Containers -->
+                <div id="page-containers" class="page">
+                    <div class="page-header">
+                        <h2 data-i18n="containers.title">Container Fleet</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="showNewContainerModal()" data-i18n="containers.newContainer" style="margin-right:8px">New Container</button>
+                            <button class="btn-primary" onclick="showBuildToolboxModal()" data-i18n="containers.buildToolbox">Build Deployable Toolbox</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <div id="containers-list-wrap">
+                            <p class="empty-state" id="containers-empty" style="display:none" data-i18n="containers.noContainers"></p>
+                            <table class="data-table" id="containers-table" style="display:none">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="containers.name">Name</th>
+                                        <th data-i18n="containers.hostname">Hostname</th>
+                                        <th data-i18n="containers.ip">IP</th>
+                                        <th data-i18n="containers.status">Status</th>
+                                        <th data-i18n="containers.createdAt">Created</th>
+                                        <th data-i18n="containers.lastSeen">Last Seen</th>
+                                        <th data-i18n="containers.actions">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="containers-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Container Modal -->
+                <div id="modal-new-container" class="modal" style="display:none">
+                    <div class="modal-content" style="max-width:560px">
+                        <div class="modal-header">
+                            <h3 data-i18n="containers.createTitle">New Container</h3>
+                            <button class="modal-close" onclick="closeNewContainerModal()">&times;</button>
+                        </div>
+                        <div class="modal-body" id="new-container-form-wrap">
+                            <div class="form-group">
+                                <label data-i18n="containers.name">Name</label>
+                                <input type="text" id="new-container-name" data-i18n="containers.namePlaceholder" data-i18n-attr="placeholder" placeholder="kali-cs" style="width:100%">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="containers.panelUrlLabel">Panel URL (optional)</label>
+                                <input type="text" id="new-container-panel-url" data-i18n="containers.panelUrlPlaceholder" data-i18n-attr="placeholder" placeholder="https://cyberstrike.yourdomain.com" style="width:100%">
+                                <small data-i18n="containers.panelUrlHint" style="color:var(--text-muted)"></small>
+                            </div>
+                        </div>
+                        <div class="modal-body" id="new-container-result-wrap" style="display:none">
+                            <p data-i18n="containers.dockerRunTitle" style="font-weight:600;margin-bottom:8px"></p>
+                            <div style="position:relative">
+                                <pre id="new-container-docker-run" style="background:var(--bg-secondary);padding:12px;border-radius:6px;overflow-x:auto;font-size:13px;white-space:pre-wrap;word-break:break-all"></pre>
+                                <button class="btn-secondary" id="new-container-copy-btn" onclick="copyContainerDeployCmd()" style="position:absolute;top:8px;right:8px;font-size:12px" data-i18n="containers.copyCmd">Copy</button>
+                            </div>
+                            <p style="margin-top:12px;font-size:13px;color:var(--text-muted)">
+                                <strong data-i18n="containers.gsSecret">gsocket Secret</strong>: <code id="new-container-secret"></code>
+                            </p>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-secondary" onclick="closeNewContainerModal()" data-i18n="common.cancel">Cancel</button>
+                            <button class="btn-primary" id="new-container-submit" onclick="submitNewContainer()" data-i18n="containers.generate">Generate</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deploy Cmd Modal -->
+                <div id="modal-container-deploy" class="modal" style="display:none">
+                    <div class="modal-content" style="max-width:560px">
+                        <div class="modal-header">
+                            <h3 data-i18n="containers.deployCmd">Deploy Command</h3>
+                            <button class="modal-close" onclick="document.getElementById('modal-container-deploy').style.display='none'">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div style="position:relative">
+                                <pre id="deploy-modal-cmd" style="background:var(--bg-secondary);padding:12px;border-radius:6px;overflow-x:auto;font-size:13px;white-space:pre-wrap;word-break:break-all"></pre>
+                                <button class="btn-secondary" onclick="copyDeployModalCmd()" style="position:absolute;top:8px;right:8px;font-size:12px" data-i18n="containers.copyCmd">Copy</button>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-primary" onclick="document.getElementById('modal-container-deploy').style.display='none'" data-i18n="common.close">Close</button>
+                        </div>
+                    </div>
+                </div>
+
+ <!-- Build Toolbox Modal -->
+                <div id="modal-build-toolbox" class="modal" style="display:none">
+                    <div class="modal-content" style="max-width:700px">
+                        <div class="modal-header">
+                            <h3 data-i18n="containers.buildToolboxTitle">Build Deployable Toolbox</h3>
+                            <button class="modal-close" id="build-toolbox-close-btn" onclick="closeBuildToolboxModal()">&times;</button>
+                        </div>
+                        <div class="modal-body" id="build-toolbox-form-wrap">
+                            <div class="form-group">
+                                <label data-i18n="containers.name">Name</label>
+                                <input type="text" id="build-toolbox-name" placeholder="kali-op1" style="width:100%">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="containers.panelUrlLabel">Panel URL</label>
+                                <input type="text" id="build-toolbox-panel-url" style="width:100%">
+                                <small data-i18n="containers.panelUrlBuildHint" style="color:var(--text-muted)"></small>
+                            </div>
+                            <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                                <input type="checkbox" id="build-toolbox-force" style="width:auto;margin:0">
+                                <label for="build-toolbox-force" style="margin:0" data-i18n="containers.forceRebuild">Force rebuild image</label>
+                            </div>
+                        </div>
+                        <div class="modal-body" id="build-toolbox-output-wrap" style="display:none;padding:0">
+                            <div id="build-toolbox-log" style="background:#0d1117;color:#e6edf3;font-family:monospace;font-size:12px;padding:14px;height:320px;overflow-y:auto;border-radius:0;white-space:pre-wrap;word-break:break-all"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-secondary" onclick="closeBuildToolboxModal()" data-i18n="common.cancel">Cancel</button>
+                            <button class="btn-primary" id="build-toolbox-submit" onclick="startBuildToolbox()" data-i18n="containers.buildAndRun">Build &amp; Run</button>
+                        </div>
                     </div>
                 </div>
 
@@ -2886,6 +3013,7 @@ skill...</small>
     <script src="/static/js/skills.js"></script>
     <script src="/static/js/vulnerability.js?v=4"></script>
     <script src="/static/js/webshell.js"></script>
+    <script src="/static/js/containers.js"></script>
     <script src="/static/js/chat-files.js"></script>
     <script src="/static/js/tasks.js"></script>
     <script src="/static/js/roles.js"></script>

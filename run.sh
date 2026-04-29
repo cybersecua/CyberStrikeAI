@@ -418,7 +418,14 @@ main() {
     info "Setting up Python environment..."
     setup_python_env
     echo ""
-    
+
+    # Set up container fleet dependencies (gs-netcat binary)
+    if [ -f "$ROOT_DIR/containers/setup.sh" ]; then
+        info "Setting up container fleet dependencies..."
+        bash "$ROOT_DIR/containers/setup.sh" --check && true
+        echo ""
+    fi
+
     # Build Go project
     if need_rebuild; then
         info "Preparing to build project..."

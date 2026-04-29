@@ -144,6 +144,13 @@ agent:
     log_dir: /tmp            # Directory for SSLStrip capture logs
     auto_proxy: false        # Auto-set Cuttlefish VM proxy to SSLStrip when tool starts
   parallel_tool_wait_seconds: 60
+  # Tool execution routing: run security tools inside a registered Kali container instead of locally.
+  # Requires a deployed container (Containers tab → Build Deployable Toolbox).
+  # mode: local      — tools run on the CyberStrikeAI host (default)
+  # mode: container  — tools are piped to the named container via gsocket
+  tool_execution:
+    mode: local
+    container: ""     # container name as shown in the Containers tab (e.g. "kali-ops")
 # Database configuration
 database:
   path: data/conversations.db # SQLite database file path; used to store conversation history and messages
@@ -224,6 +231,25 @@ external_mcp:
       description: "Frida Kahlo MCP - Android dynamic instrumentation (device/process discovery, attach/spawn, Frida script injection, telemetry, stdlib for Java hooks / Intent parsing / stack traces)"
       timeout: 300  # 5 min — Frida scripts can run long analyses
       external_mcp_enable: false  # Enable after installing: scripts/frida/start-frida-kahlo-mcp.sh --install
+      tool_enabled: {}
+    # ── Container Fleet MCP ──────────────────────────────────────────────────
+    # Controls remote Kali containers over gsocket. Containers are managed
+    # entirely within CyberStrikeAI — no external panel required.
+    # Tools: list_containers, exec, scan, nuclei_scan, upload_file, download_file,
+    #        deploy_container
+    # Setup: set CSAI_URL + CSAI_PASSWORD, enable, then deploy containers from the
+    #        Containers tab in the UI (or ask the AI to deploy_container).
+    gs-panel:
+      transport: stdio
+      command: python3
+      args: ["containers/panel-mcp/mcp_server.py"]
+      env:
+        CSAI_URL: "http://localhost:8080"           # CyberStrikeAI base URL
+        CSAI_PASSWORD: ""                           # operator password (same as web UI login)
+        GS_NETCAT_BIN: "containers/bin/gs-netcat"  # path set by containers/setup.sh
+      description: "container fleet — deploy/list/exec/scan on remote Kali containers over gsocket"
+      timeout: 120
+      external_mcp_enable: false  # Enable after setting CSAI_PASSWORD
       tool_enabled: {}
 # ============================================
 # Knowledge Base Configuration

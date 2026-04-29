@@ -36,8 +36,10 @@ var ToolOutputCallbackCtxKey = toolOutputCallbackCtxKey{}
 // Executor security tool executor
 type Executor struct {
 	config            *config.SecurityConfig
-	proxyConfig       *config.ProxyConfig           // global proxy middleware config (nil = disabled)
-	toolIndex         map[string]*config.ToolConfig // tool index for O(1) lookup
+	proxyConfig       *config.ProxyConfig              // global proxy middleware config (nil = disabled)
+	toolExecConfig    *config.ToolExecutionConfig       // tool execution routing config (nil = local)
+	containerProvider func(name string) (string, error) // resolves container name → gs_secret
+	toolIndex         map[string]*config.ToolConfig     // tool index for O(1) lookup
 	mcpServer         *mcp.Server
 	logger            *zap.Logger
 	resultStorage     ResultStorage                  // result storage (for query tools)
@@ -48,6 +50,59 @@ type Executor struct {
 // SetProxyConfig sets the global proxy configuration for tool traffic routing.
 func (e *Executor) SetProxyConfig(proxy *config.ProxyConfig) {
 	e.proxyConfig = proxy
+}
+
+// SetContainerExecution configures tool routing to a registered Kali container.
+// provider resolves container name → gs_secret; it must check IsOnline before returning.
+func (e *Executor) SetContainerExecution(cfg *config.ToolExecutionConfig, provider func(string) (string, error)) {
+	e.toolExecConfig = cfg
+	e.containerProvider = provider
+}
+
+// shouldRouteToContainer returns true when all container routing prerequisites are met.
+func (e *Executor) shouldRouteToContainer() bool {
+	return e.toolExecConfig != nil &&
+		e.toolExecConfig.Mode == "container" &&
+		e.toolExecConfig.Container != "" &&
+		e.containerProvider != nil
+}
+
+// gsNetcatBin returns the path to the gs-netcat binary, honouring GS_NETCAT_BIN env var.
+func (e *Executor) gsNetcatBin() string {
+	if bin := os.Getenv("GS_NETCAT_BIN"); bin != "" {
+		return bin
+	}
+	return "containers/bin/gs-netcat"
+}
+
+// buildContainerShellCmd joins command+args into a single shell-safe string for piping via gs-netcat.
+func buildContainerShellCmd(command string, args []string) string {
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, command)
+	for _, a := range args {
+		parts = append(parts, shellEscapeArg(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// shellEscapeArg single-quote-escapes an argument for POSIX sh.
+func shellEscapeArg(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '/' || c == ':' || c == '@' ||
+			c == ',' || c == '=' || c == '+' || c == '%') {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // proxyURL builds the proxy URL string from config.
@@ -461,10 +516,20 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 		}
 	}
 
-	// execute command - wrap with proxychains for tools that don't respect env proxy vars
+	// execute command — route to container, proxychains, or direct
 	var cmd *exec.Cmd
 	proxied := false
-	if e.shouldUseProxyChains(toolName) {
+	containerRouted := false
+	if e.shouldRouteToContainer() {
+		secret, resolveErr := e.containerProvider(e.toolExecConfig.Container)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("container routing: %w", resolveErr)
+		}
+		shellCmd := buildContainerShellCmd(toolConfig.Command, cmdArgs)
+		cmd = exec.CommandContext(ctx, e.gsNetcatBin(), "-s", secret)
+		cmd.Stdin = strings.NewReader(shellCmd + "\n")
+		containerRouted = true
+	} else if e.shouldUseProxyChains(toolName) {
 		confPath, pcErr := e.WriteProxyChainsConf()
 		if pcErr == nil {
 			// proxychains4 -f <conf> <command> <args...>
@@ -478,11 +543,14 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 	} else {
 		cmd = exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
 	}
-	if workDir := e.resolveToolWorkDir(args); workDir != "" {
-		cmd.Dir = workDir
-	}
-	if cmdEnv := e.buildCmdEnvForTool(toolName); cmdEnv != nil {
-		cmd.Env = cmdEnv
+	if !containerRouted {
+		// workdir and env only apply to local execution
+		if workDir := e.resolveToolWorkDir(args); workDir != "" {
+			cmd.Dir = workDir
+		}
+		if cmdEnv := e.buildCmdEnvForTool(toolName); cmdEnv != nil {
+			cmd.Env = cmdEnv
+		}
 	}
 
 	e.logger.Info("executing security tool",
@@ -491,6 +559,13 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 		zap.String("workdir", cmd.Dir),
 		zap.Bool("proxied", e.proxyConfig != nil && e.proxyConfig.Enabled && !e.isToolExemptFromProxy(toolName)),
 		zap.Bool("proxychains", proxied),
+		zap.Bool("container_routed", containerRouted),
+		zap.String("container", func() string {
+			if containerRouted {
+				return e.toolExecConfig.Container
+			}
+			return ""
+		}()),
 	)
 
 	var output string

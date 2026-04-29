@@ -122,6 +122,27 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		}
 	}
 
+	// configure container tool execution routing
+	if cfg.Agent.ToolExecution.Mode == "container" && cfg.Agent.ToolExecution.Container != "" {
+		containerName := cfg.Agent.ToolExecution.Container
+		executor.SetContainerExecution(&cfg.Agent.ToolExecution, func(name string) (string, error) {
+			list, listErr := db.ListContainers()
+			if listErr != nil {
+				return "", listErr
+			}
+			for _, c := range list {
+				if c.Name == name {
+					if !c.IsOnline {
+						return "", fmt.Errorf("container %q is offline", name)
+					}
+					return c.GSSecret, nil
+				}
+			}
+			return "", fmt.Errorf("container %q not found", name)
+		})
+		log.Logger.Info("tool execution routed to container", zap.String("container", containerName))
+	}
+
 	// initialize plugin manager
 	pluginsDir := "plugins"
 	if !filepath.IsAbs(pluginsDir) {
@@ -425,6 +446,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
 	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
 	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
+	containerHandler := handler.NewContainerHandler(log.Logger, db)
 	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
 	// Register webshell tools BEFORE snapshotting MCPToolNames so that
 	// cold-boot Claude CLI sessions see webshell tools on the first turn.
@@ -598,6 +620,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		app, // App knowledgeHandler
 		vulnerabilityHandler,
 		webshellHandler,
+		containerHandler,
 		chatUploadsHandler,
 		roleHandler,
 		skillsHandler,
@@ -717,6 +740,7 @@ func setupRoutes(
 	app *App, // App knowledgeHandler
 	vulnerabilityHandler *handler.VulnerabilityHandler,
 	webshellHandler *handler.WebShellHandler,
+	containerHandler *handler.ContainerHandler,
 	chatUploadsHandler *handler.ChatUploadsHandler,
 	roleHandler *handler.RoleHandler,
 	skillsHandler *handler.SkillsHandler,
@@ -749,6 +773,9 @@ func setupRoutes(
 		api.GET("/plugins/:name/i18n/:lang", pluginsHandler.GetPluginI18n)
 		api.GET("/plugins/:name/web/*filepath", pluginsHandler.ServePluginStatic)
 	}
+
+	// Container self-registration (called by container on boot, auth via gs_secret in body)
+	api.POST("/containers/register", containerHandler.RegisterContainer)
 
 	protected := api.Group("")
 	protected.Use(security.AuthMiddleware(authManager))
@@ -1009,6 +1036,14 @@ func setupRoutes(
 		protected.POST("/vulnerabilities", vulnerabilityHandler.CreateVulnerability)
 		protected.PUT("/vulnerabilities/:id", vulnerabilityHandler.UpdateVulnerability)
 		protected.DELETE("/vulnerabilities/:id", vulnerabilityHandler.DeleteVulnerability)
+
+		// Container fleet management
+		protected.GET("/containers", containerHandler.ListContainers)
+		protected.POST("/containers", containerHandler.CreateContainer)
+		protected.POST("/containers/build-and-run/stream", containerHandler.BuildAndRunStream)
+		protected.GET("/containers/:id", containerHandler.GetContainer)
+		protected.GET("/containers/:id/deploy-cmd", containerHandler.GetDeployCmd)
+		protected.DELETE("/containers/:id", containerHandler.DeleteContainer)
 
 		// WebShell management( + SQLite)
 		protected.GET("/webshell/connections", webshellHandler.ListConnections)
